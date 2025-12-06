@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   Monitor, Smartphone, Tablet, RefreshCw, Eye, Code2, Copy, Check, Download, Database,
   ShieldCheck, Pencil, Send, FileText, Wrench, FlaskConical, Package, Loader2,
-  SplitSquareVertical, X, Zap, ZapOff, MousePointer2, Bug
+  SplitSquareVertical, X, Zap, ZapOff, MousePointer2, Bug, Settings, ChevronDown, Shield
 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import JSZip from 'jszip';
@@ -22,6 +22,9 @@ import { AccessibilityModal } from './AccessibilityModal';
 import { ConsultantReport } from './ConsultantReport';
 import { ComponentInspector, InspectionOverlay, InspectedElement } from './ComponentInspector';
 import DebugPanel from './DebugPanel';
+import { MarkdownPreview } from './MarkdownPreview';
+import { DBStudio } from './DBStudio';
+import { EnvironmentPanel } from './EnvironmentPanel';
 
 interface PreviewPanelProps {
   files: FileSystem;
@@ -87,6 +90,23 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
   // Split View
   const [isSplitView, setIsSplitView] = useState(false);
   const [splitFile, setSplitFile] = useState<string>('');
+
+  // Settings dropdown
+  const [showSettings, setShowSettings] = useState(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
+
+  // Close settings when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+        setShowSettings(false);
+      }
+    };
+    if (showSettings) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showSettings]);
 
   // Auto-fix
   const [autoFixEnabled, setAutoFixEnabled] = useState(true);
@@ -529,6 +549,47 @@ Only return files that need changes. Maintain all existing functionality.`,
       zip.file('src/index.css', files['src/index.css'] || getTailwindCss());
       zip.file('README.md', getReadme());
 
+      // Add .gitignore if not exists
+      if (!files['.gitignore']) {
+        zip.file('.gitignore', `# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+`);
+      }
+
+      // Generate .env.example from .env
+      if (files['.env']) {
+        const envExample = files['.env']
+          .split('\n')
+          .map(line => {
+            if (!line.trim() || line.startsWith('#')) return line;
+            const match = line.match(/^([A-Z_][A-Z0-9_]*)=/i);
+            if (match) return `${match[1]}=your_${match[1].toLowerCase()}_here`;
+            return line;
+          })
+          .join('\n');
+        zip.file('.env.example', envExample);
+      }
+
       for (const [path, content] of Object.entries(files) as [string, string][]) {
         if (path === 'src/index.css') continue;
         const fixedContent = content.replace(/from ['"]src\//g, "from './").replace(/import ['"]src\//g, "import './");
@@ -587,12 +648,19 @@ Only return files that need changes. Maintain all existing functionality.`,
 
   const handleTabChange = (tab: TabType) => {
     setActiveTab(tab);
-    if (tab === 'database' && !files['db/schema.sql'] && appCode) generateDatabaseSchema();
-    else if (tab === 'database' && files['db/schema.sql']) { setActiveFile('db/schema.sql'); setActiveTab('code'); }
-    else if (tab === 'tests' && !files['src/App.test.tsx'] && appCode) generateUnitTests();
-    else if (tab === 'tests' && files['src/App.test.tsx']) { setActiveFile('src/App.test.tsx'); setActiveTab('code'); }
-    else if (tab === 'docs' && !files['README.md'] && appCode) generateDocs();
-    else if (tab === 'docs' && files['README.md']) { setActiveFile('README.md'); setActiveTab('code'); }
+    // Database tab now opens DB Studio directly
+    if (tab === 'database') {
+      // DB Studio handles everything - no auto-generation
+    } else if (tab === 'tests' && !files['src/App.test.tsx'] && appCode) {
+      generateUnitTests();
+    } else if (tab === 'tests' && files['src/App.test.tsx']) {
+      setActiveFile('src/App.test.tsx');
+      setActiveTab('code');
+    } else if (tab === 'docs' && !files['README.md'] && appCode) {
+      generateDocs();
+    } else if (tab === 'docs' && files['README.md']) {
+      setActiveFile('README.md');
+    }
   };
 
   return (
@@ -610,20 +678,22 @@ Only return files that need changes. Maintain all existing functionality.`,
             {[
               { id: 'preview', icon: Eye, label: 'Preview' },
               { id: 'code', icon: Code2, label: 'Code' },
-              { id: 'database', icon: Database, label: 'SQL' },
+              { id: 'database', icon: Database, label: 'DB Studio' },
               { id: 'tests', icon: FlaskConical, label: 'Tests' },
               { id: 'docs', icon: FileText, label: 'Docs' },
+              { id: 'env', icon: Shield, label: 'Env' },
               { id: 'debug', icon: Bug, label: 'Debug' }
             ].map(({ id, icon: Icon, label }) => (
               <button
                 key={id}
                 onClick={() => handleTabChange(id as TabType)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition-all ${
                   activeTab === id ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
                 }`}
+                title={label}
               >
                 <Icon className="w-3.5 h-3.5" />
-                {label}
+                {activeTab === id && <span>{label}</span>}
               </button>
             ))}
           </div>
@@ -652,60 +722,103 @@ Only return files that need changes. Maintain all existing functionality.`,
           )}
         </div>
 
-        <div className="flex items-center gap-3">
-          {activeTab === 'preview' && appCode && previewDevice !== 'desktop' && (
-            <button onClick={fixResponsiveness} disabled={isFixingResp} className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/20 text-xs font-medium">
-              {isFixingResp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wrench className="w-3.5 h-3.5" />}
-              {isFixingResp ? 'Fixing...' : 'Fix Responsive'}
-            </button>
-          )}
-
+        <div className="flex items-center gap-2">
           {activeTab === 'preview' ? (
             <>
               {appCode && !isGenerating && (
                 <>
-                  <button onClick={() => setIsEditMode(!isEditMode)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium ${isEditMode ? 'bg-orange-500/10 text-orange-300 border-orange-500/20' : 'bg-slate-500/10 text-slate-300 border-transparent'}`}>
-                    <Pencil className="w-3.5 h-3.5" />
-                    <span className="hidden lg:inline">Edit</span>
+                  <button onClick={() => setIsEditMode(!isEditMode)} className={`p-2 rounded-lg border transition-all ${isEditMode ? 'bg-orange-500/10 text-orange-300 border-orange-500/20' : 'bg-slate-500/10 text-slate-400 border-transparent hover:text-white'}`} title="Quick Edit">
+                    <Pencil className="w-4 h-4" />
                   </button>
                   <button
                     onClick={toggleInspectMode}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+                    className={`p-2 rounded-lg border transition-all ${
                       isInspectMode
                         ? 'bg-purple-500/10 text-purple-300 border-purple-500/20'
-                        : 'bg-slate-500/10 text-slate-300 border-transparent'
+                        : 'bg-slate-500/10 text-slate-400 border-transparent hover:text-white'
                     }`}
-                    title="Inspect & edit specific components"
+                    title="Inspect Components"
                   >
-                    <MousePointer2 className="w-3.5 h-3.5" />
-                    <span className="hidden lg:inline">Inspect</span>
+                    <MousePointer2 className="w-4 h-4" />
                   </button>
-                  <button
-                    onClick={() => setAutoFixEnabled(!autoFixEnabled)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
-                      autoFixEnabled
-                        ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
-                        : 'bg-slate-500/10 text-slate-400 border-transparent'
-                    }`}
-                    title={autoFixEnabled ? 'Auto-fix enabled' : 'Auto-fix disabled'}
-                  >
-                    {isAutoFixing ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : autoFixEnabled ? (
-                      <Zap className="w-3.5 h-3.5" />
-                    ) : (
-                      <ZapOff className="w-3.5 h-3.5" />
+
+                  {/* Settings Dropdown */}
+                  <div className="relative" ref={settingsRef}>
+                    <button
+                      onClick={() => setShowSettings(!showSettings)}
+                      className={`flex items-center gap-1 p-2 rounded-lg border transition-all ${
+                        showSettings ? 'bg-slate-700 text-white border-slate-600' : 'bg-slate-500/10 text-slate-400 border-transparent hover:text-white'
+                      }`}
+                      title="Settings"
+                    >
+                      <Settings className="w-4 h-4" />
+                      <ChevronDown className={`w-3 h-3 transition-transform ${showSettings ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {showSettings && (
+                      <div className="absolute right-0 top-full mt-2 w-56 bg-slate-800 border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                        <div className="p-2 border-b border-white/5">
+                          <span className="text-[10px] text-slate-500 uppercase tracking-wide px-2">Preview Settings</span>
+                        </div>
+
+                        {/* Auto-fix Toggle */}
+                        <button
+                          onClick={() => setAutoFixEnabled(!autoFixEnabled)}
+                          className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-white/5 transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            {isAutoFixing ? (
+                              <Loader2 className="w-4 h-4 text-emerald-400 animate-spin" />
+                            ) : autoFixEnabled ? (
+                              <Zap className="w-4 h-4 text-emerald-400" />
+                            ) : (
+                              <ZapOff className="w-4 h-4 text-slate-500" />
+                            )}
+                            <span className="text-sm text-slate-200">Auto-fix Errors</span>
+                          </div>
+                          <div className={`w-8 h-4 rounded-full transition-colors ${autoFixEnabled ? 'bg-emerald-500' : 'bg-slate-600'}`}>
+                            <div className={`w-3 h-3 rounded-full bg-white mt-0.5 transition-transform ${autoFixEnabled ? 'translate-x-4.5 ml-0.5' : 'translate-x-0.5'}`} style={{ marginLeft: autoFixEnabled ? '17px' : '2px' }} />
+                          </div>
+                        </button>
+
+                        {/* Fix Responsive */}
+                        {previewDevice !== 'desktop' && (
+                          <button
+                            onClick={() => { fixResponsiveness(); setShowSettings(false); }}
+                            disabled={isFixingResp}
+                            className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-white/5 transition-colors disabled:opacity-50"
+                          >
+                            {isFixingResp ? (
+                              <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
+                            ) : (
+                              <Wrench className="w-4 h-4 text-indigo-400" />
+                            )}
+                            <span className="text-sm text-slate-200">{isFixingResp ? 'Fixing...' : 'Fix Responsive'}</span>
+                          </button>
+                        )}
+
+                        <div className="h-px bg-white/5" />
+
+                        {/* Accessibility Audit */}
+                        <button
+                          onClick={() => { runAccessibilityAudit(); setShowSettings(false); }}
+                          disabled={isAuditing}
+                          className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-white/5 transition-colors disabled:opacity-50"
+                        >
+                          {isAuditing ? (
+                            <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
+                          ) : (
+                            <ShieldCheck className="w-4 h-4 text-indigo-400" />
+                          )}
+                          <span className="text-sm text-slate-200">{isAuditing ? 'Auditing...' : 'Accessibility Audit'}</span>
+                        </button>
+                      </div>
                     )}
-                    <span className="hidden lg:inline">{isAutoFixing ? 'Fixing...' : 'Auto-fix'}</span>
-                  </button>
-                  <button onClick={runAccessibilityAudit} className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/20 text-xs font-medium">
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span className="hidden lg:inline">Audit A11y</span>
-                  </button>
+                  </div>
                 </>
               )}
               <div className="h-6 w-px bg-white/10" />
-              <button onClick={reloadPreview} className="p-2 hover:bg-white/5 rounded-full text-slate-400 hover:text-white transition-colors" title="Reload Preview" aria-label="Reload Preview">
+              <button onClick={reloadPreview} className="p-2 hover:bg-white/5 rounded-lg text-slate-400 hover:text-white transition-colors" title="Reload Preview" aria-label="Reload Preview">
                 <RefreshCw className="w-4 h-4" />
               </button>
             </>
@@ -734,6 +847,10 @@ Only return files that need changes. Maintain all existing functionality.`,
       <div className="flex-1 min-h-0 overflow-hidden bg-[#050811] group flex flex-col">
         {activeTab === 'debug' ? (
           <DebugPanel />
+        ) : activeTab === 'database' ? (
+          <DBStudio files={files} setFiles={setFiles} selectedModel={selectedModel} />
+        ) : activeTab === 'env' ? (
+          <EnvironmentPanel files={files} setFiles={setFiles} />
         ) : activeTab === 'preview' ? (
           <PreviewContent
             appCode={appCode}
@@ -768,7 +885,53 @@ Only return files that need changes. Maintain all existing functionality.`,
           />
         ) : (
           <div className="flex-1 flex min-h-0 h-full">
-            <FileExplorer files={files} activeFile={activeFile} onFileSelect={setActiveFile} />
+            <FileExplorer
+                files={files}
+                activeFile={activeFile}
+                onFileSelect={setActiveFile}
+                onCreateFile={(path, content) => {
+                  setFiles({ ...files, [path]: content });
+                }}
+                onDeleteFile={(path) => {
+                  const newFiles = { ...files };
+                  // Delete the file and any files in the folder if it's a folder
+                  Object.keys(newFiles).forEach(filePath => {
+                    if (filePath === path || filePath.startsWith(path + '/')) {
+                      delete newFiles[filePath];
+                    }
+                  });
+                  setFiles(newFiles);
+                  // If deleted file was active, switch to another file
+                  if (activeFile === path || activeFile.startsWith(path + '/')) {
+                    const remainingFiles = Object.keys(newFiles);
+                    if (remainingFiles.length > 0) {
+                      setActiveFile(remainingFiles[0]);
+                    }
+                  }
+                }}
+                onRenameFile={(oldPath, newPath) => {
+                  const newFiles: FileSystem = {};
+                  (Object.entries(files) as [string, string][]).forEach(([filePath, content]) => {
+                    if (filePath === oldPath) {
+                      newFiles[newPath] = content;
+                    } else if (filePath.startsWith(oldPath + '/')) {
+                      // Handle folder rename - update all nested files
+                      const relativePath = filePath.substring(oldPath.length);
+                      newFiles[newPath + relativePath] = content;
+                    } else {
+                      newFiles[filePath] = content;
+                    }
+                  });
+                  setFiles(newFiles);
+                  // Update active file if it was renamed
+                  if (activeFile === oldPath) {
+                    setActiveFile(newPath);
+                  } else if (activeFile.startsWith(oldPath + '/')) {
+                    const relativePath = activeFile.substring(oldPath.length);
+                    setActiveFile(newPath + relativePath);
+                  }
+                }}
+              />
             <div className="flex-1 flex flex-col min-h-0 min-w-0">
               {/* Split View Toggle */}
               <div className="flex items-center justify-between px-2 py-1 border-b border-white/5 bg-slate-900/50">
@@ -819,9 +982,13 @@ Only return files that need changes. Maintain all existing functionality.`,
                 </div>
               ) : files[activeFile] ? (
                 <div className={`flex-1 flex min-h-0 ${isSplitView ? 'flex-row' : 'flex-col'}`}>
-                  {/* Primary Editor */}
+                  {/* Primary Editor / Preview */}
                   <div className={isSplitView ? 'flex-1 min-w-0 border-r border-white/5' : 'flex-1'}>
-                    <CodeEditor files={files} setFiles={setFiles} activeFile={activeFile} />
+                    {activeFile.endsWith('.md') ? (
+                      <MarkdownPreview content={files[activeFile]} fileName={activeFile.split('/').pop() || activeFile} />
+                    ) : (
+                      <CodeEditor files={files} setFiles={setFiles} activeFile={activeFile} />
+                    )}
                   </div>
 
                   {/* Split Editor */}
@@ -840,7 +1007,11 @@ Only return files that need changes. Maintain all existing functionality.`,
                           ))}
                       </select>
                       <div className="flex-1 min-h-0">
-                        <CodeEditor files={files} setFiles={setFiles} activeFile={splitFile} />
+                        {splitFile.endsWith('.md') ? (
+                          <MarkdownPreview content={files[splitFile]} fileName={splitFile.split('/').pop() || splitFile} />
+                        ) : (
+                          <CodeEditor files={files} setFiles={setFiles} activeFile={splitFile} />
+                        )}
                       </div>
                     </div>
                   )}
@@ -1075,6 +1246,7 @@ const buildIframeHtml = (files: FileSystem, isInspectMode: boolean = false): str
     ${isInspectMode ? `
     (function() {
       let highlightedEl = null;
+      let selectedEl = null;
 
       // Try to get React component name from fiber
       function getComponentName(element) {
@@ -1147,11 +1319,18 @@ const buildIframeHtml = (files: FileSystem, isInspectMode: boolean = false): str
         const componentName = getComponentName(target);
         const parentComponents = getParentComponents(target);
 
-        // Remove highlight
+        // Remove highlight from hovered element
         if (highlightedEl) {
           highlightedEl.classList.remove('inspect-highlight');
         }
+
+        // Remove selected class from previously selected element
+        if (selectedEl && selectedEl !== target) {
+          selectedEl.classList.remove('inspect-selected');
+        }
+
         target.classList.add('inspect-selected');
+        selectedEl = target;
 
         window.parent.postMessage({
           type: 'INSPECT_SELECT',

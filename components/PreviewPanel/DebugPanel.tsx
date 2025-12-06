@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Bug,
   Search,
@@ -115,7 +115,7 @@ interface LogEntryCardProps {
   onToggle: () => void;
 }
 
-function LogEntryCard({ entry, isExpanded, onToggle }: LogEntryCardProps) {
+const LogEntryCard: React.FC<LogEntryCardProps> = ({ entry, isExpanded, onToggle }) => {
   const [copied, setCopied] = useState(false);
 
   const typeConfig = {

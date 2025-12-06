@@ -321,3 +321,88 @@ export function generateContextForPrompt(files: FileSystem): string {
 
   return context;
 }
+
+// Generate full PROJECT_CONTEXT.md content
+export function generateProjectContextMd(files: FileSystem): string {
+  const codemap = generateCodeMap(files);
+  const components = codemap.files.flatMap(f => f.components);
+  const hooks = codemap.files.filter(f => f.type === 'hook');
+  const utilities = codemap.files.filter(f => f.type === 'utility');
+  const dataFiles = codemap.files.filter(f => f.type === 'data');
+
+  // Generate folder tree
+  const paths = Object.keys(files).sort();
+  const treeLines: string[] = [];
+  const seen = new Set<string>();
+
+  for (const path of paths) {
+    const parts = path.split('/');
+    let currentPath = '';
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const isLast = i === parts.length - 1;
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+
+      if (!seen.has(currentPath)) {
+        seen.add(currentPath);
+        const indent = '  '.repeat(i);
+        const prefix = isLast ? '📄' : '📁';
+        treeLines.push(`${indent}${prefix} ${part}`);
+      }
+    }
+  }
+
+  let md = `# PROJECT CONTEXT
+
+> Auto-generated project structure for AI context continuity.
+> Last updated: ${new Date().toISOString()}
+
+## Overview
+
+| Metric | Count |
+|--------|-------|
+| Total Files | ${codemap.files.length} |
+| Components | ${components.length} |
+| Hooks | ${hooks.length} |
+| Utilities | ${utilities.length} |
+| Data Files | ${dataFiles.length} |
+
+## File Structure
+
+\`\`\`
+${treeLines.join('\n')}
+\`\`\`
+
+## Components
+
+${components.map(comp => `### ${comp.name}
+${comp.props.length > 0 ? `- **Props:** ${comp.props.join(', ')}` : ''}
+${comp.hooks.length > 0 ? `- **Hooks:** ${comp.hooks.join(', ')}` : ''}
+${comp.children.length > 0 ? `- **Renders:** ${comp.children.join(', ')}` : ''}`).join('\n\n')}
+
+## Hooks
+
+${hooks.length > 0 ? hooks.map(h => `- **${h.path}**: ${h.exports.join(', ')}`).join('\n') : '_No custom hooks_'}
+
+## Utilities
+
+${utilities.length > 0 ? utilities.map(u => `- **${u.path}**: ${u.exports.join(', ')}`).join('\n') : '_No utilities_'}
+
+## Data & Database
+
+${dataFiles.length > 0 ? dataFiles.map(d => `- **${d.path}**`).join('\n') : '_No data files_'}
+
+## Import Graph
+
+${codemap.files.filter(f => f.imports.filter(i => i.from.startsWith('.')).length > 0).map(file => {
+  const localImports = file.imports.filter(i => i.from.startsWith('.'));
+  return `- **${file.path}** → ${localImports.map(i => i.from.split('/').pop()).join(', ')}`;
+}).join('\n')}
+
+---
+_This context is automatically updated and sent with AI prompts for continuity._
+`;
+
+  return md;
+}

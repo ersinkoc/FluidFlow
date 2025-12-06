@@ -1,12 +1,13 @@
-import React, { useCallback } from 'react';
-import Editor from '@monaco-editor/react';
-import { FileCode } from 'lucide-react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
+import Editor, { OnMount, BeforeMount } from '@monaco-editor/react';
+import { FileCode, Check, Circle } from 'lucide-react';
 import { FileSystem } from '../../types';
 
 interface CodeEditorProps {
   files: FileSystem;
   setFiles: (files: FileSystem) => void;
   activeFile: string;
+  originalFiles?: FileSystem; // For tracking unsaved changes
 }
 
 // Map file extensions to Monaco language IDs
@@ -26,18 +27,80 @@ const getLanguage = (filename: string): string => {
   return languageMap[ext] || 'plaintext';
 };
 
-export const CodeEditor: React.FC<CodeEditorProps> = ({ files, setFiles, activeFile }) => {
+export const CodeEditor: React.FC<CodeEditorProps> = ({ files, setFiles, activeFile, originalFiles }) => {
   const content = files[activeFile] || '';
   const language = getLanguage(activeFile);
+  const [isSaved, setIsSaved] = useState(true);
+  const [showSaveIndicator, setShowSaveIndicator] = useState(false);
+  const editorRef = useRef<any>(null);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Track if file has been modified
+  const isModified = originalFiles ? files[activeFile] !== originalFiles[activeFile] : false;
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleEditorChange = useCallback(
     (value: string | undefined) => {
       if (value !== undefined) {
         setFiles({ ...files, [activeFile]: value });
+        setIsSaved(false);
+
+        // Auto-save after 1 second of no typing
+        if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+        }
+        saveTimeoutRef.current = setTimeout(() => {
+          setIsSaved(true);
+          setShowSaveIndicator(true);
+          setTimeout(() => setShowSaveIndicator(false), 1500);
+        }, 1000);
       }
     },
     [files, activeFile, setFiles]
   );
+
+  // Disable TypeScript/JavaScript validation before mount
+  const handleEditorWillMount: BeforeMount = (monaco) => {
+    // Disable all TypeScript diagnostics (red squiggles)
+    monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+      noSemanticValidation: true,
+      noSyntaxValidation: true,
+      noSuggestionDiagnostics: true
+    });
+    monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+      noSemanticValidation: true,
+      noSyntaxValidation: true,
+      noSuggestionDiagnostics: true
+    });
+  };
+
+  // Handle Ctrl+S save
+  const handleEditorMount: OnMount = (editor, monaco) => {
+    editorRef.current = editor;
+
+    // Add Ctrl+S save action
+    editor.addAction({
+      id: 'save-file',
+      label: 'Save File',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
+      run: () => {
+        if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+        }
+        setIsSaved(true);
+        setShowSaveIndicator(true);
+        setTimeout(() => setShowSaveIndicator(false), 1500);
+      }
+    });
+  };
 
   if (!files[activeFile]) {
     return null;
@@ -50,10 +113,24 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ files, setFiles, activeF
         <div className="flex items-center gap-2 px-3 py-1.5 bg-[#0d1117] rounded-t border-t border-l border-r border-white/10">
           <FileCode className="w-3.5 h-3.5 text-blue-400" />
           <span className="text-[11px] font-medium text-slate-300">{activeFile}</span>
+          {!isSaved && (
+            <Circle className="w-2 h-2 fill-orange-400 text-orange-400" title="Unsaved changes" />
+          )}
+          {isModified && isSaved && (
+            <span className="text-[9px] px-1 py-0.5 bg-amber-500/20 text-amber-400 rounded">modified</span>
+          )}
         </div>
-        <span className="text-[10px] text-slate-600 font-mono pr-2">
-          {content.split('\n').length} lines
-        </span>
+        <div className="flex items-center gap-2">
+          {showSaveIndicator && (
+            <div className="flex items-center gap-1 text-emerald-400 animate-in fade-in duration-200">
+              <Check className="w-3 h-3" />
+              <span className="text-[10px]">Saved</span>
+            </div>
+          )}
+          <span className="text-[10px] text-slate-600 font-mono pr-2">
+            {content.split('\n').length} lines
+          </span>
+        </div>
       </div>
 
       {/* Monaco Editor */}
@@ -63,6 +140,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ files, setFiles, activeF
           language={language}
           value={content}
           onChange={handleEditorChange}
+          beforeMount={handleEditorWillMount}
+          onMount={handleEditorMount}
           theme="vs-dark"
           options={{
             fontSize: 12,
