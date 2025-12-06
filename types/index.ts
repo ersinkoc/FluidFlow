@@ -9,6 +9,40 @@ export interface HistoryEntry {
   files: FileSystem;
 }
 
+// File change tracking
+export interface FileChange {
+  path: string;
+  type: 'added' | 'modified' | 'deleted';
+  additions: number;
+  deletions: number;
+}
+
+// Chat message types
+export type ChatRole = 'user' | 'assistant' | 'system';
+
+export interface ChatAttachment {
+  type: 'sketch' | 'brand';
+  file: File;
+  preview: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: ChatRole;
+  timestamp: number;
+  // User message
+  prompt?: string;
+  attachments?: ChatAttachment[];
+  // Assistant message
+  explanation?: string;
+  files?: FileSystem;
+  fileChanges?: FileChange[];
+  // For reverting
+  snapshotFiles?: FileSystem;
+  isGenerating?: boolean;
+  error?: string;
+}
+
 export interface AccessibilityIssue {
   type: 'error' | 'warning';
   message: string;
@@ -47,3 +81,35 @@ export interface PushResult {
 export type PreviewDevice = 'desktop' | 'tablet' | 'mobile';
 export type TabType = 'preview' | 'code' | 'database' | 'tests' | 'docs';
 export type TerminalTab = 'console' | 'network';
+
+// AI Model types
+export type ModelTier = 'fast' | 'pro';
+
+export interface ModelConfig {
+  id: string;
+  name: string;
+  tier: ModelTier;
+  description: string;
+}
+
+// Code generation models only
+export const AI_MODELS: ModelConfig[] = [
+  {
+    id: 'gemini-2.5-flash',
+    name: 'Gemini 2.5 Flash',
+    tier: 'fast',
+    description: 'Fast & cost-effective'
+  },
+  {
+    id: 'gemini-2.5-pro',
+    name: 'Gemini 2.5 Pro',
+    tier: 'pro',
+    description: 'Best for complex tasks'
+  },
+  {
+    id: 'gemini-3-pro-preview',
+    name: 'Gemini 3 Pro Preview',
+    tier: 'pro',
+    description: 'Best for complex tasks'
+  }
+];

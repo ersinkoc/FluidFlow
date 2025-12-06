@@ -1,12 +1,20 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { ControlPanel } from './components/ControlPanel';
 import { PreviewPanel } from './components/PreviewPanel';
+import { CommandPalette } from './components/CommandPalette';
+import { SnippetsPanel } from './components/SnippetsPanel';
+import { TailwindPalette } from './components/TailwindPalette';
+import { ComponentTree } from './components/ComponentTree';
+import { DeployModal } from './components/DeployModal';
+import { ShareModal, loadProjectFromUrl } from './components/ShareModal';
+import { useKeyboardShortcuts, KeyboardShortcut } from './hooks/useKeyboardShortcuts';
+import { useVersionHistory } from './hooks/useVersionHistory';
 import { diffLines } from 'diff';
 import { Check, Split, FileCode, AlertCircle } from 'lucide-react';
-import { FileSystem, HistoryEntry } from './types';
+import { FileSystem, TabType } from './types';
 
 // Re-export types for backwards compatibility
-export type { FileSystem, HistoryEntry } from './types';
+export type { FileSystem } from './types';
 
 interface DiffModalProps {
   originalFiles: FileSystem;
@@ -207,45 +215,39 @@ export default function App() {
     }, null, 2)
   };
 
-  const [files, setFiles] = useState<FileSystem>(defaultFiles);
+  const { files, setFiles, undo, redo, canUndo, canRedo, reset: resetFiles } = useVersionHistory(defaultFiles);
   const [activeFile, setActiveFile] = useState<string>('src/App.tsx');
-  
+
+  // Load project from URL if present
+  React.useEffect(() => {
+    const urlProject = loadProjectFromUrl();
+    if (urlProject && Object.keys(urlProject).length > 0) {
+      setFiles(urlProject);
+      // Select first src file
+      const firstSrc = Object.keys(urlProject).find(f => f.startsWith('src/'));
+      if (firstSrc) setActiveFile(firstSrc);
+    }
+  }, []);
+
   const [suggestions, setSuggestions] = useState<string[] | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [resetKey, setResetKey] = useState(0);
+  const [selectedModel, setSelectedModel] = useState('gemini-2.5-flash');
+  const [activeTab, setActiveTab] = useState<TabType>('preview');
 
-  // History Management
-  const [history, setHistory] = useState<HistoryEntry[]>([
-    {
-      id: 'init',
-      timestamp: Date.now(),
-      label: 'Initial Project',
-      files: defaultFiles
-    }
-  ]);
+  // Command Palette State
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isSnippetsPanelOpen, setIsSnippetsPanelOpen] = useState(false);
+  const [isTailwindPaletteOpen, setIsTailwindPaletteOpen] = useState(false);
+  const [isComponentTreeOpen, setIsComponentTreeOpen] = useState(false);
+  const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
   // Diff Review State
   const [pendingReview, setPendingReview] = useState<{
      label: string;
      newFiles: FileSystem;
   } | null>(null);
-
-  const addToHistory = (label: string, newFiles: FileSystem) => {
-    setHistory(prev => [
-      {
-        id: crypto.randomUUID(),
-        timestamp: Date.now(),
-        label,
-        files: { ...newFiles } // Deep copy
-      },
-      ...prev
-    ]);
-  };
-
-  const restoreHistory = (entry: HistoryEntry) => {
-    // Instead of immediate confirm, open Diff Modal
-    reviewChange(`Revert to "${entry.label}"`, entry.files);
-  };
 
   const reviewChange = (label: string, newFiles: FileSystem) => {
      setPendingReview({ label, newFiles });
@@ -254,11 +256,7 @@ export default function App() {
   const confirmChange = () => {
      if (pendingReview) {
         setFiles(pendingReview.newFiles);
-        // Add to history only if it's NOT a revert action (reverts create a new history point usually, or we just jump back)
-        // If it is a revert, we might want to log "Reverted to X".
-        // The label passed into reviewChange usually describes the action.
-        addToHistory(pendingReview.label, pendingReview.newFiles);
-        
+
         // If the active file was deleted in the new state, reset it
         if (!pendingReview.newFiles[activeFile]) {
              const firstSrc = Object.keys(pendingReview.newFiles).find(f => f.startsWith('src/'));
@@ -270,18 +268,122 @@ export default function App() {
   };
 
   const resetApp = () => {
-    setFiles(defaultFiles);
+    resetFiles(defaultFiles);
     setActiveFile('src/App.tsx');
     setSuggestions(null);
     setIsGenerating(false);
-    setHistory([{
-      id: 'init',
-      timestamp: Date.now(),
-      label: 'Initial Project',
-      files: defaultFiles
-    }]);
     setResetKey(prev => prev + 1);
   };
+
+  // Command Palette actions
+  const handleCommandAction = useCallback((action: string) => {
+    switch (action) {
+      case 'toggle-preview':
+        setActiveTab((prev: TabType) => prev === 'preview' ? 'code' : 'preview');
+        break;
+      case 'reset':
+        resetApp();
+        break;
+      case 'snippets':
+        setIsSnippetsPanelOpen(true);
+        break;
+      case 'tailwind':
+        setIsTailwindPaletteOpen(true);
+        break;
+      case 'component-tree':
+        setIsComponentTreeOpen(true);
+        break;
+      case 'deploy':
+        setIsDeployModalOpen(true);
+        break;
+      case 'share':
+        setIsShareModalOpen(true);
+        break;
+      case 'undo':
+        if (canUndo) undo();
+        break;
+      case 'redo':
+        if (canRedo) redo();
+        break;
+      // Other actions handled by child components
+    }
+  }, [canUndo, canRedo, undo, redo]);
+
+  // Keyboard shortcuts
+  const shortcuts: KeyboardShortcut[] = useMemo(() => [
+    {
+      key: 'p',
+      ctrl: true,
+      action: () => setIsCommandPaletteOpen(true),
+      description: 'Open Command Palette'
+    },
+    {
+      key: 'k',
+      ctrl: true,
+      action: () => setIsCommandPaletteOpen(true),
+      description: 'Open Command Palette'
+    },
+    {
+      key: 'Escape',
+      action: () => {
+        if (isCommandPaletteOpen) setIsCommandPaletteOpen(false);
+        else if (pendingReview) setPendingReview(null);
+      },
+      description: 'Close modal'
+    },
+    {
+      key: '1',
+      ctrl: true,
+      action: () => setActiveTab('preview'),
+      description: 'Switch to Preview'
+    },
+    {
+      key: '2',
+      ctrl: true,
+      action: () => setActiveTab('code'),
+      description: 'Switch to Code'
+    },
+    {
+      key: 'j',
+      ctrl: true,
+      action: () => setIsSnippetsPanelOpen(true),
+      description: 'Open Snippets'
+    },
+    {
+      key: 't',
+      ctrl: true,
+      action: () => setIsTailwindPaletteOpen(true),
+      description: 'Open Tailwind Palette'
+    },
+    {
+      key: 't',
+      ctrl: true,
+      shift: true,
+      action: () => setIsComponentTreeOpen(true),
+      description: 'Open Component Tree'
+    },
+    {
+      key: 'z',
+      ctrl: true,
+      action: () => { if (canUndo) undo(); },
+      description: 'Undo'
+    },
+    {
+      key: 'y',
+      ctrl: true,
+      action: () => { if (canRedo) redo(); },
+      description: 'Redo'
+    },
+    {
+      key: 'z',
+      ctrl: true,
+      shift: true,
+      action: () => { if (canRedo) redo(); },
+      description: 'Redo'
+    },
+  ], [isCommandPaletteOpen, pendingReview, canUndo, canRedo, undo, redo]);
+
+  useKeyboardShortcuts(shortcuts);
 
   return (
     <div className="flex flex-col min-h-screen h-screen max-h-screen w-full bg-[#020617] text-white overflow-hidden relative selection:bg-blue-500/30 selection:text-blue-50">
@@ -291,7 +393,7 @@ export default function App() {
        <div className="absolute top-[40%] left-[40%] w-[30%] h-[30%] bg-purple-600/5 rounded-full blur-[100px] pointer-events-none" />
 
        <main className="flex flex-col md:flex-row flex-1 min-h-0 w-full p-4 gap-4 z-10 overflow-hidden">
-          <ControlPanel 
+          <ControlPanel
             key={resetKey}
             resetApp={resetApp}
             files={files}
@@ -301,10 +403,9 @@ export default function App() {
             setSuggestions={setSuggestions}
             isGenerating={isGenerating}
             setIsGenerating={setIsGenerating}
-            history={history}
-            addToHistory={addToHistory}
-            restoreHistory={restoreHistory}
             reviewChange={reviewChange}
+            selectedModel={selectedModel}
+            onModelChange={setSelectedModel}
           />
           <PreviewPanel
             files={files}
@@ -315,12 +416,15 @@ export default function App() {
             setSuggestions={setSuggestions}
             isGenerating={isGenerating}
             reviewChange={reviewChange}
+            selectedModel={selectedModel}
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
           />
        </main>
 
        {/* Diff Modal */}
        {pendingReview && (
-          <DiffModal 
+          <DiffModal
              originalFiles={files}
              newFiles={pendingReview.newFiles}
              label={pendingReview.label}
@@ -328,6 +432,67 @@ export default function App() {
              onCancel={() => setPendingReview(null)}
           />
        )}
+
+       {/* Command Palette */}
+       <CommandPalette
+         isOpen={isCommandPaletteOpen}
+         onClose={() => setIsCommandPaletteOpen(false)}
+         files={files}
+         activeFile={activeFile}
+         onFileSelect={(file: string) => {
+           setActiveFile(file);
+           setActiveTab('code');
+         }}
+         onAction={handleCommandAction}
+       />
+
+       {/* Snippets Panel */}
+       <SnippetsPanel
+         isOpen={isSnippetsPanelOpen}
+         onClose={() => setIsSnippetsPanelOpen(false)}
+         onInsert={(code: string) => {
+           // Insert code at the end of the active file
+           if (activeFile && files[activeFile]) {
+             const newContent = files[activeFile] + '\n\n' + code;
+             setFiles({ ...files, [activeFile]: newContent });
+             setActiveTab('code');
+           }
+         }}
+       />
+
+       {/* Tailwind Palette */}
+       <TailwindPalette
+         isOpen={isTailwindPaletteOpen}
+         onClose={() => setIsTailwindPaletteOpen(false)}
+         onInsert={(className: string) => {
+           navigator.clipboard.writeText(className);
+         }}
+       />
+
+       {/* Component Tree */}
+       <ComponentTree
+         isOpen={isComponentTreeOpen}
+         onClose={() => setIsComponentTreeOpen(false)}
+         files={files}
+         onFileSelect={(file: string) => {
+           setActiveFile(file);
+           setActiveTab('code');
+         }}
+       />
+
+       {/* Deploy Modal */}
+       <DeployModal
+         isOpen={isDeployModalOpen}
+         onClose={() => setIsDeployModalOpen(false)}
+         files={files}
+       />
+
+       {/* Share Modal */}
+       <ShareModal
+         isOpen={isShareModalOpen}
+         onClose={() => setIsShareModalOpen(false)}
+         files={files}
+       />
     </div>
   );
 }

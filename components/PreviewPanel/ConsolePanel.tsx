@@ -27,18 +27,22 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
 }) => {
   const consoleEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll console
+  // Auto-scroll console - only scroll within the console panel, not the whole page
   useEffect(() => {
     if (isOpen && activeTab === 'console' && consoleEndRef.current) {
-      consoleEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      const container = consoleEndRef.current.parentElement;
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
     }
   }, [logs, isOpen, activeTab]);
 
   return (
     <div
-      className={`absolute bottom-0 left-0 right-0 bg-slate-900 border-t border-white/10 transition-all duration-300 flex flex-col shadow-2xl z-40 ${
+      className={`absolute bottom-0 left-0 right-0 bg-slate-900 border-t border-white/10 transition-[height] duration-300 ease-out flex flex-col shadow-2xl z-40 ${
         isOpen ? 'h-48' : 'h-8'
       }`}
+      style={{ position: 'absolute' }}
     >
       {/* Console Header */}
       <div

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
   Monitor, Smartphone, Tablet, RefreshCw, Eye, Code2, Copy, Check, Download, Database,
-  ShieldCheck, Pencil, Send, FileText, Wrench, FlaskConical, Package, Loader2
+  ShieldCheck, Pencil, Send, FileText, Wrench, FlaskConical, Package, Loader2,
+  SplitSquareVertical, X
 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import JSZip from 'jszip';
@@ -27,15 +28,23 @@ interface PreviewPanelProps {
   setSuggestions: (s: string[] | null) => void;
   isGenerating: boolean;
   reviewChange: (label: string, newFiles: FileSystem) => void;
+  selectedModel: string;
+  activeTab?: TabType;
+  setActiveTab?: (tab: TabType) => void;
 }
 
 export const PreviewPanel: React.FC<PreviewPanelProps> = ({
-  files, setFiles, activeFile, setActiveFile, suggestions, setSuggestions, isGenerating, reviewChange
+  files, setFiles, activeFile, setActiveFile, suggestions, setSuggestions, isGenerating, reviewChange, selectedModel,
+  activeTab: externalActiveTab, setActiveTab: externalSetActiveTab
 }) => {
   // State
   const [iframeSrc, setIframeSrc] = useState<string>('');
   const [key, setKey] = useState(0);
-  const [activeTab, setActiveTab] = useState<TabType>('preview');
+  const [internalActiveTab, setInternalActiveTab] = useState<TabType>('preview');
+
+  // Use external state if provided, otherwise use internal
+  const activeTab = externalActiveTab ?? internalActiveTab;
+  const setActiveTab = externalSetActiveTab ?? setInternalActiveTab;
   const [isCopied, setIsCopied] = useState(false);
   const [previewDevice, setPreviewDevice] = useState<PreviewDevice>('desktop');
   const [isFixingResp, setIsFixingResp] = useState(false);
@@ -70,6 +79,10 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
   const [networkLogs, setNetworkLogs] = useState<NetworkRequest[]>([]);
   const [isConsoleOpen, setIsConsoleOpen] = useState(false);
   const [activeTerminalTab, setActiveTerminalTab] = useState<TerminalTab>('console');
+
+  // Split View
+  const [isSplitView, setIsSplitView] = useState(false);
+  const [splitFile, setSplitFile] = useState<string>('');
 
   const appCode = files['src/App.tsx'];
 
@@ -119,7 +132,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: selectedModel,
         contents: [{ parts: [{ text: `Generate unit tests for this React component using React Testing Library.\nComponent:\n${appCode}\n\nOutput ONLY the raw code for the test file.` }] }]
       });
       let tests = (response.text || '').replace(/```tsx/g, '').replace(/```typescript/g, '').replace(/```/g, '');
@@ -139,7 +152,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: selectedModel,
         contents: [{ parts: [{ text: `Analyze the following React component and generate a professional README.md file.\n\nReact Component Code:\n${appCode}` }] }]
       });
       let docs = (response.text || '').replace(/```markdown/g, '').replace(/```md/g, '').replace(/```/g, '');
@@ -159,7 +172,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: selectedModel,
         contents: [{ parts: [{ text: `Based on this React App, generate a SQL schema for SQLite.\nCode: ${appCode}\nOutput ONLY SQL.` }] }]
       });
       const sql = (response.text || '').replace(/```sql/g, '').replace(/```/g, '');
@@ -180,7 +193,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: selectedModel,
         contents: [{ parts: [{ text: `Audit this code:\n${appCode}` }] }],
         config: {
           systemInstruction: 'You are a WCAG 2.1 Accessibility Auditor. Output ONLY a JSON object with score (0-100) and issues array.',
@@ -202,7 +215,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: selectedModel,
         contents: [{ parts: [{ text: `Issues to fix: ${JSON.stringify(accessibilityReport.issues)}\n\nOriginal Code:\n${appCode}` }] }],
         config: { systemInstruction: 'Apply accessibility fixes. Return ONLY the FULL updated code.' }
       });
@@ -223,7 +236,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: selectedModel,
         contents: [{ parts: [{ text: `Optimize this React component for mobile devices.\n\nCode: ${appCode}\n\nOutput ONLY the full updated code.` }] }]
       });
       let fixedCode = (response.text || '').replace(/```jsx/g, '').replace(/```tsx/g, '').replace(/```/g, '');
@@ -241,7 +254,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: selectedModel,
         contents: [{ parts: [{ text: `Edit this React code based on: "${editPrompt}"\n\nCode: ${appCode}\n\nOutput ONLY the full updated code.` }] }]
       });
       let fixedCode = (response.text || '').replace(/```jsx/g, '').replace(/```tsx/g, '').replace(/```/g, '');
@@ -260,7 +273,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: selectedModel,
         contents: [{ parts: [{ text: `Fix this runtime error: "${message}"\n\nCode: ${appCode}\n\nOutput ONLY the full updated code.` }] }]
       });
       let fixedCode = (response.text || '').replace(/```jsx/g, '').replace(/```tsx/g, '').replace(/```/g, '');
@@ -485,9 +498,47 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
             fixError={fixError}
           />
         ) : (
-          <div className="absolute inset-0 flex">
+          <div className="flex-1 flex min-h-0 h-full">
             <FileExplorer files={files} activeFile={activeFile} onFileSelect={setActiveFile} />
-            <div className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 flex flex-col min-h-0 min-w-0">
+              {/* Split View Toggle */}
+              <div className="flex items-center justify-between px-2 py-1 border-b border-white/5 bg-slate-900/50">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500 font-mono truncate max-w-[200px]">{activeFile}</span>
+                  {isSplitView && splitFile && (
+                    <>
+                      <span className="text-slate-600">|</span>
+                      <span className="text-xs text-slate-500 font-mono truncate max-w-[200px]">{splitFile}</span>
+                    </>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => {
+                      if (!isSplitView) {
+                        // Find another file to show in split view
+                        const otherFiles = Object.keys(files).filter(f => f !== activeFile && (f.endsWith('.tsx') || f.endsWith('.ts') || f.endsWith('.jsx') || f.endsWith('.js')));
+                        setSplitFile(otherFiles[0] || '');
+                      }
+                      setIsSplitView(!isSplitView);
+                    }}
+                    className={`p-1.5 rounded transition-colors ${isSplitView ? 'bg-blue-600/20 text-blue-400' : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}
+                    title={isSplitView ? 'Close Split View' : 'Split View'}
+                  >
+                    <SplitSquareVertical className="w-4 h-4" />
+                  </button>
+                  {isSplitView && (
+                    <button
+                      onClick={() => setIsSplitView(false)}
+                      className="p-1.5 rounded text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-colors"
+                      title="Close Split"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
               {isGeneratingDB || isGeneratingTests || isGeneratingDocs ? (
                 <div className="w-full h-full flex flex-col items-center justify-center text-blue-400 gap-4">
                   <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
@@ -498,7 +549,33 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
                   </p>
                 </div>
               ) : files[activeFile] ? (
-                <CodeEditor files={files} setFiles={setFiles} activeFile={activeFile} />
+                <div className={`flex-1 flex min-h-0 ${isSplitView ? 'flex-row' : 'flex-col'}`}>
+                  {/* Primary Editor */}
+                  <div className={isSplitView ? 'flex-1 min-w-0 border-r border-white/5' : 'flex-1'}>
+                    <CodeEditor files={files} setFiles={setFiles} activeFile={activeFile} />
+                  </div>
+
+                  {/* Split Editor */}
+                  {isSplitView && splitFile && files[splitFile] && (
+                    <div className="flex-1 min-w-0 flex flex-col">
+                      {/* Split file selector */}
+                      <select
+                        value={splitFile}
+                        onChange={(e) => setSplitFile(e.target.value)}
+                        className="w-full px-2 py-1 bg-slate-800/50 border-b border-white/5 text-xs text-slate-400 outline-none"
+                      >
+                        {Object.keys(files)
+                          .filter(f => f !== activeFile)
+                          .map(f => (
+                            <option key={f} value={f}>{f}</option>
+                          ))}
+                      </select>
+                      <div className="flex-1 min-h-0">
+                        <CodeEditor files={files} setFiles={setFiles} activeFile={splitFile} />
+                      </div>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center text-slate-600 gap-3">
                   <Code2 className="w-10 h-10 opacity-50" />
@@ -545,11 +622,16 @@ const PreviewContent: React.FC<{
 }> = (props) => {
   const { appCode, iframeSrc, previewDevice, isGenerating, isFixingResp, isEditMode, editPrompt, setEditPrompt, isQuickEditing, handleQuickEdit, setIsEditMode, iframeKey, logs, networkLogs, isConsoleOpen, setIsConsoleOpen, activeTerminalTab, setActiveTerminalTab, setLogs, setNetworkLogs, fixError } = props;
 
+  // Calculate content area height based on console state
+  const contentStyle = {
+    height: isConsoleOpen ? 'calc(100% - 192px)' : 'calc(100% - 32px)'
+  };
+
   return (
-    <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
+    <div className="flex-1 min-h-0 h-full overflow-hidden relative">
       <div className="absolute inset-0 opacity-[0.15] pointer-events-none z-0" style={{ backgroundImage: 'linear-gradient(rgba(148,163,184,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.1) 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
 
-      <div className={`flex-1 min-h-0 flex items-center justify-center overflow-auto relative z-10 transition-all duration-300 ${isConsoleOpen ? 'pb-48' : 'pb-8'}`}>
+      <div className="flex items-center justify-center overflow-hidden relative z-10 transition-all duration-300" style={contentStyle}>
         {appCode ? (
           <div className={`relative z-10 transition-all duration-500 ease-in-out bg-slate-950 shadow-2xl overflow-hidden flex flex-col ${
             previewDevice === 'mobile' ? 'w-[375px] h-[667px] max-h-full rounded-[40px] border-[8px] border-slate-800 ring-4 ring-black shadow-[0_0_50px_rgba(0,0,0,0.5)]' :
@@ -580,7 +662,7 @@ const PreviewContent: React.FC<{
             <iframe key={iframeKey} srcDoc={iframeSrc} title="Preview" className={`w-full h-full bg-white transition-opacity duration-500 ${isGenerating ? 'opacity-40' : 'opacity-100'}`} sandbox="allow-scripts allow-same-origin" />
 
             {isEditMode && (
-              <div className={`absolute left-1/2 -translate-x-1/2 w-[90%] md:w-[600px] z-50 animate-in slide-in-from-bottom-4 duration-300 transition-all ${isConsoleOpen ? 'bottom-52' : 'bottom-12'}`}>
+              <div className="absolute left-1/2 -translate-x-1/2 w-[90%] md:w-[600px] z-50 animate-in slide-in-from-bottom-4 duration-300 bottom-8">
                 <div className="flex items-center gap-2 p-1.5 bg-slate-900/90 backdrop-blur-xl border border-orange-500/30 rounded-full shadow-2xl ring-1 ring-orange-500/20">
                   <div className="pl-3 pr-2 text-orange-400"><Pencil className="w-4 h-4" /></div>
                   <input type="text" value={editPrompt} onChange={(e) => setEditPrompt(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleQuickEdit()} placeholder="Describe a specific change..." className="flex-1 bg-transparent border-none text-sm text-white placeholder-slate-400 focus:ring-0 px-2 h-9" autoFocus aria-label="Quick edit prompt" />
@@ -658,16 +740,101 @@ const buildIframeHtml = (files: FileSystem): string => {
     (async () => {
       const files = JSON.parse(decodeURIComponent("${encodeURIComponent(JSON.stringify(files))}"));
       const importMap = { imports: { "react": "https://esm.sh/react@19.0.0", "react-dom/client": "https://esm.sh/react-dom@19.0.0/client", "lucide-react": "https://esm.sh/lucide-react@0.469.0" }};
+
+      // Helper to resolve relative paths to absolute
+      function resolvePath(fromFile, importPath) {
+        if (!importPath.startsWith('.')) return importPath;
+        const fromDir = fromFile.substring(0, fromFile.lastIndexOf('/'));
+        const parts = fromDir.split('/').filter(Boolean);
+        const importParts = importPath.split('/');
+
+        for (const part of importParts) {
+          if (part === '.') continue;
+          if (part === '..') parts.pop();
+          else parts.push(part);
+        }
+        return parts.join('/');
+      }
+
+      // Helper to find actual file (handles missing extensions)
+      function findFile(path) {
+        if (files[path]) return path;
+        const extensions = ['.tsx', '.ts', '.jsx', '.js'];
+        for (const ext of extensions) {
+          if (files[path + ext]) return path + ext;
+        }
+        // Try index files
+        for (const ext of extensions) {
+          if (files[path + '/index' + ext]) return path + '/index' + ext;
+        }
+        return null;
+      }
+
+      // Transform imports in code to use absolute paths
+      function transformImports(code, fromFile) {
+        return code.replace(
+          /(import\\s+(?:[\\w{},\\s*]+\\s+from\\s+)?['"])([^'"]+)(['"])/g,
+          (match, prefix, importPath, suffix) => {
+            if (importPath.startsWith('.')) {
+              const resolved = resolvePath(fromFile, importPath);
+              const actualFile = findFile(resolved);
+              if (actualFile) {
+                return prefix + actualFile + suffix;
+              }
+              return prefix + resolved + suffix;
+            }
+            return match;
+          }
+        ).replace(
+          /(export\\s+(?:[\\w{},\\s*]+\\s+from\\s+)?['"])([^'"]+)(['"])/g,
+          (match, prefix, importPath, suffix) => {
+            if (importPath.startsWith('.')) {
+              const resolved = resolvePath(fromFile, importPath);
+              const actualFile = findFile(resolved);
+              if (actualFile) {
+                return prefix + actualFile + suffix;
+              }
+              return prefix + resolved + suffix;
+            }
+            return match;
+          }
+        );
+      }
+
+      // Process all files
       for (const [filename, content] of Object.entries(files)) {
         if (/\\.(tsx|ts|jsx|js)$/.test(filename)) {
           try {
-            const transpiled = Babel.transform(content, { presets: ['react', ['env', { modules: false }], 'typescript'], filename }).code;
+            // Transform relative imports to absolute before transpiling
+            const transformedContent = transformImports(content, filename);
+            const transpiled = Babel.transform(transformedContent, { presets: ['react', ['env', { modules: false }], 'typescript'], filename }).code;
             const url = URL.createObjectURL(new Blob([transpiled], { type: 'application/javascript' }));
+
+            // Add multiple import map entries for flexibility
             importMap.imports[filename] = url;
             importMap.imports[filename.replace(/\\.(tsx|ts|jsx|js)$/, '')] = url;
+
+            // Also add relative-style entries from src
+            if (filename.startsWith('src/')) {
+              const relativePath = './' + filename.substring(4);
+              importMap.imports[relativePath] = url;
+              importMap.imports[relativePath.replace(/\\.(tsx|ts|jsx|js)$/, '')] = url;
+            }
           } catch (err) { console.error("Transpilation failed for " + filename, err); }
+        } else if (/\\.css$/.test(filename)) {
+          // Handle CSS files - inject as style tag
+          const style = document.createElement('style');
+          style.textContent = content;
+          style.setAttribute('data-file', filename);
+          document.head.appendChild(style);
+          // Create dummy module for CSS imports
+          const cssModule = 'export default {};';
+          const url = URL.createObjectURL(new Blob([cssModule], { type: 'application/javascript' }));
+          importMap.imports[filename] = url;
+          importMap.imports[filename.replace(/\\.css$/, '')] = url;
         }
       }
+
       const mapScript = document.createElement('script');
       mapScript.type = "importmap";
       mapScript.textContent = JSON.stringify(importMap);
