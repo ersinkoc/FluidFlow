@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ControlPanel } from './components/ControlPanel';
 import { PreviewPanel } from './components/PreviewPanel';
-import { diffLines, Change } from 'diff';
-import { Check, X, Split, ArrowRight, FileCode, AlertCircle, Plus, Minus } from 'lucide-react';
+import { diffLines } from 'diff';
+import { Check, Split, FileCode, AlertCircle } from 'lucide-react';
 
 export type FileSystem = Record<string, string>;
 
@@ -232,7 +232,7 @@ export default function App() {
             restoreHistory={restoreHistory}
             reviewChange={reviewChange}
           />
-          <PreviewPanel 
+          <PreviewPanel
             files={files}
             setFiles={setFiles}
             activeFile={activeFile}
@@ -240,7 +240,6 @@ export default function App() {
             suggestions={suggestions}
             setSuggestions={setSuggestions}
             isGenerating={isGenerating}
-            addToHistory={addToHistory}
             reviewChange={reviewChange}
           />
        </main>
