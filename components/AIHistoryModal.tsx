@@ -12,7 +12,9 @@ import {
   ChevronDown,
   ChevronRight,
   AlertTriangle,
-  Sparkles
+  Sparkles,
+  RotateCcw,
+  Loader2
 } from 'lucide-react';
 import { AIHistoryEntry } from '../services/projectApi';
 
@@ -23,6 +25,7 @@ interface AIHistoryModalProps {
   onClearHistory: () => void;
   onDeleteEntry: (id: string) => void;
   onExportHistory: () => string;
+  onRestoreEntry?: (entry: AIHistoryEntry) => Promise<boolean>;
 }
 
 export const AIHistoryModal: React.FC<AIHistoryModalProps> = ({
@@ -31,11 +34,13 @@ export const AIHistoryModal: React.FC<AIHistoryModalProps> = ({
   history,
   onClearHistory,
   onDeleteEntry,
-  onExportHistory
+  onExportHistory,
+  onRestoreEntry
 }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showRawResponse, setShowRawResponse] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -72,6 +77,20 @@ export const AIHistoryModal: React.FC<AIHistoryModalProps> = ({
     a.download = `ai-history-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleRestore = async (entry: AIHistoryEntry) => {
+    if (!onRestoreEntry || restoringId) return;
+
+    setRestoringId(entry.id);
+    try {
+      const success = await onRestoreEntry(entry);
+      if (success) {
+        onClose();
+      }
+    } finally {
+      setRestoringId(null);
+    }
   };
 
   const modalContent = (
@@ -185,16 +204,36 @@ export const AIHistoryModal: React.FC<AIHistoryModalProps> = ({
                       </div>
                     </div>
 
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteEntry(entry.id);
-                      }}
-                      className="p-1.5 opacity-0 group-hover:opacity-100 hover:bg-red-500/20 text-slate-500 hover:text-red-400 rounded transition-all"
-                      title="Delete entry"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      {/* Restore button - only for successful entries */}
+                      {entry.success && onRestoreEntry && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRestore(entry);
+                          }}
+                          disabled={restoringId !== null}
+                          className="p-1.5 opacity-0 group-hover:opacity-100 hover:bg-green-500/20 text-slate-500 hover:text-green-400 rounded transition-all disabled:opacity-50"
+                          title="Load this state"
+                        >
+                          {restoringId === entry.id ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <RotateCcw size={14} />
+                          )}
+                        </button>
+                      )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteEntry(entry.id);
+                        }}
+                        className="p-1.5 opacity-0 group-hover:opacity-100 hover:bg-red-500/20 text-slate-500 hover:text-red-400 rounded transition-all"
+                        title="Delete entry"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Expanded Content */}
@@ -266,6 +305,32 @@ export const AIHistoryModal: React.FC<AIHistoryModalProps> = ({
                         </div>
                       )}
 
+                      {/* Restore Button - prominent in expanded view */}
+                      {entry.success && onRestoreEntry && (
+                        <div className="pt-2 border-t border-white/5">
+                          <button
+                            onClick={() => handleRestore(entry)}
+                            disabled={restoringId !== null}
+                            className="flex items-center gap-2 px-4 py-2.5 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                          >
+                            {restoringId === entry.id ? (
+                              <>
+                                <Loader2 size={16} className="animate-spin" />
+                                Restoring...
+                              </>
+                            ) : (
+                              <>
+                                <RotateCcw size={16} />
+                                Load This State
+                              </>
+                            )}
+                          </button>
+                          <p className="text-[11px] text-slate-500 mt-2">
+                            Restores files and chat from this generation point.
+                          </p>
+                        </div>
+                      )}
+
                       {/* Explanation */}
                       {entry.explanation && (
                         <div>
@@ -323,7 +388,7 @@ export const AIHistoryModal: React.FC<AIHistoryModalProps> = ({
         {/* Footer */}
         <div className="flex-none p-3 border-t border-white/10 bg-slate-900/50">
           <div className="text-xs text-slate-600 text-center">
-            History is automatically saved per project and persists across page refreshes
+            Click <RotateCcw size={10} className="inline mx-0.5" /> to load files and chat from a previous state.
           </div>
         </div>
       </div>

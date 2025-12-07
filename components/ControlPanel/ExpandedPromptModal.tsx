@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { ChatAttachment, FileSystem } from '../../types';
 import { promptLibrary, quickPrompts, PromptItem } from '../../data/promptLibrary';
+import { PromptImproverModal } from './PromptImproverModal';
 
 interface ExpandedPromptModalProps {
   isOpen: boolean;
@@ -75,6 +76,7 @@ export const ExpandedPromptModal: React.FC<ExpandedPromptModalProps> = ({
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [showFileSelector, setShowFileSelector] = useState(false);
   const [showPromptLibrary, setShowPromptLibrary] = useState(false);
+  const [showImproverModal, setShowImproverModal] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -517,6 +519,19 @@ export const ExpandedPromptModal: React.FC<ExpandedPromptModalProps> = ({
                   >
                     <BookOpen className="w-5 h-5" />
                   </button>
+
+                  {/* Improve Prompt Button */}
+                  {prompt.trim().length > 0 && (
+                    <button
+                      onClick={() => setShowImproverModal(true)}
+                      disabled={isGenerating}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-purple-600/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-400 text-sm transition-colors disabled:opacity-50"
+                      title="Improve prompt with AI"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      Improve
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -665,6 +680,19 @@ export const ExpandedPromptModal: React.FC<ExpandedPromptModalProps> = ({
         accept="image/png,image/jpeg,image/webp"
         onChange={handleFileSelect}
         className="hidden"
+      />
+
+      {/* Prompt Improver Modal */}
+      <PromptImproverModal
+        isOpen={showImproverModal}
+        onClose={() => setShowImproverModal(false)}
+        originalPrompt={prompt}
+        files={files}
+        hasExistingApp={hasExistingApp}
+        onAccept={(improvedPrompt) => {
+          setPrompt(improvedPrompt);
+          setShowImproverModal(false);
+        }}
       />
     </>
   );

@@ -10,6 +10,9 @@ interface ChatPanelProps {
   streamingStatus?: string;
   streamingChars?: number;
   streamingFiles?: string[];
+  // AI History restore props
+  aiHistoryCount?: number;
+  onRestoreFromHistory?: () => void;
 }
 
 // HTML entity escaping to prevent XSS attacks
@@ -131,7 +134,17 @@ const FileChangesSummary: React.FC<{ changes: FileChange[] }> = ({ changes }) =>
   );
 };
 
-export const ChatPanel: React.FC<ChatPanelProps> = ({ messages, onRevert, onRetry, isGenerating, streamingStatus, streamingChars, streamingFiles }) => {
+export const ChatPanel: React.FC<ChatPanelProps> = ({
+  messages,
+  onRevert,
+  onRetry,
+  isGenerating,
+  streamingStatus,
+  streamingChars,
+  streamingFiles,
+  aiHistoryCount = 0,
+  onRestoreFromHistory
+}) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom on new messages or streaming updates
@@ -146,6 +159,17 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ messages, onRevert, onRetr
       <div className="flex-1 flex flex-col items-center justify-center text-slate-500 p-4">
         <Bot className="w-10 h-10 mb-3 opacity-30" />
         <p className="text-sm text-center">Upload a sketch to start generating your app</p>
+
+        {/* Restore from History button - shown when chat is empty but history exists */}
+        {aiHistoryCount > 0 && onRestoreFromHistory && (
+          <button
+            onClick={onRestoreFromHistory}
+            className="mt-4 flex items-center gap-2 px-4 py-2.5 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-400 rounded-xl text-sm font-medium transition-colors"
+          >
+            <RotateCcw className="w-4 h-4" />
+            Restore from History ({aiHistoryCount})
+          </button>
+        )}
       </div>
     );
   }

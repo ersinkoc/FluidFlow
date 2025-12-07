@@ -756,6 +756,72 @@ Only return files that need changes. Maintain all existing functionality.`;
         streamingStatus={streamingStatus}
         streamingChars={streamingChars}
         streamingFiles={streamingFiles}
+        aiHistoryCount={aiHistory.history.filter(h => h.success).length}
+        onRestoreFromHistory={() => {
+          // Restore the most recent successful entry directly
+          const lastEntry = aiHistory.history.find(h => h.success);
+          if (!lastEntry) return;
+
+          try {
+            // Find all history entries up to and including this one (by timestamp)
+            const entriesToRestore = aiHistory.history
+              .filter(h => h.timestamp <= lastEntry.timestamp && h.success)
+              .sort((a, b) => a.timestamp - b.timestamp); // Oldest first
+
+            // Reconstruct ALL chat messages from history
+            const restoredMessages: ChatMessage[] = [];
+            let previousFiles: FileSystem = {};
+
+            for (const historyEntry of entriesToRestore) {
+              // Parse files from this entry
+              const parsed = parseMultiFileResponse(historyEntry.rawResponse);
+              if (!parsed?.files) continue;
+
+              // Clean the generated code
+              const cleanedFiles: FileSystem = {};
+              for (const [path, content] of Object.entries(parsed.files)) {
+                cleanedFiles[path] = cleanGeneratedCode(content);
+              }
+
+              // Calculate file changes
+              const mergedFiles = { ...previousFiles, ...cleanedFiles };
+              const fileChanges = calculateFileChanges(previousFiles, mergedFiles);
+
+              // User message
+              restoredMessages.push({
+                id: crypto.randomUUID(),
+                role: 'user',
+                timestamp: historyEntry.timestamp - 1000,
+                prompt: historyEntry.prompt,
+                attachments: historyEntry.hasSketch || historyEntry.hasBrand ? [
+                  ...(historyEntry.hasSketch ? [{ type: 'sketch' as const, preview: '', file: new File([], 'sketch.png') }] : []),
+                  ...(historyEntry.hasBrand ? [{ type: 'brand' as const, preview: '', file: new File([], 'brand.png') }] : [])
+                ] : undefined
+              });
+
+              // Assistant message with file changes
+              restoredMessages.push({
+                id: crypto.randomUUID(),
+                role: 'assistant',
+                timestamp: historyEntry.timestamp,
+                files: historyEntry.filesGenerated || Object.keys(cleanedFiles),
+                explanation: parsed.explanation || historyEntry.explanation || '',
+                fileChanges,
+                snapshotFiles: cleanedFiles
+              });
+
+              // Track files for next iteration
+              previousFiles = mergedFiles;
+            }
+
+            if (Object.keys(previousFiles).length > 0) {
+              setMessages(restoredMessages);
+              setFiles(previousFiles);
+            }
+          } catch (error) {
+            console.error('[ControlPanel] Failed to restore from history:', error);
+          }
+        }}
       />
 
       {/* Mode Toggle */}
@@ -920,6 +986,74 @@ Only return files that need changes. Maintain all existing functionality.`;
         onClearHistory={aiHistory.clearHistory}
         onDeleteEntry={aiHistory.deleteEntry}
         onExportHistory={aiHistory.exportHistory}
+        onRestoreEntry={async (entry) => {
+          try {
+            // Find all history entries up to and including this one (by timestamp)
+            const entriesToRestore = aiHistory.history
+              .filter(h => h.timestamp <= entry.timestamp && h.success)
+              .sort((a, b) => a.timestamp - b.timestamp); // Oldest first
+
+            // Reconstruct ALL chat messages from history
+            const restoredMessages: ChatMessage[] = [];
+            let previousFiles: FileSystem = {};
+
+            for (const historyEntry of entriesToRestore) {
+              // Parse files from this entry
+              const parsed = parseMultiFileResponse(historyEntry.rawResponse);
+              if (!parsed?.files) continue;
+
+              // Clean the generated code
+              const cleanedFiles: FileSystem = {};
+              for (const [path, content] of Object.entries(parsed.files)) {
+                cleanedFiles[path] = cleanGeneratedCode(content);
+              }
+
+              // Calculate file changes
+              const mergedFiles = { ...previousFiles, ...cleanedFiles };
+              const fileChanges = calculateFileChanges(previousFiles, mergedFiles);
+
+              // User message
+              restoredMessages.push({
+                id: crypto.randomUUID(),
+                role: 'user',
+                timestamp: historyEntry.timestamp - 1000,
+                prompt: historyEntry.prompt,
+                attachments: historyEntry.hasSketch || historyEntry.hasBrand ? [
+                  ...(historyEntry.hasSketch ? [{ type: 'sketch' as const, preview: '', file: new File([], 'sketch.png') }] : []),
+                  ...(historyEntry.hasBrand ? [{ type: 'brand' as const, preview: '', file: new File([], 'brand.png') }] : [])
+                ] : undefined
+              });
+
+              // Assistant message with file changes
+              restoredMessages.push({
+                id: crypto.randomUUID(),
+                role: 'assistant',
+                timestamp: historyEntry.timestamp,
+                files: historyEntry.filesGenerated || Object.keys(cleanedFiles),
+                explanation: parsed.explanation || historyEntry.explanation || '',
+                fileChanges,
+                snapshotFiles: cleanedFiles
+              });
+
+              // Track files for next iteration
+              previousFiles = mergedFiles;
+            }
+
+            if (Object.keys(previousFiles).length === 0) {
+              console.error('[ControlPanel] No files found in history entries');
+              return false;
+            }
+
+            // Restore messages and files directly (no diff modal)
+            setMessages(restoredMessages);
+            setFiles(previousFiles);
+
+            return true;
+          } catch (error) {
+            console.error('[ControlPanel] Failed to restore from history:', error);
+            return false;
+          }
+        }}
       />
     </aside>
   );

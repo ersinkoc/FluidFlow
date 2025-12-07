@@ -1,9 +1,10 @@
 import React, { useState, useRef } from 'react';
-import { Send, Mic, MicOff, Loader2, Wand2, Paperclip, Image, Palette, X, Maximize2 } from 'lucide-react';
+import { Send, Mic, MicOff, Loader2, Wand2, Paperclip, Image, Palette, X, Maximize2, Sparkles } from 'lucide-react';
 import { ChatAttachment, FileSystem } from '../../types';
 import { PromptLibrary, PromptDropdown } from './PromptLibrary';
 import { UploadCards } from './UploadCards';
 import { ExpandedPromptModal } from './ExpandedPromptModal';
+import { PromptImproverModal } from './PromptImproverModal';
 
 interface ChatInputProps {
   onSend: (prompt: string, attachments: ChatAttachment[], fileContext?: string[]) => void;
@@ -27,6 +28,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const [showPromptLibrary, setShowPromptLibrary] = useState(false);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [showExpandedModal, setShowExpandedModal] = useState(false);
+  const [showImproverModal, setShowImproverModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -295,6 +297,18 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             </div>
           </div>
 
+          {/* Improve button - only show when there's a prompt */}
+          {prompt.trim().length > 0 && (
+            <button
+              onClick={() => setShowImproverModal(true)}
+              disabled={isGenerating}
+              className="p-2.5 rounded-xl bg-purple-600/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-400 transition-colors disabled:opacity-50"
+              title="Improve prompt with AI"
+            >
+              <Sparkles className="w-5 h-5" />
+            </button>
+          )}
+
           {/* Send button */}
           <button
             onClick={handleSend}
@@ -356,6 +370,19 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         files={files}
         initialPrompt={prompt}
         initialAttachments={attachments}
+      />
+
+      {/* Prompt Improver Modal */}
+      <PromptImproverModal
+        isOpen={showImproverModal}
+        onClose={() => setShowImproverModal(false)}
+        originalPrompt={prompt}
+        files={files}
+        hasExistingApp={hasExistingApp}
+        onAccept={(improvedPrompt) => {
+          setPrompt(improvedPrompt);
+          setShowImproverModal(false);
+        }}
       />
     </div>
   );
