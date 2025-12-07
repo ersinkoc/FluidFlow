@@ -1,0 +1,22 @@
+[
+  {
+    "path": "dist/assets/index-*.js",
+    "maxSize": "1.5mb",
+    "compression": "none"
+  },
+  {
+    "path": "dist/assets/index-*.js",
+    "maxSize": "500kb",
+    "compression": "gzip"
+  },
+  {
+    "path": "dist/assets/index-*.css",
+    "maxSize": "50kb",
+    "compression": "none"
+  },
+  {
+    "path": "dist/assets/index-*.css",
+    "maxSize": "20kb",
+    "compression": "gzip"
+  }
+]

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { safeJsonParse } from './utils/safeJson';
 import { ControlPanel, ControlPanelRef } from './components/ControlPanel';
 import { PreviewPanel } from './components/PreviewPanel';
 import { CommandPalette } from './components/CommandPalette';
@@ -598,7 +599,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     if (!hasUncommittedChanges || !lastCommittedFilesRef.current) return [];
 
     try {
-      const committedFiles = JSON.parse(lastCommittedFilesRef.current) as FileSystem;
+      const committedFiles = safeJsonParse(lastCommittedFilesRef.current, {} as FileSystem);
       const changes: { path: string; status: 'added' | 'modified' | 'deleted' }[] = [];
 
       // Check for added or modified files
@@ -838,7 +839,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     try {
       // Get last committed state
       if (lastCommittedFilesRef.current) {
-        const committedFiles = JSON.parse(lastCommittedFilesRef.current) as FileSystem;
+        const committedFiles = safeJsonParse(lastCommittedFilesRef.current, {} as FileSystem);
 
         // Restore files to last committed state
         resetFiles(committedFiles);

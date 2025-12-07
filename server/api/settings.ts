@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { existsSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
+import { safeJsonParse, safeJsonStringify } from '../../utils/safeJson';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -61,7 +62,7 @@ async function loadSettings(): Promise<GlobalSettings> {
   try {
     if (existsSync(SETTINGS_FILE)) {
       const data = await fs.readFile(SETTINGS_FILE, 'utf-8');
-      return { ...DEFAULT_SETTINGS, ...JSON.parse(data) };
+      return { ...DEFAULT_SETTINGS, ...safeJsonParse(data, {}) };
     }
   } catch (error) {
     console.error('Failed to load settings:', error);
@@ -72,7 +73,7 @@ async function loadSettings(): Promise<GlobalSettings> {
 // Helper to save settings
 async function saveSettings(settings: GlobalSettings): Promise<void> {
   settings.updatedAt = Date.now();
-  await fs.writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+  await fs.writeFile(SETTINGS_FILE, safeJsonStringify(settings, null, 2));
 }
 
 // ============ SETTINGS API ============
