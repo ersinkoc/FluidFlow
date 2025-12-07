@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useImperativeHandle, forwardRef } from 'react';
+import React, { useState, useCallback, useImperativeHandle, forwardRef, useRef, useEffect } from 'react';
 import { Layers, Trash2, AlertTriangle, X, MessageSquare, FileCode, History } from 'lucide-react';
 import { FileSystem, ChatMessage, ChatAttachment, FileChange } from '../../types';
 import { cleanGeneratedCode, parseMultiFileResponse } from '../../utils/cleanCode';
@@ -8,6 +8,9 @@ import { getProviderManager, GenerationRequest } from '../../services/ai';
 import { InspectedElement } from '../PreviewPanel/ComponentInspector';
 import { useAIHistory } from '../../hooks/useAIHistory';
 import { AIHistoryModal } from '../AIHistoryModal';
+import { getContextManager, CONTEXT_IDS } from '../../services/conversationContext';
+import { ContextIndicator } from '../ContextIndicator';
+import { getFluidFlowConfig } from '../../services/fluidflowConfig';
 
 // Sub-components
 import { ChatPanel } from './ChatPanel';
@@ -134,7 +137,57 @@ export const ControlPanel = forwardRef<ControlPanelRef, ControlPanelProps>(({
   // AI History - persists across refreshes
   const aiHistory = useAIHistory(currentProject?.id || null);
 
+  // Context management
+  const contextManager = getContextManager();
+  const sessionIdRef = useRef<string>(`${CONTEXT_IDS.MAIN_CHAT}-${currentProject?.id || 'default'}`);
+
+  // Update session ID when project changes
+  useEffect(() => {
+    sessionIdRef.current = `${CONTEXT_IDS.MAIN_CHAT}-${currentProject?.id || 'default'}`;
+  }, [currentProject?.id]);
+
+  // Sync messages with context manager
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg) {
+      contextManager.addMessage(
+        sessionIdRef.current,
+        lastMsg.role,
+        lastMsg.role === 'user' ? (lastMsg.prompt || '') : (lastMsg.explanation || lastMsg.error || ''),
+        { messageId: lastMsg.id }
+      );
+    }
+  }, [messages.length]);
+
   const existingApp = files['src/App.tsx'];
+
+  // Handle context compaction
+  const handleCompaction = useCallback(async () => {
+    const manager = getProviderManager();
+    const config = getFluidFlowConfig();
+
+    await contextManager.compactContext(sessionIdRef.current, async (text) => {
+      const request: GenerationRequest = {
+        prompt: `Summarize this conversation concisely, preserving key decisions, code changes, and context:\n\n${text}`,
+        systemInstruction: 'You are a conversation summarizer. Create a brief but complete summary that captures the essential context, decisions made, and any code or technical details discussed.',
+        responseFormat: 'text'
+      };
+      const response = await manager.generate(request);
+
+      // Log compaction
+      const context = contextManager.getContext(sessionIdRef.current);
+      config.addCompactionLog({
+        contextId: sessionIdRef.current,
+        beforeTokens: context.estimatedTokens * 2,
+        afterTokens: context.estimatedTokens,
+        messagesSummarized: messages.length - 2,
+        summary: response.text || 'Conversation compacted'
+      });
+
+      return response.text || '';
+    });
+  }, [messages.length]);
 
   // Handle provider changes from settings
   const handleProviderChange = useCallback((providerId: string, modelId: string) => {
@@ -718,6 +771,7 @@ Only return files that need changes. Maintain all existing functionality.`;
 
   const handleConfirmReset = () => {
     setMessages([]);
+    contextManager.clearContext(sessionIdRef.current);
     resetApp();
     setShowResetConfirm(false);
   };
@@ -745,6 +799,16 @@ Only return files that need changes. Maintain all existing functionality.`;
         >
           <Trash2 className="w-4 h-4" />
         </button>
+      </div>
+
+      {/* Context Indicator */}
+      <div className="px-4 py-2 border-b border-white/5 flex-shrink-0">
+        <ContextIndicator
+          contextId={sessionIdRef.current}
+          showLabel={true}
+          onCompact={handleCompaction}
+          className="w-full"
+        />
       </div>
 
       {/* Chat Messages */}

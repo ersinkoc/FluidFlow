@@ -276,6 +276,7 @@ export function getContextManager(config?: Partial<ContextManagerConfig>): Conve
 
 // Predefined context IDs for different features
 export const CONTEXT_IDS = {
+  MAIN_CHAT: 'main-chat',
   PROMPT_IMPROVER: 'prompt-improver',
   GIT_COMMIT: 'git-commit',
   DB_STUDIO: 'db-studio',

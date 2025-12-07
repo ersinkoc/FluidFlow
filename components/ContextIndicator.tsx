@@ -129,6 +129,84 @@ interface ContextManagerModalProps {
   onCompact?: () => Promise<void>;
 }
 
+// Confirmation Modal Component
+interface ConfirmModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  title: string;
+  message: string;
+  confirmText?: string;
+  confirmVariant?: 'danger' | 'warning' | 'default';
+}
+
+const ConfirmModal: React.FC<ConfirmModalProps> = ({
+  isOpen,
+  onClose,
+  onConfirm,
+  title,
+  message,
+  confirmText = 'Confirm',
+  confirmVariant = 'danger'
+}) => {
+  if (!isOpen) return null;
+
+  const variantStyles = {
+    danger: 'bg-red-600 hover:bg-red-500 text-white',
+    warning: 'bg-amber-600 hover:bg-amber-500 text-white',
+    default: 'bg-blue-600 hover:bg-blue-500 text-white'
+  };
+
+  const modalContent = (
+    <div
+      className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm bg-slate-900 border border-white/10 rounded-xl shadow-2xl overflow-hidden mx-4 animate-in zoom-in-95 duration-150"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-4 border-b border-white/10">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg ${
+              confirmVariant === 'danger' ? 'bg-red-500/20' :
+              confirmVariant === 'warning' ? 'bg-amber-500/20' : 'bg-blue-500/20'
+            }`}>
+              <AlertTriangle className={`w-5 h-5 ${
+                confirmVariant === 'danger' ? 'text-red-400' :
+                confirmVariant === 'warning' ? 'text-amber-400' : 'text-blue-400'
+              }`} />
+            </div>
+            <h3 className="font-medium text-lg">{title}</h3>
+          </div>
+        </div>
+        <div className="p-4">
+          <p className="text-sm text-slate-300">{message}</p>
+        </div>
+        <div className="flex gap-3 p-4 border-t border-white/10 bg-slate-950/50">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 text-sm font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => {
+              onConfirm();
+              onClose();
+            }}
+            className={`flex-1 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${variantStyles[confirmVariant]}`}
+          >
+            {confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return createPortal(modalContent, document.body);
+};
+
 const ContextManagerModal: React.FC<ContextManagerModalProps> = ({
   contextId,
   onClose,
@@ -139,6 +217,16 @@ const ContextManagerModal: React.FC<ContextManagerModalProps> = ({
   const [allContexts, setAllContexts] = useState<ConversationContext[]>([]);
   const [compactionLogs, setCompactionLogs] = useState<CompactionLog[]>([]);
   const [activeTab, setActiveTab] = useState<'current' | 'all' | 'logs'>('current');
+
+  // Confirmation modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText: string;
+    variant: 'danger' | 'warning' | 'default';
+    onConfirm: () => void;
+  } | null>(null);
 
   const contextManager = getContextManager();
   const fluidflowConfig = getFluidFlowConfig();
@@ -164,17 +252,45 @@ const ContextManagerModal: React.FC<ContextManagerModalProps> = ({
   };
 
   const handleClearContext = () => {
-    if (confirm('Clear all messages in this context?')) {
-      contextManager.clearContext(contextId);
-      onClose();
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Clear Messages',
+      message: 'This will clear all messages in the current context. This action cannot be undone.',
+      confirmText: 'Clear All',
+      variant: 'warning',
+      onConfirm: () => {
+        contextManager.clearContext(contextId);
+        onClose();
+      }
+    });
   };
 
   const handleDeleteContext = (id: string) => {
-    if (confirm('Delete this context permanently?')) {
-      contextManager.deleteContext(id);
-      setAllContexts(contextManager.listContexts());
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Context',
+      message: 'This will permanently delete this context and all its messages. This action cannot be undone.',
+      confirmText: 'Delete',
+      variant: 'danger',
+      onConfirm: () => {
+        contextManager.deleteContext(id);
+        setAllContexts(contextManager.listContexts());
+      }
+    });
+  };
+
+  const handleClearLogs = () => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Clear Logs',
+      message: 'This will clear all compaction logs. This action cannot be undone.',
+      confirmText: 'Clear Logs',
+      variant: 'warning',
+      onConfirm: () => {
+        fluidflowConfig.clearCompactionLogs();
+        setCompactionLogs([]);
+      }
+    });
   };
 
   const usagePercent = stats ? Math.min(100, (stats.tokens / maxTokens) * 100) : 0;
@@ -485,12 +601,7 @@ const ContextManagerModal: React.FC<ContextManagerModalProps> = ({
 
               {compactionLogs.length > 0 && (
                 <button
-                  onClick={() => {
-                    if (confirm('Clear all compaction logs?')) {
-                      fluidflowConfig.clearCompactionLogs();
-                      setCompactionLogs([]);
-                    }
-                  }}
+                  onClick={handleClearLogs}
                   className="w-full mt-2 px-4 py-2 text-sm text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
                 >
                   Clear All Logs
@@ -511,7 +622,22 @@ const ContextManagerModal: React.FC<ContextManagerModalProps> = ({
     </div>
   );
 
-  return createPortal(modalContent, document.body);
+  return (
+    <>
+      {createPortal(modalContent, document.body)}
+      {confirmModal && (
+        <ConfirmModal
+          isOpen={confirmModal.isOpen}
+          onClose={() => setConfirmModal(null)}
+          onConfirm={confirmModal.onConfirm}
+          title={confirmModal.title}
+          message={confirmModal.message}
+          confirmText={confirmModal.confirmText}
+          confirmVariant={confirmModal.variant}
+        />
+      )}
+    </>
+  );
 };
 
 export default ContextIndicator;
