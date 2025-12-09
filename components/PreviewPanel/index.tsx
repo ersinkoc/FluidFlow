@@ -13,7 +13,7 @@ import { saveAs } from 'file-saver';
 import { FileSystem, LogEntry, NetworkRequest, AccessibilityReport, TabType, TerminalTab, PreviewDevice, PushResult } from '../../types';
 import { cleanGeneratedCode, isValidCode } from '../../utils/cleanCode';
 import { debugLog } from '../../hooks/useDebugStore';
-import { trySimpleFix, canTrySimpleFix } from '../../utils/simpleFixes';
+import { attemptAutoFix, classifyError, canAutoFix, wasRecentlyFixed } from '../../services/autoFixService';
 
 // Sub-components
 import { CodeEditor } from './CodeEditor';
@@ -271,34 +271,49 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
           // Show auto-fix confirmation if enabled (don't auto-run)
           if (autoFixEnabled && !isAutoFixing && !pendingAutoFix) {
             const errorMsg = event.data.message;
-            // Skip transient errors (marked by sandbox) and common non-fixable errors
-            const skipPatterns = [
-              /^\[TRANSIENT\]/i,  // Transient errors marked by sandbox
-              /\[Router\]/i,
-              /\[Sandbox\]/i,
-              /ResizeObserver/i,
-              /Script error/i,
-              /Loading chunk/i,
-              /redefine.*property.*location/i,
-              /non-configurable property/i,
-            ];
-            if (!skipPatterns.some(p => p.test(errorMsg)) && lastFixedErrorRef.current !== errorMsg) {
-              // First try simple fix (no AI needed)
-              if (canTrySimpleFix(errorMsg) && appCode) {
-                const simpleResult = trySimpleFix(errorMsg, appCode);
-                if (simpleResult.fixed) {
+
+            // Use robust error classification
+            const errorInfo = classifyError(errorMsg);
+
+            // Skip ignorable/transient errors
+            if (errorInfo.isIgnorable) {
+              console.log('[AutoFix] Ignoring transient error:', errorMsg.slice(0, 100));
+              return;
+            }
+
+            // Skip if already fixed this error or same error recently
+            if (lastFixedErrorRef.current === errorMsg || wasRecentlyFixed(errorMsg)) {
+              return;
+            }
+
+            // Try auto-fix with robust service (handles rate limiting, loops, validation)
+            if (appCode && canAutoFix(errorMsg)) {
+              try {
+                const fixResult = attemptAutoFix(errorMsg, appCode);
+
+                if (fixResult.success && !fixResult.wasAINeeded) {
                   // Simple fix worked! Apply it directly
                   lastFixedErrorRef.current = errorMsg;
-                  setFiles({ ...files, 'src/App.tsx': simpleResult.newCode });
-                  setAutoFixToast(`⚡ ${simpleResult.description}`);
+                  setFiles({ ...files, 'src/App.tsx': fixResult.newCode });
+                  setAutoFixToast(`⚡ ${fixResult.description}`);
                   if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
                   toastTimeoutRef.current = setTimeout(() => setAutoFixToast(null), 3000);
-                  console.log('[SimpleFix] Applied:', simpleResult.description);
+                  console.log('[AutoFix] Applied:', fixResult.description, `(${fixResult.fixType})`);
                   return; // Don't show AI fix dialog
                 }
-              }
 
-              // Simple fix didn't work or not applicable - show AI fix confirmation after delay
+                // Log why fix didn't work
+                if (fixResult.error) {
+                  console.log('[AutoFix] Could not fix:', fixResult.error);
+                }
+              } catch (e) {
+                // Catch any unexpected errors from the fix service
+                console.error('[AutoFix] Service error:', e);
+              }
+            }
+
+            // Simple fix didn't work - show AI fix confirmation after delay (only for fixable errors)
+            if (errorInfo.isFixable || errorInfo.priority >= 3) {
               if (autoFixTimeoutRef.current) clearTimeout(autoFixTimeoutRef.current);
               autoFixTimeoutRef.current = setTimeout(() => {
                 setPendingAutoFix(errorMsg);
