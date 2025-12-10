@@ -42,6 +42,8 @@ interface ErrorFixPanelProps {
 const stateConfig: Record<AgentState, { color: string; icon: React.ReactNode; label: string }> = {
   idle: { color: 'text-gray-400', icon: <Bot className="w-4 h-4" />, label: 'Idle' },
   analyzing: { color: 'text-blue-400', icon: <Loader2 className="w-4 h-4 animate-spin" />, label: 'Analyzing' },
+  'local-fix': { color: 'text-cyan-400', icon: <Wrench className="w-4 h-4 animate-pulse" />, label: 'Local Fix' },
+  'ai-fix': { color: 'text-indigo-400', icon: <Bot className="w-4 h-4 animate-pulse" />, label: 'AI Fix' },
   fixing: { color: 'text-yellow-400', icon: <Loader2 className="w-4 h-4 animate-spin" />, label: 'Fixing' },
   applying: { color: 'text-orange-400', icon: <Wrench className="w-4 h-4" />, label: 'Applying' },
   verifying: { color: 'text-purple-400', icon: <Loader2 className="w-4 h-4 animate-spin" />, label: 'Verifying' },

@@ -1,18 +1,22 @@
 /**
  * ErrorFixAgent - Agentic Error Fixing System
  *
- * An autonomous agent that communicates with LLM to fix errors iteratively.
- * Flow: Get Error → Send to LLM → Apply Fix → Verify → Repeat until resolved
+ * A hybrid agent that uses both local fixes and AI to resolve errors.
+ * Flow: Analyze Error → Try Local Fix → If failed, AI Fix → Apply → Verify → Repeat
  */
 
 import { getProviderManager } from './ai';
 import { FileSystem } from '../types';
 import { parseMultiFileResponse } from '../utils/cleanCode';
+import { localFixEngine } from './localFixEngine';
+import { errorAnalyzer, ParsedError } from './errorAnalyzer';
 
 // Agent states
 export type AgentState =
   | 'idle'
   | 'analyzing'
+  | 'local-fix'      // Trying local fix without AI
+  | 'ai-fix'         // Sending to AI
   | 'fixing'
   | 'applying'
   | 'verifying'
@@ -70,12 +74,20 @@ const ERROR_FIX_SYSTEM_PROMPT = `You are an expert React/TypeScript error fixer.
 4. Preserve all existing functionality
 5. Return COMPLETE file content - no placeholders, no "// ... rest of code"
 
+## IMPORTANT - IMPORT ERRORS:
+When you see a "bare specifier" error like:
+  'The specifier "src/components/Hero.tsx" was a bare specifier'
+
+The problem is NOT in Hero.tsx! The problem is in the file that IMPORTS Hero.tsx incorrectly.
+Look at the "FILES THAT IMPORT THIS PATH" section to find which file has the bad import.
+Fix the IMPORTING file by changing "src/..." to "./" relative paths.
+
 ## COMMON FIXES:
+- "bare specifier" → Find the file that has the bad import and fix it (change "src/..." to "./...")
 - "X is not defined" → Add missing import at the top of the file
-- "bare specifier" → Change "src/..." to "./" relative path
 - "Cannot read property of undefined" → Add null check or default value
 - "Expected X but got Y" → Fix type mismatch
-- "Module not found" → Fix import path
+- "Module not found" → Fix import path to use relative paths
 - "Unexpected token" → Fix syntax error
 - "is not a function" → Fix import (default vs named) or check export
 
@@ -92,21 +104,26 @@ You MUST respond with a valid JSON object in this EXACT format:
 \`\`\`
 
 ### RULES FOR JSON RESPONSE:
-- The "files" object contains the file path as key and COMPLETE fixed code as value
-- Use the EXACT file path provided in the error context (e.g., "src/App.tsx")
-- The file content must be a COMPLETE, valid TypeScript/React file
+- The "files" object can contain ONE OR MORE files if multiple need fixing
+- Use the EXACT file path (e.g., "src/App.tsx")
+- Each file content must be a COMPLETE, valid TypeScript/React file
 - Escape special characters in strings: use \\n for newlines, \\" for quotes
 - The "explanation" should be 1-2 sentences explaining the fix
 - Do NOT include markdown code blocks inside the JSON values
 - Do NOT truncate or abbreviate the code
+- If the error is an import error, fix the IMPORTING file, not the imported file
 
-### EXAMPLE RESPONSE:
+### EXAMPLE - FIXING A BARE SPECIFIER ERROR:
+If error says: 'specifier "src/components/Hero.tsx" was a bare specifier'
+And App.tsx has: import Hero from 'src/components/Hero';
+
+Fix App.tsx (NOT Hero.tsx):
 \`\`\`json
 {
   "files": {
-    "src/App.tsx": "import React from 'react';\\nimport { Hero } from './components/Hero';\\n\\nexport default function App() {\\n  return <Hero />;\\n}"
+    "src/App.tsx": "import React from 'react';\\nimport Hero from './components/Hero';\\n\\nexport default function App() {\\n  return <Hero />;\\n}"
   },
-  "explanation": "Added missing import for Hero component"
+  "explanation": "Fixed bare specifier import in App.tsx - changed 'src/components/Hero' to './components/Hero'"
 }
 \`\`\`
 
@@ -173,7 +190,7 @@ class ErrorFixAgent {
   }
 
   /**
-   * Main agentic loop
+   * Main agentic loop - Hybrid approach: Local fix first, then AI
    */
   private async fixLoop(
     errorMessage: string,
@@ -197,18 +214,67 @@ class ErrorFixAgent {
         'Starting fix attempt...');
 
       try {
-        // Step 1: Analyze
+        // Step 1: Analyze the error
         this.setState('analyzing');
-        const context = this.buildErrorContext(errorMessage, errorStack, targetFile, files);
+        const parsedError = errorAnalyzer.analyze(errorMessage, errorStack, files);
+        const errorSummary = errorAnalyzer.getSummary(parsedError);
 
-        // Step 2: Generate prompt
-        const prompt = this.buildPrompt(context);
-        this.log('prompt', 'Prompt Sent to LLM', prompt, {
+        this.log('info', 'Error Analysis', `Type: ${parsedError.type}\nCategory: ${parsedError.category}\nSummary: ${errorSummary}\nAuto-fixable: ${parsedError.isAutoFixable}\nConfidence: ${(parsedError.confidence * 100).toFixed(0)}%`);
+
+        // Step 2: Try LOCAL FIX first (no AI needed)
+        if (parsedError.isAutoFixable && this.currentAttempt === 1) {
+          this.setState('local-fix');
+          this.log('info', 'Trying Local Fix', 'Attempting to fix without AI...');
+
+          const localResult = localFixEngine.tryFix(errorMessage, errorStack, targetFile, files);
+
+          if (localResult.success) {
+            this.log('success', 'Local Fix Found', `${localResult.explanation}\nFix type: ${localResult.fixType}`);
+
+            // Apply local fix
+            this.setState('applying');
+            const appliedFiles: string[] = [];
+
+            for (const [filePath, content] of Object.entries(localResult.fixedFiles)) {
+              this.log('fix', 'Applying Local Fix', `Updating ${filePath}`, { file: filePath });
+              this.config.onFileUpdate(filePath, content);
+              files = { ...files, [filePath]: content };
+              appliedFiles.push(filePath);
+            }
+
+            this.previousAttempts.push({
+              prompt: 'Local fix (no AI)',
+              response: localResult.explanation,
+              appliedFix: appliedFiles.join(', '),
+              resultingError: undefined
+            });
+
+            // Verify
+            this.setState('verifying');
+            this.log('info', 'Verifying Local Fix', 'Waiting for preview to compile...');
+            await this.delay(2000);
+
+            const fixedFilesText = appliedFiles.length === 1 ? appliedFiles[0] : `${appliedFiles.length} files`;
+            this.log('success', 'Local Fix Applied', `Successfully fixed ${fixedFilesText} without AI!`);
+            this.setState('success');
+            this.config.onComplete(true, `Fixed ${fixedFilesText} locally (no AI needed)`);
+            return;
+          } else {
+            this.log('info', 'Local Fix Failed', 'No local fix available, proceeding with AI...');
+          }
+        }
+
+        // Step 3: AI FIX - Build context and prompt
+        this.setState('ai-fix');
+        const context = this.buildErrorContext(errorMessage, errorStack, targetFile, files);
+        const prompt = this.buildPrompt(context, parsedError);
+
+        this.log('prompt', 'Prompt Sent to LLM', prompt.slice(0, 1000) + (prompt.length > 1000 ? '\n...(truncated)' : ''), {
           file: targetFile,
           model: getProviderManager().getActiveConfig()?.defaultModel
         });
 
-        // Step 3: Get fix from LLM
+        // Step 4: Get fix from LLM
         this.setState('fixing');
         const startTime = Date.now();
         const fixedCode = await this.callLLM(prompt);
@@ -224,7 +290,7 @@ class ErrorFixAgent {
           model: getProviderManager().getActiveConfig()?.defaultModel
         });
 
-        // Step 4: Parse and validate the response
+        // Step 5: Parse and validate the response
         const parseResult = parseMultiFileResponse(fixedCode, true);
 
         if (!parseResult || !parseResult.files || Object.keys(parseResult.files).length === 0) {
@@ -264,32 +330,68 @@ class ErrorFixAgent {
           this.log('info', 'Fix Explanation', parseResult.explanation);
         }
 
-        // Get the fixed file content
+        // Get all fixed files from response
         const fixedFiles = parseResult.files;
-        const fixedFilePath = Object.keys(fixedFiles)[0]; // Get first (and likely only) file
-        const cleanedCode = fixedFiles[fixedFilePath];
+        const fileEntries = Object.entries(fixedFiles);
 
-        if (!cleanedCode || cleanedCode === files[targetFile]) {
-          this.log('warning', 'No Changes', 'LLM returned identical code');
+        if (fileEntries.length === 0) {
+          this.log('warning', 'No Files', 'LLM response contained no file changes');
           continue;
         }
 
-        // Step 5: Apply fix
+        // Check if any file actually changed
+        let hasChanges = false;
+        for (const [filePath, content] of fileEntries) {
+          // Normalize path and check against existing files
+          const existingContent = files[filePath] || files[this.normalizePath(filePath, files)];
+          if (content && content !== existingContent) {
+            hasChanges = true;
+            break;
+          }
+        }
+
+        if (!hasChanges) {
+          this.log('warning', 'No Changes', 'LLM returned identical code for all files');
+          continue;
+        }
+
+        // Step 5: Apply ALL fixes
         this.setState('applying');
-        this.log('fix', 'Applying Fix', `Updating ${fixedFilePath}`, { file: fixedFilePath });
 
-        // Update the file (use the path from response, but prefer targetFile if they match)
-        const actualPath = fixedFilePath.includes(targetFile.split('/').pop() || '') ? targetFile : fixedFilePath;
-        this.config.onFileUpdate(actualPath, cleanedCode);
+        let appliedFiles: string[] = [];
+        for (const [filePath, content] of fileEntries) {
+          if (!content) continue;
 
-        // Update local files reference for next iteration
-        files = { ...files, [actualPath]: cleanedCode };
+          // Normalize the path to match our file system
+          const actualPath = this.normalizePath(filePath, files);
+          const existingContent = files[actualPath];
+
+          // Skip if no change
+          if (content === existingContent) {
+            this.log('info', 'Skipped', `No changes to ${actualPath}`);
+            continue;
+          }
+
+          this.log('fix', 'Applying Fix', `Updating ${actualPath}`, { file: actualPath });
+          this.config.onFileUpdate(actualPath, content);
+
+          // Update local files reference for next iteration
+          files = { ...files, [actualPath]: content };
+          appliedFiles.push(actualPath);
+        }
+
+        if (appliedFiles.length === 0) {
+          this.log('warning', 'No Changes Applied', 'All files were identical');
+          continue;
+        }
+
+        this.log('info', 'Files Updated', `Applied fixes to: ${appliedFiles.join(', ')}`);
 
         // Record this attempt
         this.previousAttempts.push({
           prompt,
           response: fixedCode,
-          appliedFix: cleanedCode,
+          appliedFix: appliedFiles.join(', '),
           resultingError: undefined // Will be set if error persists
         });
 
@@ -303,9 +405,10 @@ class ErrorFixAgent {
 
         // Check if we should continue (this will be updated externally via reportError or reportSuccess)
         // For now, we assume success if no new error is reported within timeout
-        this.log('success', 'Fix Applied', `Successfully applied fix to ${targetFile}`);
+        const fixedFilesText = appliedFiles.length === 1 ? appliedFiles[0] : `${appliedFiles.length} files`;
+        this.log('success', 'Fix Applied', `Successfully applied fix to ${fixedFilesText}`);
         this.setState('success');
-        this.config.onComplete(true, `Fixed ${targetFile} after ${this.currentAttempt} attempt(s)`);
+        this.config.onComplete(true, `Fixed ${fixedFilesText} after ${this.currentAttempt} attempt(s)`);
         return;
 
       } catch (error) {
@@ -388,41 +491,191 @@ class ErrorFixAgent {
   }
 
   /**
-   * Build prompt for LLM
+   * Build prompt for LLM with enhanced error context
    */
-  private buildPrompt(context: ErrorContext): string {
-    let prompt = `Fix the following error in ${context.file}:\n\n`;
-    prompt += `ERROR: ${context.errorMessage}\n`;
+  private buildPrompt(context: ErrorContext, parsedError?: ParsedError): string {
+    const isBareSpecifierError = parsedError?.type === 'bare-specifier' ||
+                                  /bare specifier|was not remapped/i.test(context.errorMessage);
 
-    if (context.errorStack) {
-      prompt += `\nSTACK TRACE:\n${context.errorStack}\n`;
+    let prompt = `## ERROR TO FIX\n\n`;
+
+    // Add parsed error info if available
+    if (parsedError) {
+      prompt += `**Error Type:** ${parsedError.type}\n`;
+      prompt += `**Category:** ${parsedError.category}\n`;
+      if (parsedError.identifier) {
+        prompt += `**Identifier:** ${parsedError.identifier}\n`;
+      }
+      if (parsedError.importPath) {
+        prompt += `**Import Path:** ${parsedError.importPath}\n`;
+      }
+      if (parsedError.suggestedFix) {
+        prompt += `**Suggested Fix:** ${parsedError.suggestedFix}\n`;
+      }
+      if (parsedError.file) {
+        prompt += `**Error Location:** ${parsedError.file}${parsedError.line ? `:${parsedError.line}` : ''}\n`;
+      }
+      prompt += '\n';
     }
 
-    prompt += `\nCURRENT FILE CONTENT:\n${context.fileContent}\n`;
+    prompt += `**Error Message:**\n${context.errorMessage}\n`;
 
-    // Add relevant other files for context
-    const relevantFiles = this.getRelevantFiles(context);
-    if (relevantFiles.length > 0) {
-      prompt += `\nRELATED FILES FOR CONTEXT:\n`;
-      for (const [path, content] of relevantFiles) {
-        prompt += `\n--- ${path} ---\n${content.slice(0, 1000)}${content.length > 1000 ? '\n...(truncated)' : ''}\n`;
+    if (context.errorStack) {
+      prompt += `\n**Stack Trace:**\n\`\`\`\n${context.errorStack}\n\`\`\`\n`;
+    }
+
+    // For bare specifier errors, find files that have the bad import
+    if (isBareSpecifierError) {
+      const badPath = parsedError?.importPath || this.extractBadImportPath(context.errorMessage);
+      if (badPath) {
+        const importingFiles = this.findFilesWithImport(badPath, context.allFiles);
+
+        if (importingFiles.length > 0) {
+          prompt += `\n## ⚠️ CRITICAL: IMPORT ERROR\n`;
+          prompt += `The problem is NOT in the imported file! The problem is in the file(s) that IMPORT "${badPath}" incorrectly.\n`;
+          prompt += `\n### FILES THAT NEED FIXING (they have the bad import):\n`;
+
+          for (const [filePath, content] of importingFiles) {
+            prompt += `\n#### ${filePath} (FIX THIS FILE)\n\`\`\`tsx\n${content}\n\`\`\`\n`;
+          }
+
+          prompt += `\n**How to fix:** Change \`"${badPath}"\` to a relative path like \`"./${badPath.replace(/^src\//, '')}"\`\n`;
+        }
+      }
+    }
+
+    // Include the target file content
+    prompt += `\n## TARGET FILE: ${context.file}\n\`\`\`tsx\n${context.fileContent}\n\`\`\`\n`;
+
+    // Add related files from error analysis
+    if (parsedError?.relatedFiles && parsedError.relatedFiles.length > 0) {
+      prompt += `\n## RELATED FILES (may contain relevant context):\n`;
+      for (const relatedPath of parsedError.relatedFiles.slice(0, 3)) {
+        const content = context.allFiles[relatedPath];
+        if (content) {
+          const truncated = content.length > 1500 ? content.slice(0, 1500) + '\n...(truncated)' : content;
+          prompt += `\n### ${relatedPath}\n\`\`\`tsx\n${truncated}\n\`\`\`\n`;
+        }
+      }
+    } else if (!isBareSpecifierError) {
+      // Fallback: Add relevant files for context
+      const relevantFiles = this.getRelevantFiles(context);
+      if (relevantFiles.length > 0) {
+        prompt += `\n## RELATED FILES FOR CONTEXT:\n`;
+        for (const [path, content] of relevantFiles) {
+          const truncated = content.length > 1000 ? content.slice(0, 1000) + '\n...(truncated)' : content;
+          prompt += `\n### ${path}\n\`\`\`tsx\n${truncated}\n\`\`\`\n`;
+        }
       }
     }
 
     // Add previous attempts if any
     if (context.previousAttempts.length > 0) {
-      prompt += `\n\nPREVIOUS FAILED ATTEMPTS:\n`;
+      prompt += `\n## PREVIOUS FAILED ATTEMPTS (do NOT repeat these):\n`;
       for (let i = 0; i < context.previousAttempts.length; i++) {
         const attempt = context.previousAttempts[i];
-        prompt += `\nAttempt ${i + 1}:\n`;
-        prompt += `- Applied fix resulted in error: ${attempt.resultingError || 'Unknown'}\n`;
+        prompt += `\n**Attempt ${i + 1}:**\n`;
+        prompt += `- Files modified: ${attempt.appliedFix}\n`;
+        prompt += `- Result: ${attempt.resultingError || 'Unknown error'}\n`;
       }
-      prompt += `\nDo NOT repeat these failed approaches. Try a different solution.\n`;
+      prompt += `\n**Important:** Try a DIFFERENT approach from the failed attempts above.\n`;
     }
 
-    prompt += `\nReturn ONLY the complete fixed file content for ${context.file}. No explanations.`;
+    // Final instructions
+    prompt += `\n## INSTRUCTIONS\n`;
+    if (isBareSpecifierError) {
+      prompt += `Fix the IMPORTING file (the one with the bad import), NOT the imported file.\n`;
+      prompt += `Change bare specifier imports like "src/..." to relative paths like "./".\n`;
+    } else if (parsedError?.type === 'undefined-variable') {
+      prompt += `Add the missing import for "${parsedError.identifier}" or define it.\n`;
+    } else if (parsedError?.type === 'type-error') {
+      prompt += `Fix the type mismatch while preserving functionality.\n`;
+    } else {
+      prompt += `Fix the error while preserving all existing functionality.\n`;
+    }
+    prompt += `Return the complete fixed file(s) - no placeholders or truncation.\n`;
 
     return prompt;
+  }
+
+  /**
+   * Extract the bad import path from error message
+   */
+  private extractBadImportPath(errorMessage: string): string | null {
+    // Match patterns like: "src/components/Hero.tsx" was a bare specifier
+    const match = errorMessage.match(/["']([^"']+)["']\s*was\s*a?\s*bare\s*specifier/i);
+    if (match) return match[1];
+
+    // Match: specifier "src/..." was not remapped
+    const match2 = errorMessage.match(/specifier\s*["']([^"']+)["']/i);
+    if (match2) return match2[1];
+
+    return null;
+  }
+
+  /**
+   * Find files that import a given path
+   */
+  private findFilesWithImport(importPath: string, files: FileSystem): Array<[string, string]> {
+    const results: Array<[string, string]> = [];
+
+    for (const [filePath, content] of Object.entries(files)) {
+      if (!content) continue;
+
+      // Check if this file imports the problematic path
+      // Match various import patterns
+      const importPatterns = [
+        new RegExp(`from\\s+['"]${this.escapeRegex(importPath)}['"]`, 'g'),
+        new RegExp(`import\\s+['"]${this.escapeRegex(importPath)}['"]`, 'g'),
+        new RegExp(`require\\s*\\(\\s*['"]${this.escapeRegex(importPath)}['"]`, 'g'),
+      ];
+
+      for (const pattern of importPatterns) {
+        if (pattern.test(content)) {
+          results.push([filePath, content]);
+          break;
+        }
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Escape special regex characters
+   */
+  private escapeRegex(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  /**
+   * Normalize file path to match existing files in the file system
+   * LLM might return "src/App.tsx" but we might have it stored as "App.tsx" or vice versa
+   */
+  private normalizePath(path: string, files: FileSystem): string {
+    // If exact match exists, use it
+    if (files[path]) return path;
+
+    // Try without src/ prefix
+    const withoutSrc = path.replace(/^src\//, '');
+    if (files[withoutSrc]) return withoutSrc;
+
+    // Try with src/ prefix
+    const withSrc = `src/${path}`;
+    if (files[withSrc]) return withSrc;
+
+    // Try matching by filename
+    const filename = path.split('/').pop();
+    if (filename) {
+      for (const existingPath of Object.keys(files)) {
+        if (existingPath.endsWith(filename)) {
+          return existingPath;
+        }
+      }
+    }
+
+    // Return original if no match found
+    return path;
   }
 
   /**
