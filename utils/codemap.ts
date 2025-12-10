@@ -39,12 +39,18 @@ function analyzeFile(path: string, content: string): FileInfo {
     constants: []
   };
 
+  // MAP-001 fix: Helper to detect hooks (function or arrow function patterns)
+  const hasHookExport = (text: string): boolean => {
+    return /export\s+(?:function|const)\s+use[A-Z]\w*/.test(text);
+  };
+
   // Skip detailed analysis for very large files to prevent performance issues
   if (content.length > MAX_ANALYSIS_SIZE) {
-    // Just determine basic file type and return
+    // Just determine basic file type and return (check first 2000 chars for hooks)
+    const preview = content.slice(0, 2000);
     if (path.includes('/components/') || path.endsWith('App.tsx')) {
       info.type = 'component';
-    } else if (path.includes('/hooks/') || content.slice(0, 1000).includes('export function use')) {
+    } else if (path.includes('/hooks/') || hasHookExport(preview)) {
       info.type = 'hook';
     } else if (path.includes('/data/') || path.endsWith('.json')) {
       info.type = 'data';
@@ -59,7 +65,7 @@ function analyzeFile(path: string, content: string): FileInfo {
   // Determine file type
   if (path.includes('/components/') || path.endsWith('App.tsx')) {
     info.type = 'component';
-  } else if (path.includes('/hooks/') || content.includes('export function use')) {
+  } else if (path.includes('/hooks/') || hasHookExport(content)) {
     info.type = 'hook';
   } else if (path.includes('/data/') || path.endsWith('.json')) {
     info.type = 'data';
@@ -70,12 +76,16 @@ function analyzeFile(path: string, content: string): FileInfo {
   }
 
   // Extract imports
+  // MAP-002 fix: Reset lastIndex before exec loops to prevent state issues
   const importRegex = /import\s+(?:(\{[^}]+\})|(\w+)(?:\s*,\s*\{([^}]+)\})?)\s+from\s+['"]([^'"]+)['"]/g;
   let match;
+  importRegex.lastIndex = 0;
   while ((match = importRegex.exec(content)) !== null) {
     const namedImports = match[1] || match[3] || '';
     const defaultImport = match[2] || '';
+    // MAP-003 fix: Check for undefined before using
     const from = match[4];
+    if (!from) continue;
 
     const items: string[] = [];
     if (defaultImport && !defaultImport.startsWith('{')) {
@@ -93,6 +103,7 @@ function analyzeFile(path: string, content: string): FileInfo {
 
   // Extract exports
   const exportRegex = /export\s+(?:default\s+)?(?:const|function|class|interface|type)\s+(\w+)/g;
+  exportRegex.lastIndex = 0;
   while ((match = exportRegex.exec(content)) !== null) {
     info.exports.push(match[1]);
   }
@@ -105,6 +116,7 @@ function analyzeFile(path: string, content: string): FileInfo {
 
   // Extract React components (functions returning JSX)
   const componentRegex = /(?:export\s+)?(?:const|function)\s+(\w+)(?::\s*React\.FC<(\w+)>)?\s*=?\s*(?:\([^)]*\)|[^=]+)?\s*(?:=>|{)/g;
+  componentRegex.lastIndex = 0;
   while ((match = componentRegex.exec(content)) !== null) {
     const name = match[1];
     // Check if it's a component (starts with capital letter)
@@ -144,6 +156,7 @@ function analyzeFile(path: string, content: string): FileInfo {
 
         // Find child components used
         const jsxComponentRegex = /<([A-Z]\w+)/g;
+        jsxComponentRegex.lastIndex = 0;
         let jsxMatch;
         while ((jsxMatch = jsxComponentRegex.exec(componentBody)) !== null) {
           if (!componentInfo.children.includes(jsxMatch[1])) {
@@ -158,6 +171,7 @@ function analyzeFile(path: string, content: string): FileInfo {
 
   // Extract standalone functions
   const funcRegex = /(?:export\s+)?(?:const|function)\s+([a-z]\w*)\s*(?:=\s*(?:async\s*)?\([^)]*\)\s*(?::\s*\w+)?\s*=>|(?:async\s*)?\([^)]*\))/g;
+  funcRegex.lastIndex = 0;
   while ((match = funcRegex.exec(content)) !== null) {
     if (!info.functions.includes(match[1])) {
       info.functions.push(match[1]);
@@ -166,6 +180,7 @@ function analyzeFile(path: string, content: string): FileInfo {
 
   // Extract constants
   const constRegex = /(?:export\s+)?const\s+([A-Z][A-Z_0-9]+)\s*=/g;
+  constRegex.lastIndex = 0;
   while ((match = constRegex.exec(content)) !== null) {
     info.constants.push(match[1]);
   }
@@ -195,6 +210,11 @@ function getComponentBody(content: string, componentName: string): string | null
         if (content[i] === openChar) depth++;
         else if (content[i] === closeChar) depth--;
         endIndex = i;
+      }
+
+      // If closing brace not found (depth > 0), return null instead of truncated content
+      if (depth > 0) {
+        return null;
       }
 
       return content.substring(startIndex, endIndex);

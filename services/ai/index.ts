@@ -52,7 +52,7 @@ export async function loadProvidersFromLocalStorage(): Promise<ProviderConfig[]>
   const defaultConfig: ProviderConfig = {
     id: 'default-gemini',
     ...DEFAULT_PROVIDERS.gemini,
-    apiKey: process.env.API_KEY || '',
+    apiKey: process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '',
   };
 
   return [defaultConfig];
@@ -73,7 +73,7 @@ export function loadProvidersFromLocalStorageSync(): ProviderConfig[] {
   const defaultConfig: ProviderConfig = {
     id: 'default-gemini',
     ...DEFAULT_PROVIDERS.gemini,
-    apiKey: process.env.API_KEY || '',
+    apiKey: process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '',
   };
 
   return [defaultConfig];
@@ -255,20 +255,24 @@ export class ProviderManager {
     return this.activeProviderId;
   }
 
-  setActiveProvider(id: string): void {
+  // AI-007 fix: Wait for init before modifications to prevent race conditions
+  async setActiveProvider(id: string): Promise<void> {
+    await this.waitForInit();
     if (this.providers.has(id)) {
       this.activeProviderId = id;
       this.save();
     }
   }
 
-  addProvider(config: ProviderConfig): void {
+  async addProvider(config: ProviderConfig): Promise<void> {
+    await this.waitForInit();
     this.providers.set(config.id, config);
     this.instances.delete(config.id); // Clear cached instance
     this.save();
   }
 
-  updateProvider(id: string, updates: Partial<ProviderConfig>): void {
+  async updateProvider(id: string, updates: Partial<ProviderConfig>): Promise<void> {
+    await this.waitForInit();
     const existing = this.providers.get(id);
     if (existing) {
       this.providers.set(id, { ...existing, ...updates });
@@ -277,7 +281,8 @@ export class ProviderManager {
     }
   }
 
-  deleteProvider(id: string): void {
+  async deleteProvider(id: string): Promise<void> {
+    await this.waitForInit();
     this.providers.delete(id);
     this.instances.delete(id);
 

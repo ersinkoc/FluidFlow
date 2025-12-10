@@ -65,69 +65,35 @@ interface ErrorContext {
 }
 
 // System prompt for error fixing - MUST return proper JSON format
-const ERROR_FIX_SYSTEM_PROMPT = `You are an expert React/TypeScript error fixer. Your ONLY job is to fix the error provided.
+const ERROR_FIX_SYSTEM_PROMPT = `You are an expert React/TypeScript error fixer. Fix the error immediately.
 
-## CRITICAL RULES:
-1. ALWAYS use relative imports for local files (./component, ../utils)
-2. NEVER use bare specifiers like "src/components/X" - use "./components/X" instead
-3. Do NOT change anything unrelated to the error
-4. Preserve all existing functionality
-5. Return COMPLETE file content - no placeholders, no "// ... rest of code"
+## ABSOLUTE RULES - FOLLOW EXACTLY:
+1. NEVER ask questions - fix the error directly
+2. NEVER say "I need more information" - use the provided code
+3. ALWAYS respond with JSON only - no explanatory text before or after
+4. ALWAYS use relative imports (./component, ../utils) - NEVER use "src/..." paths
 
-## IMPORTANT - IMPORT ERRORS:
-When you see a "bare specifier" error like:
-  'The specifier "src/components/Hero.tsx" was a bare specifier'
+## FOR IMPORT ERRORS (bare specifier):
+When error says: 'The specifier "src/X" was a bare specifier'
+- The problem is in the file that has: import X from 'src/X'
+- Fix it by changing to: import X from './X' (relative path)
+- The importing file is provided in the prompt - fix THAT file
 
-The problem is NOT in Hero.tsx! The problem is in the file that IMPORTS Hero.tsx incorrectly.
-Look at the "FILES THAT IMPORT THIS PATH" section to find which file has the bad import.
-Fix the IMPORTING file by changing "src/..." to "./" relative paths.
-
-## COMMON FIXES:
-- "bare specifier" → Find the file that has the bad import and fix it (change "src/..." to "./...")
-- "X is not defined" → Add missing import at the top of the file
-- "Cannot read property of undefined" → Add null check or default value
-- "Expected X but got Y" → Fix type mismatch
-- "Module not found" → Fix import path to use relative paths
-- "Unexpected token" → Fix syntax error
-- "is not a function" → Fix import (default vs named) or check export
-
-## RESPONSE FORMAT - CRITICAL:
-You MUST respond with a valid JSON object in this EXACT format:
-
+## RESPONSE FORMAT - MANDATORY JSON:
 \`\`\`json
 {
   "files": {
-    "FILEPATH": "COMPLETE_FILE_CONTENT_HERE"
+    "FILEPATH": "COMPLETE_FILE_CONTENT"
   },
-  "explanation": "Brief explanation of what was fixed"
+  "explanation": "What was fixed"
 }
 \`\`\`
 
-### RULES FOR JSON RESPONSE:
-- The "files" object can contain ONE OR MORE files if multiple need fixing
-- Use the EXACT file path (e.g., "src/App.tsx")
-- Each file content must be a COMPLETE, valid TypeScript/React file
-- Escape special characters in strings: use \\n for newlines, \\" for quotes
-- The "explanation" should be 1-2 sentences explaining the fix
-- Do NOT include markdown code blocks inside the JSON values
-- Do NOT truncate or abbreviate the code
-- If the error is an import error, fix the IMPORTING file, not the imported file
-
-### EXAMPLE - FIXING A BARE SPECIFIER ERROR:
-If error says: 'specifier "src/components/Hero.tsx" was a bare specifier'
-And App.tsx has: import Hero from 'src/components/Hero';
-
-Fix App.tsx (NOT Hero.tsx):
-\`\`\`json
-{
-  "files": {
-    "src/App.tsx": "import React from 'react';\\nimport Hero from './components/Hero';\\n\\nexport default function App() {\\n  return <Hero />;\\n}"
-  },
-  "explanation": "Fixed bare specifier import in App.tsx - changed 'src/components/Hero' to './components/Hero'"
-}
-\`\`\`
-
-Remember: Return ONLY the JSON object, no other text before or after.`;
+CRITICAL:
+- Return ONLY the JSON object above - nothing else
+- files: complete file content with \\n for newlines
+- No markdown, no questions, no extra text
+- If multiple files need fixing, include all in "files" object`;
 
 class ErrorFixAgent {
   private state: AgentState = 'idle';
@@ -290,13 +256,25 @@ class ErrorFixAgent {
           model: getProviderManager().getActiveConfig()?.defaultModel
         });
 
+        // Check if model is asking questions instead of fixing (bad response)
+        if (this.isModelAskingQuestions(fixedCode)) {
+          this.log('warning', 'Invalid Response', 'Model asked questions instead of fixing. Retrying...');
+          continue;
+        }
+
         // Step 5: Parse and validate the response
-        const parseResult = parseMultiFileResponse(fixedCode, true);
+        let parseResult = parseMultiFileResponse(fixedCode, true);
+
+        // Try smart extraction if JSON parse failed
+        if (!parseResult || !parseResult.files || Object.keys(parseResult.files).length === 0) {
+          this.log('info', 'Trying Smart Extraction', 'JSON parse failed, attempting to extract code from response...');
+          parseResult = this.smartExtractFix(fixedCode, targetFile, parsedError);
+        }
 
         if (!parseResult || !parseResult.files || Object.keys(parseResult.files).length === 0) {
           this.log('error', 'Parse Failed', 'Could not parse LLM response as valid JSON with files');
 
-          // Fallback: try to use cleanResponse for raw code
+          // Last resort fallback: try to use cleanResponse for raw code
           const fallbackCode = this.cleanResponse(fixedCode);
           if (fallbackCode && fallbackCode !== files[targetFile]) {
             this.log('info', 'Using Fallback', 'Applying raw code as fallback');
@@ -639,6 +617,93 @@ class ErrorFixAgent {
     }
 
     return results;
+  }
+
+  /**
+   * Check if model is asking questions instead of providing a fix
+   */
+  private isModelAskingQuestions(response: string): boolean {
+    const questionPatterns = [
+      /I need to see/i,
+      /could you (please )?provide/i,
+      /can you (please )?share/i,
+      /please provide/i,
+      /I don't have (access|information|the file)/i,
+      /which file (is|contains|has)/i,
+      /I need more (information|context|details)/i,
+      /without seeing the/i,
+      /I cannot (fix|help|proceed)/i,
+      /\?$/m  // Ends with question mark
+    ];
+
+    // If response has no code blocks and matches question patterns, it's asking questions
+    const hasCodeBlock = /```[\s\S]*?```/.test(response) || /^\s*import /m.test(response);
+
+    if (!hasCodeBlock) {
+      for (const pattern of questionPatterns) {
+        if (pattern.test(response)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Smart extraction: Try to extract fix from non-JSON response
+   */
+  private smartExtractFix(
+    response: string,
+    targetFile: string,
+    parsedError?: ParsedError
+  ): { files: Record<string, string>; explanation?: string } | null {
+    // Try to find code blocks with file paths
+    const codeBlockRegex = /```(?:tsx?|jsx?|javascript|typescript)?\s*\n?([\s\S]*?)```/g;
+    const matches: string[] = [];
+
+    let match;
+    while ((match = codeBlockRegex.exec(response)) !== null) {
+      const code = match[1].trim();
+      if (code && code.length > 50) { // Reasonable code length
+        matches.push(code);
+      }
+    }
+
+    if (matches.length === 0) {
+      return null;
+    }
+
+    // For bare specifier errors, if model provided fixed code, use it
+    if (parsedError?.type === 'bare-specifier' && parsedError.importPath) {
+      // Check if any code block has the fixed import
+      for (const code of matches) {
+        const badPath = parsedError.importPath;
+        const fixedPath = badPath.replace(/^src\//, './');
+
+        // If the code contains the fixed import (not the bad one), use it
+        if (code.includes(fixedPath) && !code.includes(`'${badPath}'`) && !code.includes(`"${badPath}"`)) {
+          return {
+            files: { [targetFile]: code },
+            explanation: `Fixed import: ${badPath} → ${fixedPath}`
+          };
+        }
+      }
+    }
+
+    // If we have a single code block, assume it's the fix for targetFile
+    if (matches.length === 1) {
+      const code = matches[0];
+      // Basic validation: should look like valid TSX/JS
+      if (code.includes('import ') || code.includes('export ') || code.includes('function ')) {
+        return {
+          files: { [targetFile]: code },
+          explanation: 'Extracted from code block'
+        };
+      }
+    }
+
+    return null;
   }
 
   /**

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { spawn, ChildProcess, execSync } from 'child_process';
+import { spawn, spawnSync, ChildProcess, execSync } from 'child_process';
 import path from 'path';
 import { existsSync } from 'fs';
 import { isValidProjectId, isValidInteger } from '../utils/validation';
@@ -14,13 +14,24 @@ const PORT_RANGE_START = 3300;
 const PORT_RANGE_END = 3399;
 
 // Kill any processes using ports in our range (cleanup orphans)
+// RUN-003 fix: Use spawnSync with array args to avoid shell injection
 function cleanupOrphanProcesses() {
   if (process.platform !== 'win32') {
-    // On Unix, use lsof
+    // On Unix, use lsof + kill without shell interpolation
     try {
       for (let port = PORT_RANGE_START; port <= PORT_RANGE_END; port++) {
         try {
-          execSync(`lsof -ti:${port} | xargs kill -9 2>/dev/null`, { stdio: 'ignore' });
+          // RUN-003 fix: Get PIDs using lsof without shell
+          const lsofResult = spawnSync('lsof', ['-ti', `:${port}`], { encoding: 'utf-8' });
+          if (lsofResult.status === 0 && lsofResult.stdout) {
+            const pids = lsofResult.stdout.trim().split('\n').filter((p: string) => p.length > 0);
+            for (const pid of pids) {
+              // Validate PID before killing
+              if (/^\d+$/.test(pid)) {
+                spawnSync('kill', ['-9', pid], { stdio: 'ignore' });
+              }
+            }
+          }
         } catch {
           // Port not in use, ignore
         }
@@ -55,7 +66,7 @@ function cleanupOrphanProcesses() {
         }
         try {
           // Use spawn with array args instead of string interpolation for safety
-          const result = require('child_process').spawnSync('taskkill', ['/pid', pid, '/f', '/t'], { stdio: 'ignore' });
+          const result = spawnSync('taskkill', ['/pid', pid, '/f', '/t'], { stdio: 'ignore' });
           if (result.status === 0) {
             console.log(`[Runner] Killed orphan process PID ${pid}`);
           }
@@ -93,6 +104,10 @@ interface RunningProject {
 
 const runningProjects: Map<string, RunningProject> = new Map();
 
+// RUN-002 fix: Track reserved ports to prevent race condition
+// Ports are reserved when a start request begins and released when fully registered or on error
+const reservedPorts: Set<number> = new Set();
+
 // Helper to push logs with size limit (prevents memory leak)
 function pushLog(logs: string[], entry: string): void {
   logs.push(entry);
@@ -102,16 +117,25 @@ function pushLog(logs: string[], entry: string): void {
   }
 }
 
-// Find an available port
-function findAvailablePort(): number | null {
+// Find an available port and reserve it atomically
+// RUN-002 fix: Returns port only if successfully reserved
+function findAndReservePort(): number | null {
   const usedPorts = new Set(Array.from(runningProjects.values()).map(p => p.port));
 
   for (let port = PORT_RANGE_START; port <= PORT_RANGE_END; port++) {
-    if (!usedPorts.has(port)) {
+    // Check both running projects AND reserved ports
+    if (!usedPorts.has(port) && !reservedPorts.has(port)) {
+      // Immediately reserve this port
+      reservedPorts.add(port);
       return port;
     }
   }
   return null;
+}
+
+// Release a reserved port (called on error or when port is no longer needed)
+function releasePort(port: number): void {
+  reservedPorts.delete(port);
 }
 
 // Get project files directory
@@ -184,8 +208,8 @@ router.post('/:id/start', async (req, res) => {
     runningProjects.delete(id);
   }
 
-  // Find available port
-  const port = findAvailablePort();
+  // RUN-002 fix: Find and reserve port atomically
+  const port = findAndReservePort();
   if (port === null) {
     return res.status(503).json({ error: 'No available ports. Stop some running projects first.' });
   }
@@ -193,6 +217,8 @@ router.post('/:id/start', async (req, res) => {
   // Check if package.json exists
   const packageJsonPath = path.join(filesDir, 'package.json');
   if (!existsSync(packageJsonPath)) {
+    // RUN-002 fix: Release port on error
+    releasePort(port);
     return res.status(400).json({ error: 'No package.json found in project' });
   }
 
@@ -210,6 +236,9 @@ router.post('/:id/start', async (req, res) => {
 
   runningProjects.set(id, runningProject);
 
+  // RUN-002 fix: Release reservation once properly registered
+  releasePort(port);
+
   // Check if node_modules exists
   const nodeModulesPath = path.join(filesDir, 'node_modules');
   const needsInstall = !existsSync(nodeModulesPath);
@@ -222,9 +251,10 @@ router.post('/:id/start', async (req, res) => {
     pushLog(runningProject.logs,`[${new Date().toISOString()}] Starting dev server on port ${port}...`);
 
     // Spawn vite dev server with specific port
+    // Note: shell: false (default) is safer - prevents command injection
     const devProcess = spawn('npx', ['vite', '--port', String(port), '--host'], {
       cwd: filesDir,
-      shell: true,
+      shell: process.platform === 'win32', // Only use shell on Windows for npx compatibility
       env: { ...process.env, FORCE_COLOR: '1' }
     });
 
@@ -267,7 +297,7 @@ router.post('/:id/start', async (req, res) => {
 
     const installProcess = spawn('npm', ['install'], {
       cwd: filesDir,
-      shell: true,
+      shell: process.platform === 'win32', // Only use shell on Windows for npm compatibility
       env: { ...process.env, FORCE_COLOR: '1' }
     });
 
@@ -327,7 +357,6 @@ router.post('/:id/stop', (req, res) => {
     // On Windows, we need to kill the whole process tree
     if (process.platform === 'win32') {
       // Use spawnSync without shell for safety (pid is from Node's ChildProcess, so it's a safe number)
-      const { spawnSync } = require('child_process');
       spawnSync('taskkill', ['/pid', String(running.process.pid), '/f', '/t'], { stdio: 'ignore' });
     } else {
       running.process.kill('SIGTERM');
@@ -374,7 +403,6 @@ router.post('/stop-all', (req, res) => {
     if (running.process && !running.process.killed) {
       if (process.platform === 'win32') {
         // Use spawnSync without shell for safety
-        const { spawnSync } = require('child_process');
         spawnSync('taskkill', ['/pid', String(running.process.pid), '/f', '/t'], { stdio: 'ignore' });
       } else {
         running.process.kill('SIGTERM');

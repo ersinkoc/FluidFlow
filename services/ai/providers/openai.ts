@@ -146,47 +146,28 @@ export class OpenAIProvider implements AIProvider {
     let buffer = ''; // Buffer for incomplete SSE lines
 
     if (reader) {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        // Append new data to buffer
-        buffer += decoder.decode(value, { stream: true });
+          // Append new data to buffer
+          buffer += decoder.decode(value, { stream: true });
 
-        // Split by newlines but keep processing incomplete lines
-        const lines = buffer.split('\n');
+          // Split by newlines but keep processing incomplete lines
+          const lines = buffer.split('\n');
 
-        // Keep the last line in buffer if it doesn't end with newline (incomplete)
-        buffer = lines.pop() || '';
+          // Keep the last line in buffer if it doesn't end with newline (incomplete)
+          buffer = lines.pop() || '';
 
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith('data:')) continue;
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data:')) continue;
 
-          const data = trimmed.slice(5).trim(); // Remove 'data:' prefix
-          if (data === '[DONE]') continue;
-          if (!data) continue;
+            const data = trimmed.slice(5).trim(); // Remove 'data:' prefix
+            if (data === '[DONE]') continue;
+            if (!data) continue;
 
-          try {
-            const parsed = JSON.parse(data);
-            const text = parsed.choices?.[0]?.delta?.content || '';
-            if (text) {
-              fullText += text;
-              onChunk({ text, done: false });
-            }
-          } catch (e) {
-            // Log but don't fail on parse errors - might be partial data
-            console.debug('[OpenAI Stream] Parse error, skipping chunk:', data.slice(0, 100));
-          }
-        }
-      }
-
-      // Process any remaining data in buffer
-      if (buffer.trim()) {
-        const trimmed = buffer.trim();
-        if (trimmed.startsWith('data:')) {
-          const data = trimmed.slice(5).trim();
-          if (data && data !== '[DONE]') {
             try {
               const parsed = JSON.parse(data);
               const text = parsed.choices?.[0]?.delta?.content || '';
@@ -194,11 +175,35 @@ export class OpenAIProvider implements AIProvider {
                 fullText += text;
                 onChunk({ text, done: false });
               }
-            } catch {
-              // Ignore final buffer parse errors
+            } catch (e) {
+              // Log but don't fail on parse errors - might be partial data
+              console.debug('[OpenAI Stream] Parse error, skipping chunk:', data.slice(0, 100));
             }
           }
         }
+
+        // Process any remaining data in buffer
+        if (buffer.trim()) {
+          const trimmed = buffer.trim();
+          if (trimmed.startsWith('data:')) {
+            const data = trimmed.slice(5).trim();
+            if (data && data !== '[DONE]') {
+              try {
+                const parsed = JSON.parse(data);
+                const text = parsed.choices?.[0]?.delta?.content || '';
+                if (text) {
+                  fullText += text;
+                  onChunk({ text, done: false });
+                }
+              } catch {
+                // Ignore final buffer parse errors
+              }
+            }
+          }
+        }
+      } finally {
+        // Release the reader lock to prevent memory leaks
+        reader.releaseLock();
       }
     }
 

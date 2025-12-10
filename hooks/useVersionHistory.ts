@@ -289,22 +289,53 @@ export function useVersionHistory(initialFiles: FileSystem): UseVersionHistoryRe
 
   // Export full history for backend persistence
   const exportHistory = useCallback(() => {
-    // Commit any pending changes first
+    // Clear any pending debounce timer
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
       debounceTimerRef.current = null;
     }
+
+    // If there are pending changes, construct export data including them
+    // (without relying on async setState which would cause race condition)
     if (pendingFilesRef.current) {
-      // We need to include pending changes in export
-      commitPendingChanges();
+      const { files: pendingFiles, label } = pendingFilesRef.current;
+      pendingFilesRef.current = null;
+
+      // Check if changes are meaningful
+      if (JSON.stringify(state.present.files) !== JSON.stringify(pendingFiles)) {
+        const changedFiles = calculateChangedFiles(state.present.files, pendingFiles);
+        const autoLabel = changedFiles.length > 0
+          ? `Modified ${changedFiles.length} file${changedFiles.length > 1 ? 's' : ''}`
+          : 'Changes';
+
+        const newEntry: HistoryEntry = {
+          files: pendingFiles,
+          label: label || autoLabel,
+          timestamp: Date.now(),
+          type: label ? 'manual' : 'auto',
+          changedFiles
+        };
+
+        // Construct history with pending changes included
+        const newPast = [...state.past, state.present];
+        if (newPast.length > MAX_HISTORY_SIZE) {
+          newPast.shift();
+        }
+
+        return {
+          history: [...newPast, newEntry],
+          currentIndex: newPast.length
+        };
+      }
     }
 
+    // No pending changes - return current state
     const allHistory = [...state.past, state.present, ...state.future];
     return {
       history: allHistory,
       currentIndex: state.past.length
     };
-  }, [state, commitPendingChanges]);
+  }, [state]);
 
   // Restore history from backend
   const restoreHistory = useCallback((history: HistoryEntry[], currentIndex: number) => {

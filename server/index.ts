@@ -55,10 +55,24 @@ app.use('/api/settings', settingsRouter);
 app.use('/api/runner', runnerRouter);
 app.use('/api/codemap', codemapRouter);
 
-// Error handling
-app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+// Error handling middleware (must be after all routes)
+app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('[Server Error]', err);
-  res.status(500).json({ error: err.message || 'Internal server error' });
+  // SRV-001 fix: Don't expose internal error details in production
+  const isProduction = process.env.NODE_ENV === 'production';
+  res.status(500).json({
+    error: isProduction ? 'Internal server error' : (err.message || 'Internal server error')
+  });
+});
+
+// SRV-001 fix: Global error handlers for uncaught errors
+process.on('uncaughtException', (err) => {
+  console.error('[Uncaught Exception]', err);
+  // Don't exit immediately to allow graceful handling of in-flight requests
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Unhandled Rejection] at:', promise, 'reason:', reason);
 });
 
 // Start server (HTTP - Vite proxies requests from HTTPS frontend)

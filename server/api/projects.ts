@@ -14,6 +14,10 @@ const router = Router();
 // Projects directory - use process.cwd() for reliability
 const PROJECTS_DIR = path.join(process.cwd(), 'projects');
 
+// PROJ-002 fix: File size limits to prevent memory exhaustion
+const MAX_SINGLE_FILE_SIZE = 5 * 1024 * 1024; // 5MB per file
+const MAX_TOTAL_PROJECT_SIZE = 50 * 1024 * 1024; // 50MB total per project
+
 // Ensure projects dir exists
 if (!existsSync(PROJECTS_DIR)) {
   mkdirSync(PROJECTS_DIR, { recursive: true });
@@ -45,28 +49,53 @@ const getFilesDir = (id: string) => path.join(getProjectPath(id), 'files');
 const getContextPath = (id: string) => path.join(getProjectPath(id), 'context.json');
 
 // Per-project locks to prevent concurrent file updates
-const projectLocks = new Map<string, Promise<void>>();
+// PROJ-001/PROJ-004 fix: Track lock metadata for proper cleanup
+interface LockEntry {
+  promise: Promise<void>;
+  resolve: () => void;
+  timestamp: number;
+}
+const projectLocks = new Map<string, LockEntry>();
+
+// PROJ-004 fix: Periodic cleanup of stale locks (locks older than 5 minutes)
+const LOCK_TIMEOUT_MS = 5 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [projectId, lock] of projectLocks.entries()) {
+    if (now - lock.timestamp > LOCK_TIMEOUT_MS) {
+      console.warn(`[Projects] Cleaning up stale lock for project ${projectId}`);
+      lock.resolve(); // Release the lock
+      projectLocks.delete(projectId);
+    }
+  }
+}, 60 * 1000); // Check every minute
 
 async function withProjectLock<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
   // Wait for any existing lock on this project
   const existingLock = projectLocks.get(projectId);
   if (existingLock) {
-    await existingLock;
+    await existingLock.promise;
   }
 
-  // Create new lock
-  let resolveLock: () => void;
+  // Create new lock with metadata
+  let resolveLock: () => void = () => {};
   const lockPromise = new Promise<void>((resolve) => {
     resolveLock = resolve;
   });
-  projectLocks.set(projectId, lockPromise);
+  const lockEntry: LockEntry = {
+    promise: lockPromise,
+    resolve: resolveLock,
+    timestamp: Date.now()
+  };
+  projectLocks.set(projectId, lockEntry);
 
   try {
     return await fn();
   } finally {
-    resolveLock!();
-    // Clean up lock if it's still ours
-    if (projectLocks.get(projectId) === lockPromise) {
+    resolveLock();
+    // PROJ-001 fix: Only clean up if it's still our lock (atomic check-and-delete)
+    const currentLock = projectLocks.get(projectId);
+    if (currentLock && currentLock.promise === lockPromise) {
       projectLocks.delete(projectId);
     }
   }
@@ -148,6 +177,12 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Validate project ID to prevent path traversal
+    if (!isValidProjectId(id)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
     const projectPath = getProjectPath(id);
 
     if (!existsSync(projectPath)) {
@@ -161,6 +196,7 @@ router.get('/:id', async (req, res) => {
     // Read all files recursively (excluding .git and other system folders)
     const IGNORED_FOLDERS = ['.git', 'node_modules', '.next', '.nuxt', 'dist', 'build', '.cache'];
     const IGNORED_FILES = ['.DS_Store', 'Thumbs.db'];
+    let totalSize = 0;
 
     async function readFilesRecursively(dir: string, basePath: string = '') {
       const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -176,6 +212,17 @@ router.get('/:id', async (req, res) => {
         if (entry.isDirectory()) {
           await readFilesRecursively(fullPath, relativePath);
         } else {
+          // PROJ-002 fix: Check file size before reading
+          const stat = await fs.stat(fullPath);
+          if (stat.size > MAX_SINGLE_FILE_SIZE) {
+            console.warn(`[Projects] Skipping large file: ${relativePath} (${stat.size} bytes)`);
+            continue; // Skip files larger than limit
+          }
+          totalSize += stat.size;
+          if (totalSize > MAX_TOTAL_PROJECT_SIZE) {
+            console.warn(`[Projects] Project size limit exceeded, stopping read`);
+            return; // Stop if total size exceeds limit
+          }
           files[relativePath] = await fs.readFile(fullPath, 'utf-8');
         }
       }
@@ -201,6 +248,31 @@ function validateFilePaths(files: Record<string, unknown>): { valid: boolean; in
   return { valid: true };
 }
 
+// PROJ-002 fix: Helper to validate file sizes
+function validateFileSizes(files: Record<string, unknown>): { valid: boolean; error?: string; totalSize?: number } {
+  let totalSize = 0;
+  for (const [filePath, content] of Object.entries(files)) {
+    if (typeof content === 'string') {
+      const fileSize = Buffer.byteLength(content, 'utf-8');
+      if (fileSize > MAX_SINGLE_FILE_SIZE) {
+        return {
+          valid: false,
+          error: `File "${filePath}" exceeds maximum size (${Math.round(fileSize / 1024 / 1024)}MB > ${MAX_SINGLE_FILE_SIZE / 1024 / 1024}MB)`
+        };
+      }
+      totalSize += fileSize;
+    }
+  }
+  if (totalSize > MAX_TOTAL_PROJECT_SIZE) {
+    return {
+      valid: false,
+      error: `Total project size exceeds maximum (${Math.round(totalSize / 1024 / 1024)}MB > ${MAX_TOTAL_PROJECT_SIZE / 1024 / 1024}MB)`,
+      totalSize
+    };
+  }
+  return { valid: true, totalSize };
+}
+
 // Create new project
 router.post('/', async (req, res) => {
   try {
@@ -211,12 +283,18 @@ router.post('/', async (req, res) => {
 
     // Validate file paths to prevent path traversal attacks
     if (files && typeof files === 'object') {
-      const validation = validateFilePaths(files);
-      if (!validation.valid) {
+      const pathValidation = validateFilePaths(files);
+      if (!pathValidation.valid) {
         return res.status(400).json({
           error: 'Invalid file path detected',
-          invalidPath: validation.invalidPath
+          invalidPath: pathValidation.invalidPath
         });
+      }
+
+      // PROJ-002 fix: Validate file sizes
+      const sizeValidation = validateFileSizes(files);
+      if (!sizeValidation.valid) {
+        return res.status(400).json({ error: sizeValidation.error });
       }
     }
 
@@ -266,12 +344,18 @@ router.put('/:id', async (req, res) => {
 
     // Validate file paths to prevent path traversal attacks
     if (files && typeof files === 'object') {
-      const validation = validateFilePaths(files);
-      if (!validation.valid) {
+      const pathValidation = validateFilePaths(files);
+      if (!pathValidation.valid) {
         return res.status(400).json({
           error: 'Invalid file path detected',
-          invalidPath: validation.invalidPath
+          invalidPath: pathValidation.invalidPath
         });
+      }
+
+      // PROJ-002 fix: Validate file sizes
+      const sizeValidation = validateFileSizes(files);
+      if (!sizeValidation.valid) {
+        return res.status(400).json({ error: sizeValidation.error });
       }
     }
 
@@ -457,6 +541,12 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Validate project ID to prevent path traversal attacks
+    if (!isValidProjectId(id)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
     const projectPath = getProjectPath(id);
 
     if (!existsSync(projectPath)) {
@@ -475,6 +565,12 @@ router.post('/:id/duplicate', async (req, res) => {
   try {
     const { id } = req.params;
     const { name } = req.body;
+
+    // Validate project ID to prevent path traversal attacks
+    if (!isValidProjectId(id)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
     const sourcePath = getProjectPath(id);
 
     if (!existsSync(sourcePath)) {
@@ -522,6 +618,12 @@ router.post('/:id/duplicate', async (req, res) => {
 router.get('/:id/context', async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Validate project ID to prevent path traversal
+    if (!isValidProjectId(id)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
     const projectPath = getProjectPath(id);
 
     if (!existsSync(projectPath)) {
@@ -552,6 +654,12 @@ router.put('/:id/context', async (req, res) => {
   try {
     const { id } = req.params;
     const { history, currentIndex, activeFile, activeTab, aiHistory } = req.body;
+
+    // Validate project ID to prevent path traversal
+    if (!isValidProjectId(id)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
     const projectPath = getProjectPath(id);
 
     if (!existsSync(projectPath)) {
@@ -619,6 +727,12 @@ router.post('/:id/context', async (req, res) => {
   try {
     const { id } = req.params;
     const { history, currentIndex, activeFile, activeTab, aiHistory } = req.body;
+
+    // Validate project ID to prevent path traversal
+    if (!isValidProjectId(id)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
     const projectPath = getProjectPath(id);
 
     if (!existsSync(projectPath)) {
@@ -685,6 +799,12 @@ router.post('/:id/context', async (req, res) => {
 router.delete('/:id/context', async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Validate project ID to prevent path traversal
+    if (!isValidProjectId(id)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
     const contextPath = getContextPath(id);
 
     if (existsSync(contextPath)) {

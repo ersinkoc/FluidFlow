@@ -21,8 +21,29 @@ export function safeJsonStringify(obj: unknown, fallback: string = '{}'): string
     return fallback;
   }
 
+  // Handle Symbol directly at top level
+  if (typeof obj === 'symbol') {
+    return fallback;
+  }
+
+  // Handle BigInt directly at top level
+  if (typeof obj === 'bigint') {
+    return JSON.stringify(obj.toString());
+  }
+
   try {
-    const result = JSON.stringify(obj);
+    // JSON-004 fix: Custom replacer to handle BigInt and Symbol values in nested objects
+    const replacer = (_key: string, value: unknown): unknown => {
+      if (typeof value === 'bigint') {
+        return value.toString();
+      }
+      if (typeof value === 'symbol') {
+        return undefined; // Symbols are excluded (same as JSON.stringify default)
+      }
+      return value;
+    };
+
+    const result = JSON.stringify(obj, replacer);
     // JSON.stringify can return undefined for some edge cases
     if (result === undefined) {
       return fallback;

@@ -141,6 +141,12 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
   const autoFixTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastFixedErrorRef = useRef<string | null>(null);
+  const filesRef = useRef<FileSystem>(files); // Ref to avoid stale closure in message handler
+
+  // Keep filesRef updated
+  useEffect(() => {
+    filesRef.current = files;
+  }, [files]);
 
   // Error Fix Agent state
   const [currentError, setCurrentError] = useState<string | null>(null);
@@ -621,8 +627,8 @@ Return ONLY the complete fixed ${targetFile} code.
 
                     console.log('[AutoFix] Bare specifier error, searching for import of:', bareSpecifier);
 
-                    // Search all files for the import
-                    for (const [filePath, content] of Object.entries(files)) {
+                    // Search all files for the import (use ref to avoid stale closure)
+                    for (const [filePath, content] of Object.entries(filesRef.current)) {
                       if (content.includes(bareSpecifier) || content.includes(bareWithoutExt)) {
                         console.log('[AutoFix] Found import in:', filePath);
                         targetFile = filePath;
@@ -635,11 +641,11 @@ Return ONLY the complete fixed ${targetFile} code.
                   // Parse stack trace to get target file for other errors
                   const stackInfo = parseStackTrace(errorMsg);
                   targetFile = stackInfo.file || 'src/App.tsx';
-                  targetFileContent = files[targetFile] || appCode;
+                  targetFileContent = filesRef.current[targetFile] || appCode;
                 }
 
                 console.log('[AutoFix] Simple fix attempt for:', targetFile);
-                console.log('[AutoFix] Target file exists:', !!files[targetFile], 'Content length:', targetFileContent?.length);
+                console.log('[AutoFix] Target file exists:', !!filesRef.current[targetFile], 'Content length:', targetFileContent?.length);
 
                 const fixResult = attemptAutoFix(errorMsg, targetFileContent);
                 console.log('[AutoFix] Fix result:', { success: fixResult.success, wasAINeeded: fixResult.wasAINeeded, error: fixResult.error, fixType: fixResult.fixType });
@@ -647,7 +653,7 @@ Return ONLY the complete fixed ${targetFile} code.
                 if (fixResult.success && !fixResult.wasAINeeded) {
                   // Simple fix worked! Apply it to the correct target file
                   lastFixedErrorRef.current = errorMsg;
-                  setFiles({ ...files, [targetFile]: fixResult.newCode });
+                  setFiles({ ...filesRef.current, [targetFile]: fixResult.newCode });
                   setAutoFixToast(`⚡ ${fixResult.description}`);
                   if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
                   toastTimeoutRef.current = setTimeout(() => setAutoFixToast(null), 3000);
@@ -712,7 +718,7 @@ Return ONLY the complete fixed ${targetFile} code.
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [autoFixEnabled, isAutoFixing, isInspectEditing, pendingAutoFix, appCode, files, setFiles, parseStackTrace]);
+  }, [autoFixEnabled, isAutoFixing, isInspectEditing, pendingAutoFix, appCode, setFiles, parseStackTrace]);
 
   // Build iframe content
   useEffect(() => {

@@ -34,14 +34,44 @@ const DEFAULT_CONFIG: ContextManagerConfig = {
   storageKey: 'fluidflow_contexts'
 };
 
-// Rough token estimation (4 chars ≈ 1 token)
+// AI-008 fix: Improved token estimation using word-based heuristics
+// Average: ~0.75 tokens per word for English, ~1.3 tokens per word for code
 function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
+  if (!text || text.length === 0) return 0;
+
+  // Count words (sequences of alphanumeric characters)
+  const wordMatches = text.match(/\b\w+\b/g);
+  const wordCount = wordMatches ? wordMatches.length : 0;
+
+  // Count code-like tokens (operators, brackets, special chars)
+  const codeMatches = text.match(/[{}()\[\]<>:;,=+\-*/&|!@#$%^]+/g);
+  const codeCharCount = codeMatches ? codeMatches.reduce((sum: number, t: string) => sum + t.length, 0) : 0;
+
+  // Count numbers (each number is typically 1 token)
+  const numberMatches = text.match(/\b\d+\.?\d*\b/g);
+  const numberCount = numberMatches ? numberMatches.length : 0;
+
+  // Estimate based on content type
+  // - Words: ~1.3 tokens per word (accounts for subword tokenization)
+  // - Code tokens: ~0.5 tokens per character (densely packed)
+  // - Numbers: ~1 token each
+
+  const wordTokens = Math.ceil(wordCount * 1.3);
+  const codeTokens = Math.ceil(codeCharCount * 0.5);
+
+  // Add a small base for formatting/whitespace
+  const totalEstimate = wordTokens + codeTokens + numberCount;
+
+  // Ensure minimum of 1 token for non-empty strings, with fallback to char-based for very short strings
+  return Math.max(1, totalEstimate || Math.ceil(text.length / 4));
 }
 
 class ConversationContextManager {
   private contexts: Map<string, ConversationContext> = new Map();
   private config: ContextManagerConfig;
+  // AI-006 fix: Debounce streaming saves to prevent data loss
+  private streamingSaveTimeout: ReturnType<typeof setTimeout> | null = null;
+  private static STREAMING_SAVE_DEBOUNCE_MS = 2000; // Save every 2s during streaming
 
   constructor(config: Partial<ContextManagerConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -61,6 +91,13 @@ class ConversationContextManager {
       }
     } catch (e) {
       console.error('[ContextManager] Failed to load from storage:', e);
+      // Clear corrupted data to prevent repeated failures
+      try {
+        localStorage.removeItem(this.config.storageKey);
+        console.log('[ContextManager] Cleared corrupted storage data');
+      } catch (removeError) {
+        console.error('[ContextManager] Failed to clear corrupted storage:', removeError);
+      }
     }
   }
 
@@ -134,17 +171,32 @@ class ConversationContextManager {
 
     const lastMsg = context.messages[context.messages.length - 1];
     if (lastMsg.role === 'assistant') {
-      // Update token estimate
-      context.estimatedTokens -= estimateTokens(lastMsg.content);
+      // Update token estimate (CTX-001 fix: ensure non-negative)
+      const oldTokens = estimateTokens(lastMsg.content);
+      const newTokens = estimateTokens(content);
+      context.estimatedTokens = Math.max(0, context.estimatedTokens - oldTokens + newTokens);
       lastMsg.content = content;
-      context.estimatedTokens += estimateTokens(content);
       context.lastUpdatedAt = Date.now();
-      // Don't save on every update during streaming
+
+      // AI-006 fix: Debounce save during streaming to prevent data loss
+      // Save periodically rather than never during streaming
+      if (this.streamingSaveTimeout) {
+        clearTimeout(this.streamingSaveTimeout);
+      }
+      this.streamingSaveTimeout = setTimeout(() => {
+        this.saveToStorage();
+        this.streamingSaveTimeout = null;
+      }, ConversationContextManager.STREAMING_SAVE_DEBOUNCE_MS);
     }
   }
 
   // Finalize streaming (save after streaming completes)
   finalizeMessage(contextId: string): void {
+    // AI-006 fix: Clear any pending debounced save
+    if (this.streamingSaveTimeout) {
+      clearTimeout(this.streamingSaveTimeout);
+      this.streamingSaveTimeout = null;
+    }
     this.saveToStorage();
   }
 

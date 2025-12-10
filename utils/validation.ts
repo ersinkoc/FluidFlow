@@ -17,17 +17,28 @@ export function validateFilePath(filePath: string, basePath: string = ''): strin
     throw new Error('Path contains null byte');
   }
 
-  // Decode URL-encoded characters before validation
+  // Recursively decode URL-encoded characters to prevent double-encoding bypass (VAL-002 fix)
   let decodedPath = filePath;
-  try {
-    // Attempt to decode URL-encoded characters
-    decodedPath = decodeURIComponent(filePath);
-  } catch {
-    // If decoding fails, use original path
+  let prevPath = '';
+  const maxIterations = 10; // Prevent infinite loops
+  let iterations = 0;
+  while (decodedPath !== prevPath && iterations < maxIterations) {
+    prevPath = decodedPath;
+    try {
+      decodedPath = decodeURIComponent(decodedPath);
+    } catch {
+      // If decoding fails, stop iteration
+      break;
+    }
+    iterations++;
   }
 
+  // Normalize backslashes to forward slashes for consistent traversal detection (VAL-001 fix)
+  const normalizedSlashes = decodedPath.replace(/\\/g, '/');
+
   // Check for traversal patterns BEFORE normalization (catches encoded traversal)
-  if (decodedPath.includes('..') || decodedPath.includes('~')) {
+  // Check both original and slash-normalized versions
+  if (decodedPath.includes('..') || normalizedSlashes.includes('..') || decodedPath.includes('~')) {
     throw new Error('Path traversal detected');
   }
 
@@ -79,14 +90,24 @@ export function validateProjectId(projectId: string): boolean {
 
 /**
  * Sanitizes user input to prevent XSS
+ * VAL-003 fix: Explicit type check to avoid type coercion issues
  */
-export function sanitizeInput(input: string): string {
-  if (!input || typeof input !== 'string') {
+export function sanitizeInput(input: unknown): string {
+  // Explicit null/undefined check first, then type check
+  if (input === null || input === undefined) {
+    return '';
+  }
+
+  // Convert to string if not already (handles numbers, booleans, etc.)
+  const str = typeof input === 'string' ? input : String(input);
+
+  // Return empty for empty strings
+  if (str.length === 0) {
     return '';
   }
 
   // First, escape & to prevent breaking other entity encoding
-  let sanitized = input.replace(/&/g, '&amp;');
+  let sanitized = str.replace(/&/g, '&amp;');
 
   // HTML entity encoding
   sanitized = sanitized

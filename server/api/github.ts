@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import simpleGit, { SimpleGit } from 'simple-git';
 import path from 'path';
 import fs from 'fs/promises';
@@ -13,6 +13,54 @@ const router = Router();
 // Projects directory - use process.cwd() for reliability
 const PROJECTS_DIR = path.join(process.cwd(), 'projects');
 
+// GH-002 fix: Simple in-memory rate limiter for expensive operations
+interface RateLimitEntry {
+  count: number;
+  resetTime: number;
+}
+
+const rateLimitMap = new Map<string, RateLimitEntry>();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute window
+const RATE_LIMIT_MAX_REQUESTS = 10; // Max 10 requests per minute for expensive ops
+
+// Cleanup old rate limit entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of rateLimitMap.entries()) {
+    if (now > entry.resetTime) {
+      rateLimitMap.delete(key);
+    }
+  }
+}, 5 * 60 * 1000);
+
+// GH-002 fix: Rate limiting middleware for expensive operations
+function rateLimitMiddleware(req: Request, res: Response, next: NextFunction) {
+  // Use IP or a fixed key for simplicity (no auth in this app)
+  const clientKey = req.ip || 'anonymous';
+  const now = Date.now();
+
+  let entry = rateLimitMap.get(clientKey);
+
+  if (!entry || now > entry.resetTime) {
+    // Reset or create new entry
+    entry = { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS };
+    rateLimitMap.set(clientKey, entry);
+    return next();
+  }
+
+  if (entry.count >= RATE_LIMIT_MAX_REQUESTS) {
+    const retryAfter = Math.ceil((entry.resetTime - now) / 1000);
+    res.set('Retry-After', String(retryAfter));
+    return res.status(429).json({
+      error: 'Too many requests. Please try again later.',
+      retryAfter
+    });
+  }
+
+  entry.count++;
+  return next();
+}
+
 // Helper to get project paths
 const getProjectPath = (id: string) => path.join(PROJECTS_DIR, id);
 const getFilesDir = (id: string) => path.join(getProjectPath(id), 'files');
@@ -21,6 +69,28 @@ const getMetaPath = (id: string) => path.join(getProjectPath(id), 'project.json'
 // Check if directory has its own .git folder (not inherited from parent)
 const isOwnGitRepo = (dir: string): boolean => {
   return existsSync(path.join(dir, '.git'));
+};
+
+// GH-001 fix: Validate GitHub token format to prevent invalid API calls
+const isValidGitHubToken = (token: string): boolean => {
+  if (!token || typeof token !== 'string') return false;
+
+  // Classic Personal Access Token: ghp_ followed by 36 alphanumeric chars
+  if (/^ghp_[a-zA-Z0-9]{36}$/.test(token)) return true;
+
+  // Fine-grained Personal Access Token: github_pat_ prefix
+  if (/^github_pat_[a-zA-Z0-9_]{22,}$/.test(token)) return true;
+
+  // OAuth token: 40 hex characters
+  if (/^gho_[a-zA-Z0-9]{36}$/.test(token)) return true;
+
+  // GitHub App installation token
+  if (/^ghs_[a-zA-Z0-9]{36}$/.test(token)) return true;
+
+  // Legacy OAuth tokens (40 hex chars)
+  if (/^[a-f0-9]{40}$/i.test(token)) return true;
+
+  return false;
 };
 
 // Set remote origin
@@ -98,8 +168,8 @@ router.get('/:id/remote', async (req, res) => {
   }
 });
 
-// Push to remote
-router.post('/:id/push', async (req, res) => {
+// Push to remote (GH-002 fix: rate limited)
+router.post('/:id/push', rateLimitMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     const { remote = 'origin', branch, force = false, setUpstream = true } = req.body;
@@ -198,13 +268,62 @@ router.post('/:id/fetch', async (req, res) => {
   }
 });
 
-// Clone a repository
-router.post('/clone', async (req, res) => {
+// Validate git clone URL to prevent SSRF and malicious cloning
+const isValidGitUrl = (url: string): boolean => {
+  if (!url || typeof url !== 'string') return false;
+
+  // Allow HTTPS URLs from trusted git hosting providers
+  const trustedHosts = [
+    /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+(?:\.git)?$/,
+    /^https:\/\/gitlab\.com\/[\w.-]+\/[\w.-]+(?:\.git)?$/,
+    /^https:\/\/bitbucket\.org\/[\w.-]+\/[\w.-]+(?:\.git)?$/,
+    /^https:\/\/[\w.-]+\.github\.io\/[\w.-]+(?:\.git)?$/,
+  ];
+
+  // Check if URL matches any trusted pattern
+  for (const pattern of trustedHosts) {
+    if (pattern.test(url)) return true;
+  }
+
+  // Also allow generic HTTPS git URLs but validate structure
+  const genericHttpsPattern = /^https:\/\/[\w.-]+(?::\d+)?\/[\w./-]+(?:\.git)?$/;
+  if (genericHttpsPattern.test(url)) {
+    // Block localhost, internal IPs, and private networks
+    const blocked = [
+      /localhost/i,
+      /127\.\d+\.\d+\.\d+/,
+      /10\.\d+\.\d+\.\d+/,
+      /172\.(1[6-9]|2\d|3[01])\.\d+\.\d+/,
+      /192\.168\.\d+\.\d+/,
+      /0\.0\.0\.0/,
+      /\[::1\]/,
+      /\.local\b/i,
+      /\.internal\b/i,
+    ];
+    for (const pattern of blocked) {
+      if (pattern.test(url)) return false;
+    }
+    return true;
+  }
+
+  return false;
+};
+
+// Clone a repository (GH-002 fix: rate limited)
+router.post('/clone', rateLimitMiddleware, async (req, res) => {
   try {
     const { url, name } = req.body;
 
     if (!url) {
       return res.status(400).json({ error: 'Repository URL required' });
+    }
+
+    // Validate URL to prevent SSRF attacks
+    if (!isValidGitUrl(url)) {
+      return res.status(400).json({
+        error: 'Invalid repository URL',
+        details: 'Only HTTPS URLs from trusted git hosting providers are allowed'
+      });
     }
 
     // Generate project ID
@@ -246,14 +365,19 @@ router.post('/clone', async (req, res) => {
   }
 });
 
-// Create GitHub repository (requires token)
-router.post('/:id/create-repo', async (req, res) => {
+// Create GitHub repository (requires token) (GH-002 fix: rate limited)
+router.post('/:id/create-repo', rateLimitMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     const { token, name, description, isPrivate = false } = req.body;
 
     if (!token) {
       return res.status(400).json({ error: 'GitHub token required' });
+    }
+
+    // GH-001 fix: Validate token format
+    if (!isValidGitHubToken(token)) {
+      return res.status(400).json({ error: 'Invalid GitHub token format' });
     }
 
     const filesDir = getFilesDir(id);
@@ -338,6 +462,11 @@ router.post('/verify-token', async (req, res) => {
 
     if (!token) {
       return res.status(400).json({ error: 'Token required' });
+    }
+
+    // GH-001 fix: Validate token format before API call
+    if (!isValidGitHubToken(token)) {
+      return res.status(400).json({ valid: false, error: 'Invalid token format' });
     }
 
     const response = await fetch('https://api.github.com/user', {

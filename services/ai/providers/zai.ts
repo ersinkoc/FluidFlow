@@ -203,14 +203,16 @@ export class ZAIProvider implements AIProvider {
     }
 
     // Check if response appears to be incomplete
+    // Using explicit parentheses for clarity on operator precedence
     const trimmed = fullText.trim();
-    const isIncomplete = trimmed.endsWith('```') && !trimmed.includes('```tsx') && !trimmed.includes('```jsx') ||
-                       trimmed.endsWith('"') && !trimmed.endsWith('"}') && !trimmed.endsWith('"}\n') ||
-                       trimmed.includes('className=\\') && !trimmed.endsWith('}') ||
-                       // Check for incomplete JSON
-                       (trimmed.includes('{') && !trimmed.endsWith('}')) ||
-                       // Check for unclosed JSON object (missing closing brace)
-                       (trimmed.startsWith('{') && trimmed.split('{').length > trimmed.split('}').length);
+    const isIncomplete =
+      (trimmed.endsWith('```') && !trimmed.includes('```tsx') && !trimmed.includes('```jsx')) ||
+      (trimmed.endsWith('"') && !trimmed.endsWith('"}') && !trimmed.endsWith('"}\n')) ||
+      (trimmed.includes('className=\\') && !trimmed.endsWith('}')) ||
+      // Check for incomplete JSON
+      (trimmed.includes('{') && !trimmed.endsWith('}')) ||
+      // Check for unclosed JSON object (missing closing brace)
+      (trimmed.startsWith('{') && trimmed.split('{').length > trimmed.split('}').length);
 
     if (isIncomplete) {
       console.warn('[ZAI] Response appears to be truncated');

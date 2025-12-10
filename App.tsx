@@ -16,7 +16,8 @@ import { SyncConfirmationDialog } from './components/SyncConfirmationDialog';
 import { CreditsModal } from './components/CreditsModal';
 import { CodeMapModal } from './components/ControlPanel/CodeMapModal';
 import { CodeMap } from './services/codemap/types';
-import { useKeyboardShortcuts, KeyboardShortcut } from './hooks/useKeyboardShortcuts';
+// Keyboard shortcuts disabled due to browser conflicts
+// import { useKeyboardShortcuts, KeyboardShortcut } from './hooks/useKeyboardShortcuts';
 import { useVersionHistory } from './hooks/useVersionHistory';
 import { useProject } from './hooks/useProject';
 import { diffLines } from 'diff';
@@ -411,7 +412,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   } = useVersionHistory(project.currentProject ? project.files : defaultFiles);
 
   const [activeFile, setActiveFile] = useState<string>('src/App.tsx');
+  const activeFileRef = useRef(activeFile);
   const [activeTab, setActiveTab] = useState<TabType>('preview');
+
+  // Keep activeFileRef updated to avoid stale closure in handleDiscardChanges
+  useEffect(() => {
+    activeFileRef.current = activeFile;
+  }, [activeFile]);
 
   // Track if we've synced files from backend on initial load
   const hasInitializedFromBackend = useRef(false);
@@ -594,17 +601,24 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   const [isGenerating, setIsGenerating] = useState(false);
   const [resetKey, setResetKey] = useState(0);
   const [selectedModel, setSelectedModel] = useState('models/gemini-2.5-flash');
+  const selectedModelRef = useRef(selectedModel);
+
+  // Keep ref updated to avoid stale closure in handleModelChange
+  useEffect(() => {
+    selectedModelRef.current = selectedModel;
+  }, [selectedModel]);
 
   // Handle model/provider change - also clears conversation context
+  // Uses ref to avoid recreating callback when model changes (prevents unnecessary re-renders)
   const handleModelChange = useCallback((newModel: string) => {
-    if (newModel !== selectedModel) {
+    if (newModel !== selectedModelRef.current) {
       setSelectedModel(newModel);
       // Clear the main chat context when model changes
       const contextManager = getContextManager();
       contextManager.clearContext('main-chat');
       console.log('[App] Model changed, context cleared:', newModel);
     }
-  }, [selectedModel]);
+  }, []);
 
   // Track uncommitted changes (WIP)
   const [hasUncommittedChanges, setHasUncommittedChanges] = useState(false);
@@ -767,118 +781,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     }
   }, [canUndo, canRedo, undo, redo, project]);
 
-  // Keyboard shortcuts
-  const shortcuts: KeyboardShortcut[] = useMemo(() => [
-    {
-      key: 'p',
-      ctrl: true,
-      action: () => setIsCommandPaletteOpen(true),
-      description: 'Open Command Palette'
-    },
-    {
-      key: 'k',
-      ctrl: true,
-      action: () => setIsCommandPaletteOpen(true),
-      description: 'Open Command Palette'
-    },
-    {
-      key: 'Escape',
-      action: () => {
-        if (isCommandPaletteOpen) setIsCommandPaletteOpen(false);
-        else if (isMegaSettingsOpen) setIsMegaSettingsOpen(false);
-        else if (isHistoryPanelOpen) setIsHistoryPanelOpen(false);
-        else if (pendingReview) setPendingReview(null);
-      },
-      description: 'Close modal'
-    },
-    {
-      key: 'h',
-      ctrl: true,
-      shift: true,
-      action: () => setIsHistoryPanelOpen(prev => !prev),
-      description: 'Toggle History Panel'
-    },
-    {
-      key: '1',
-      ctrl: true,
-      action: () => setActiveTab('preview'),
-      description: 'Switch to Preview'
-    },
-    {
-      key: '2',
-      ctrl: true,
-      action: () => setActiveTab('code'),
-      description: 'Switch to Code'
-    },
-    {
-      key: 'j',
-      ctrl: true,
-      action: () => setIsSnippetsPanelOpen(true),
-      description: 'Open Snippets'
-    },
-    {
-      key: 't',
-      ctrl: true,
-      action: () => setIsTailwindPaletteOpen(true),
-      description: 'Open Tailwind Palette'
-    },
-    {
-      key: 't',
-      ctrl: true,
-      shift: true,
-      action: () => setIsComponentTreeOpen(true),
-      description: 'Open Component Tree'
-    },
-    {
-      key: 'z',
-      ctrl: true,
-      action: () => { if (canUndo) undo(); },
-      description: 'Undo'
-    },
-    {
-      key: 'y',
-      ctrl: true,
-      action: () => { if (canRedo) redo(); },
-      description: 'Redo'
-    },
-    {
-      key: 'z',
-      ctrl: true,
-      shift: true,
-      action: () => { if (canRedo) redo(); },
-      description: 'Redo'
-    },
-    {
-      key: 'o',
-      ctrl: true,
-      action: () => setIsProjectManagerOpen(true),
-      description: 'Open Project Manager'
-    },
-    {
-      key: ',',
-      ctrl: true,
-      action: () => setIsMegaSettingsOpen(true),
-      description: 'Open Settings'
-    },
-    {
-      key: 'g',
-      ctrl: true,
-      shift: true,
-      action: () => setActiveTab(activeTab === 'git' ? 'preview' : 'git'),
-      description: 'Toggle Git Tab'
-    },
-    {
-      key: 's',
-      ctrl: true,
-      action: () => { project.syncFiles(); },
-      description: 'Save to Server'
-    },
-  ], [isCommandPaletteOpen, isHistoryPanelOpen, pendingReview, canUndo, canRedo, undo, redo, project]);
-
-  // Disabled: Browser conflicts with keyboard shortcuts
+  // Keyboard shortcuts - DISABLED due to browser conflicts
+  // Commenting out the useMemo to avoid unnecessary computation since shortcuts aren't used
+  // const shortcuts: KeyboardShortcut[] = useMemo(() => [...], [deps]);
   // useKeyboardShortcuts(shortcuts);
 
   // Discard all uncommitted changes and restore from last commit
+  // Uses activeFileRef to avoid stale closure issues during async operation
   const handleDiscardChanges = useCallback(async () => {
     if (!project.currentProject) return;
 
@@ -896,8 +805,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         // Reset uncommitted changes flag
         setHasUncommittedChanges(false);
 
-        // Reset active file if it was deleted
-        if (!committedFiles[activeFile]) {
+        // Reset active file if it was deleted (use ref to get current value)
+        if (!committedFiles[activeFileRef.current]) {
           const firstSrc = Object.keys(committedFiles).find(f => f.startsWith('src/'));
           setActiveFile(firstSrc || 'package.json');
         }
@@ -907,7 +816,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     } catch (err) {
       console.error('[App] Failed to discard changes:', err);
     }
-  }, [project.currentProject, activeFile, resetFiles]);
+  }, [project.currentProject, resetFiles]);
 
   // Revert to a specific commit
   const handleRevertToCommit = useCallback(async (commitHash: string): Promise<boolean> => {

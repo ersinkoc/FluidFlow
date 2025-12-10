@@ -20,6 +20,42 @@ if (!existsSync(SETTINGS_DIR)) {
   mkdirSync(SETTINGS_DIR, { recursive: true });
 }
 
+// SET-001/SET-002 fix: Validation constants for settings
+const MAX_PROVIDERS = 50;
+const MAX_SNIPPETS = 200;
+const MAX_SNIPPET_CODE_LENGTH = 100000; // 100KB per snippet
+const MAX_SNIPPET_NAME_LENGTH = 200;
+const MAX_PROVIDER_NAME_LENGTH = 100;
+
+// SET-001 fix: Validate custom snippet structure
+function isValidSnippet(snippet: unknown): snippet is { name: string; code: string; category?: string } {
+  if (!snippet || typeof snippet !== 'object') return false;
+  const s = snippet as Record<string, unknown>;
+
+  // Required fields with type checks
+  if (typeof s.name !== 'string' || s.name.length === 0 || s.name.length > MAX_SNIPPET_NAME_LENGTH) return false;
+  if (typeof s.code !== 'string' || s.code.length > MAX_SNIPPET_CODE_LENGTH) return false;
+
+  // Optional category must be a string if present
+  if (s.category !== undefined && typeof s.category !== 'string') return false;
+
+  // Check for XSS/injection in name (basic check)
+  if (/<script|javascript:|on\w+=/i.test(s.name)) return false;
+
+  return true;
+}
+
+// SET-002 fix: Validate array sizes
+function validateArraySizes(settings: Partial<GlobalSettings>): { valid: boolean; error?: string } {
+  if (settings.aiProviders && settings.aiProviders.length > MAX_PROVIDERS) {
+    return { valid: false, error: `Too many providers (max ${MAX_PROVIDERS})` };
+  }
+  if (settings.customSnippets && settings.customSnippets.length > MAX_SNIPPETS) {
+    return { valid: false, error: `Too many snippets (max ${MAX_SNIPPETS})` };
+  }
+  return { valid: true };
+}
+
 // Global settings structure
 interface ProviderConfig {
   id: string;
@@ -152,6 +188,36 @@ router.put('/', async (req, res) => {
   try {
     const { aiProviders, activeProviderId, customSnippets } = req.body;
 
+    // SET-002 fix: Validate array sizes
+    const sizeValidation = validateArraySizes({ aiProviders, customSnippets });
+    if (!sizeValidation.valid) {
+      return res.status(400).json({ error: sizeValidation.error });
+    }
+
+    // SET-001 fix: Validate snippets if provided
+    if (customSnippets !== undefined && Array.isArray(customSnippets)) {
+      for (const snippet of customSnippets) {
+        if (!isValidSnippet(snippet)) {
+          return res.status(400).json({
+            error: 'Invalid snippet',
+            details: `Each snippet must have name (max ${MAX_SNIPPET_NAME_LENGTH} chars) and code (max ${MAX_SNIPPET_CODE_LENGTH} chars)`
+          });
+        }
+      }
+    }
+
+    // Validate providers if provided
+    if (aiProviders !== undefined && Array.isArray(aiProviders)) {
+      for (const provider of aiProviders) {
+        if (!provider || typeof provider !== 'object') {
+          return res.status(400).json({ error: 'Invalid provider configuration' });
+        }
+        if (typeof provider.name === 'string' && provider.name.length > MAX_PROVIDER_NAME_LENGTH) {
+          return res.status(400).json({ error: `Provider name too long (max ${MAX_PROVIDER_NAME_LENGTH} chars)` });
+        }
+      }
+    }
+
     const updatedAt = await withSettingsLock(async () => {
       const settings = await loadSettings();
 
@@ -191,6 +257,25 @@ router.put('/ai-providers', async (req, res) => {
   try {
     const { providers, activeId } = req.body;
 
+    // SET-002 fix: Validate providers array size
+    if (providers !== undefined) {
+      if (!Array.isArray(providers)) {
+        return res.status(400).json({ error: 'Providers must be an array' });
+      }
+      if (providers.length > MAX_PROVIDERS) {
+        return res.status(400).json({ error: `Too many providers (max ${MAX_PROVIDERS})` });
+      }
+      // Validate each provider
+      for (const provider of providers) {
+        if (!provider || typeof provider !== 'object') {
+          return res.status(400).json({ error: 'Invalid provider configuration' });
+        }
+        if (typeof provider.name === 'string' && provider.name.length > MAX_PROVIDER_NAME_LENGTH) {
+          return res.status(400).json({ error: `Provider name too long (max ${MAX_PROVIDER_NAME_LENGTH} chars)` });
+        }
+      }
+    }
+
     const updatedAt = await withSettingsLock(async () => {
       const settings = await loadSettings();
 
@@ -226,6 +311,25 @@ router.put('/snippets', async (req, res) => {
   try {
     const { snippets } = req.body;
 
+    // SET-001/SET-002 fix: Validate snippets array
+    if (snippets !== undefined) {
+      if (!Array.isArray(snippets)) {
+        return res.status(400).json({ error: 'Snippets must be an array' });
+      }
+      if (snippets.length > MAX_SNIPPETS) {
+        return res.status(400).json({ error: `Too many snippets (max ${MAX_SNIPPETS})` });
+      }
+      // Validate each snippet
+      for (const snippet of snippets) {
+        if (!isValidSnippet(snippet)) {
+          return res.status(400).json({
+            error: 'Invalid snippet in array',
+            details: `Each snippet must have name (max ${MAX_SNIPPET_NAME_LENGTH} chars) and code (max ${MAX_SNIPPET_CODE_LENGTH} chars)`
+          });
+        }
+      }
+    }
+
     const updatedAt = await withSettingsLock(async () => {
       const settings = await loadSettings();
       settings.customSnippets = snippets || [];
@@ -245,8 +349,21 @@ router.post('/snippets', async (req, res) => {
   try {
     const { name, code, category } = req.body;
 
+    // SET-001 fix: Validate snippet structure
+    if (!isValidSnippet({ name, code, category })) {
+      return res.status(400).json({
+        error: 'Invalid snippet',
+        details: `Name (max ${MAX_SNIPPET_NAME_LENGTH} chars) and code (max ${MAX_SNIPPET_CODE_LENGTH} chars) are required`
+      });
+    }
+
     const newSnippet = await withSettingsLock(async () => {
       const settings = await loadSettings();
+
+      // SET-002 fix: Check array size limit
+      if (settings.customSnippets.length >= MAX_SNIPPETS) {
+        throw new Error(`Maximum snippets limit reached (${MAX_SNIPPETS})`);
+      }
 
       const snippet: CustomSnippet = {
         id: `custom-${Date.now()}`,
@@ -262,9 +379,9 @@ router.post('/snippets', async (req, res) => {
     });
 
     res.status(201).json(newSnippet);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Add snippet error:', error);
-    res.status(500).json({ error: 'Failed to add snippet' });
+    res.status(error.message?.includes('limit') ? 400 : 500).json({ error: error.message || 'Failed to add snippet' });
   }
 });
 

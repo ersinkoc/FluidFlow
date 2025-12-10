@@ -72,23 +72,29 @@ export class GeminiProvider implements AIProvider {
 
     parts.push({ text: request.prompt });
 
-    const stream = await this.client.models.generateContentStream({
-      model,
-      contents: [{ parts }],
-      config: {
-        systemInstruction: request.systemInstruction,
-        maxOutputTokens: request.maxTokens,
-        temperature: request.temperature,
-        responseMimeType: request.responseFormat === 'json' ? 'application/json' : undefined,
-      }
-    });
-
     let fullText = '';
 
-    for await (const chunk of stream) {
-      const text = chunk.text || '';
-      fullText += text;
-      onChunk({ text, done: false });
+    try {
+      const stream = await this.client.models.generateContentStream({
+        model,
+        contents: [{ parts }],
+        config: {
+          systemInstruction: request.systemInstruction,
+          maxOutputTokens: request.maxTokens,
+          temperature: request.temperature,
+          responseMimeType: request.responseFormat === 'json' ? 'application/json' : undefined,
+        }
+      });
+
+      for await (const chunk of stream) {
+        const text = chunk.text || '';
+        fullText += text;
+        onChunk({ text, done: false });
+      }
+    } catch (error) {
+      // Signal completion even on error, with partial text if available
+      onChunk({ text: '', done: true });
+      throw error;
     }
 
     onChunk({ text: '', done: true });

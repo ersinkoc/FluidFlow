@@ -30,6 +30,7 @@ export function useAIHistory(projectId: string | null): UseAIHistoryReturn {
   const projectIdRef = useRef<string | null>(null);
   const isSavingRef = useRef<boolean>(false); // Lock to prevent concurrent saves
   const pendingSaveRef = useRef<AIHistoryEntry[] | null>(null); // Queue for next save
+  const saveWithLockRef = useRef<((entries: AIHistoryEntry[]) => Promise<void>) | null>(null);
 
   // Keep projectId ref updated for beforeunload
   useEffect(() => {
@@ -62,15 +63,20 @@ export function useAIHistory(projectId: string | null): UseAIHistoryReturn {
     } finally {
       isSavingRef.current = false;
 
-      // Process any queued save
+      // Process any queued save - use ref to avoid stale closure
       const queuedData = pendingSaveRef.current;
-      if (queuedData) {
+      if (queuedData && saveWithLockRef.current) {
         pendingSaveRef.current = null;
         // Use setTimeout to avoid stack overflow on rapid saves
-        setTimeout(() => saveWithLock(queuedData), 0);
+        setTimeout(() => saveWithLockRef.current?.(queuedData), 0);
       }
     }
   }, []);
+
+  // Keep ref updated to avoid stale closure in recursive call
+  useEffect(() => {
+    saveWithLockRef.current = saveWithLock;
+  }, [saveWithLock]);
 
   // Load history from backend when project changes
   useEffect(() => {

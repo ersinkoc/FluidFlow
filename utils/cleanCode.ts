@@ -128,10 +128,9 @@ export function repairTruncatedJson(jsonStr: string): string {
     }
   }
 
-  // Close remaining brackets and braces
-  // Re-count after repairs
-  braceCount = 0;
-  bracketCount = 0;
+  // Close remaining brackets and braces in correct order (JSON-001 fix)
+  // Track opening order with a stack to close in reverse order
+  const openStack: string[] = [];
   inString = false;
   escapeNext = false;
 
@@ -141,16 +140,27 @@ export function repairTruncatedJson(jsonStr: string): string {
     if (char === '\\' && inString) { escapeNext = true; continue; }
     if (char === '"' && !escapeNext) { inString = !inString; continue; }
     if (!inString) {
-      if (char === '{') braceCount++;
-      else if (char === '}') braceCount--;
-      else if (char === '[') bracketCount++;
-      else if (char === ']') bracketCount--;
+      if (char === '{') openStack.push('{');
+      else if (char === '[') openStack.push('[');
+      else if (char === '}') {
+        // Pop matching brace, or ignore if mismatched
+        if (openStack.length > 0 && openStack[openStack.length - 1] === '{') {
+          openStack.pop();
+        }
+      } else if (char === ']') {
+        // Pop matching bracket, or ignore if mismatched
+        if (openStack.length > 0 && openStack[openStack.length - 1] === '[') {
+          openStack.pop();
+        }
+      }
     }
   }
 
-  // Close brackets first, then braces
-  repaired += ']'.repeat(Math.max(0, bracketCount));
-  repaired += '}'.repeat(Math.max(0, braceCount));
+  // Close remaining open containers in reverse order (LIFO)
+  while (openStack.length > 0) {
+    const open = openStack.pop();
+    repaired += open === '{' ? '}' : ']';
+  }
 
   return repaired;
 }
@@ -348,47 +358,72 @@ export function parseMultiFileResponse(response: string, noThrow: boolean = fals
                     console.log('[parseMultiFileResponse] Attempting enhanced string-level truncation recovery...');
 
                     // Look for truncated file patterns where content is cut off mid-string
-                    const truncatedFilePattern = /"([^"]+\.(tsx?|jsx?|css|json|md|ts|js))":\s*"(.*?)(?=\s*$|"[^"]*":\s*")/gs;
-                    let truncatedMatch;
+                    // JSON-002 fix: Use non-backtracking pattern to prevent ReDoS
+                    // Match file path, then capture content up to next file pattern or end
                     const recoveredFiles: Record<string, string> = {};
 
-                    while ((truncatedMatch = truncatedFilePattern.exec(jsonToParse)) !== null) {
-                      const filePath = truncatedMatch[1];
-                      let content = truncatedMatch[2];
+                    // Limit input size to prevent DoS (max 500KB for recovery)
+                    const safeJsonToParse = jsonToParse.length > 500000 ? jsonToParse.slice(0, 500000) : jsonToParse;
 
-                      if (!content || content.length < 50) continue;
+                    // Use simpler pattern: match "filepath": "content" without complex lookahead
+                    const filePathPattern = /"([^"]{1,200}\.(tsx?|jsx?|css|json|md|ts|js))":\s*"/g;
+                    let pathMatch;
 
-                      // Check if content appears to be truncated
-                      const isTruncated =
-                        content.endsWith('...') ||
-                        content.endsWith('```') && !content.includes('```tsx') && !content.includes('```jsx') ||
-                        content.includes('className=\\') && !content.endsWith('}') ||
-                        (content.includes('{') && !content.includes('}')) ||
-                        content.endsWith('"') && !content.endsWith('"\\n') && !content.endsWith('"}');
+                    while ((pathMatch = filePathPattern.exec(safeJsonToParse)) !== null) {
+                      const filePath = pathMatch[1];
+                      const contentStart = pathMatch.index + pathMatch[0].length;
 
-                      if (isTruncated) {
-                        // Try to recover what we can
-                        let recoveredContent = content;
-
-                        // Remove trailing ellipsis or incomplete patterns
-                        recoveredContent = recoveredContent
-                          .replace(/\.\.\.$/, '')
-                          .replace(/```$/, '')
-                          .replace(/className=\\"[^"]*$/, 'className=\\""');
-
-                        // Clean up escaped content
-                        recoveredContent = recoveredContent
-                          .replace(/\\n/g, '\n')
-                          .replace(/\\t/g, '\t')
-                          .replace(/\\"/g, '"')
-                          .replace(/\\\\/g, '\\')
-                          .trim();
-
-                        // Only keep if it looks like valid code
-                        if (isValidCode(recoveredContent)) {
-                          console.log(`[parseMultiFileResponse] Recovered truncated file: ${filePath} (${recoveredContent.length} chars)`);
-                          recoveredFiles[filePath] = recoveredContent;
+                      // Find content end by looking for next unescaped quote followed by comma/brace or end
+                      let contentEnd = contentStart;
+                      let inEscape = false;
+                      for (let i = contentStart; i < Math.min(safeJsonToParse.length, contentStart + 100000); i++) {
+                        const char = safeJsonToParse[i];
+                        if (inEscape) {
+                          inEscape = false;
+                          continue;
                         }
+                        if (char === '\\') {
+                          inEscape = true;
+                          continue;
+                        }
+                        if (char === '"') {
+                          contentEnd = i;
+                          break;
+                        }
+                      }
+
+                      if (contentEnd > contentStart) {
+                        const content = safeJsonToParse.slice(contentStart, contentEnd);
+                        if (content.length >= 50) {
+                          recoveredFiles[filePath] = content;
+                        }
+                      }
+                    }
+
+                    // Process and clean recovered files
+                    for (const filePath of Object.keys(recoveredFiles)) {
+                      let content = recoveredFiles[filePath];
+
+                      // Remove trailing ellipsis or incomplete patterns
+                      content = content
+                        .replace(/\.\.\.$/, '')
+                        .replace(/```$/, '')
+                        .replace(/className=\\"[^"]*$/, 'className=""');
+
+                      // Clean up escaped content (JSON escapes)
+                      content = content
+                        .replace(/\\n/g, '\n')
+                        .replace(/\\t/g, '\t')
+                        .replace(/\\"/g, '"')
+                        .replace(/\\\\/g, '\\')
+                        .trim();
+
+                      // Only keep if it looks like valid code
+                      if (isValidCode(content)) {
+                        console.log(`[parseMultiFileResponse] Recovered file: ${filePath} (${content.length} chars)`);
+                        recoveredFiles[filePath] = content;
+                      } else {
+                        delete recoveredFiles[filePath];
                       }
                     }
 

@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import { fileURLToPath } from 'url';
+import { isValidProjectId } from '../utils/validation';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,11 +31,33 @@ const isOwnGitRepo = (dir: string): boolean => {
   return exists;
 };
 
+// Validate git commit hash (full SHA or short hash)
+const isValidCommitHash = (hash: string): boolean => {
+  if (!hash || typeof hash !== 'string') return false;
+  // Full SHA-1 (40 chars) or short hash (7-40 chars), alphanumeric only
+  return /^[a-fA-F0-9]{7,40}$/.test(hash);
+};
+
+// Validate git branch name (no shell metacharacters, follows git naming rules)
+const isValidBranchName = (name: string): boolean => {
+  if (!name || typeof name !== 'string') return false;
+  // Git branch naming rules: no spaces, no .., no special chars except -/_
+  // Must not start with -, not end with .lock
+  return /^[a-zA-Z0-9][a-zA-Z0-9/_-]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$/.test(name) &&
+         !name.includes('..') && !name.endsWith('.lock');
+};
+
 // Initialize git in project
 router.post('/:id/init', async (req, res) => {
   try {
     const { id } = req.params;
     const { force } = req.body || {}; // force=true to reinitialize corrupted repos
+
+    // Validate project ID to prevent path traversal
+    if (!isValidProjectId(id)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
     const filesDir = getFilesDir(id);
 
     if (!existsSync(filesDir)) {
@@ -89,6 +112,12 @@ dist/
 router.get('/:id/status', async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Validate project ID to prevent path traversal
+    if (!isValidProjectId(id)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
     const filesDir = getFilesDir(id);
 
     if (!existsSync(filesDir)) {
@@ -142,6 +171,12 @@ router.get('/:id/log', async (req, res) => {
   try {
     const { id } = req.params;
     const { limit = 20 } = req.query;
+
+    // Validate project ID to prevent path traversal
+    if (!isValidProjectId(id)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
     const filesDir = getFilesDir(id);
 
     if (!existsSync(filesDir)) {
@@ -177,6 +212,12 @@ router.post('/:id/commit', async (req, res) => {
   try {
     const { id } = req.params;
     const { message, files } = req.body;
+
+    // Validate project ID to prevent path traversal
+    if (!isValidProjectId(id)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
     const filesDir = getFilesDir(id);
 
     if (!existsSync(filesDir)) {
@@ -185,8 +226,14 @@ router.post('/:id/commit', async (req, res) => {
 
     // If files provided, update them first
     if (files && typeof files === 'object') {
+      const { isValidFilePath, sanitizeFilePath } = await import('../utils/validation');
       for (const [filePath, content] of Object.entries(files)) {
-        const fullPath = path.join(filesDir, filePath);
+        // Validate file path to prevent path traversal
+        if (!isValidFilePath(filePath)) {
+          return res.status(400).json({ error: 'Invalid file path', invalidPath: filePath });
+        }
+        const safePath = sanitizeFilePath(filePath);
+        const fullPath = path.join(filesDir, safePath);
         await fs.mkdir(path.dirname(fullPath), { recursive: true });
         await fs.writeFile(fullPath, content as string);
       }
@@ -258,6 +305,17 @@ router.post('/:id/checkout', async (req, res) => {
   try {
     const { id } = req.params;
     const { commit } = req.body;
+
+    // Validate project ID to prevent path traversal
+    if (!isValidProjectId(id)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
+    // Validate commit hash to prevent command injection
+    if (!commit || !isValidCommitHash(commit)) {
+      return res.status(400).json({ error: 'Invalid commit hash' });
+    }
+
     const filesDir = getFilesDir(id);
 
     if (!existsSync(filesDir)) {
@@ -285,14 +343,25 @@ router.post('/:id/branch', async (req, res) => {
   try {
     const { id } = req.params;
     const { name, checkout = true } = req.body;
-    const filesDir = getFilesDir(id);
 
-    if (!existsSync(filesDir)) {
-      return res.status(404).json({ error: 'Project not found' });
+    // Validate project ID to prevent path traversal
+    if (!isValidProjectId(id)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
     }
 
     if (!name) {
       return res.status(400).json({ error: 'Branch name required' });
+    }
+
+    // Validate branch name to prevent command injection
+    if (!isValidBranchName(name)) {
+      return res.status(400).json({ error: 'Invalid branch name. Use only alphanumeric characters, hyphens, underscores, and forward slashes.' });
+    }
+
+    const filesDir = getFilesDir(id);
+
+    if (!existsSync(filesDir)) {
+      return res.status(404).json({ error: 'Project not found' });
     }
 
     if (!isOwnGitRepo(filesDir)) {
@@ -346,6 +415,15 @@ router.get('/:id/branches', async (req, res) => {
 router.get('/:id/commit/:hash', async (req, res) => {
   try {
     const { id, hash } = req.params;
+
+    // GIT-002 fix: Validate project ID and commit hash
+    if (!isValidProjectId(id)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+    if (!isValidCommitHash(hash)) {
+      return res.status(400).json({ error: 'Invalid commit hash' });
+    }
+
     const filesDir = getFilesDir(id);
 
     if (!existsSync(filesDir)) {
@@ -431,6 +509,15 @@ router.get('/:id/commit/:hash/diff', async (req, res) => {
   try {
     const { id, hash } = req.params;
     const { file } = req.query; // Optional: specific file
+
+    // GIT-002 fix: Validate project ID and commit hash
+    if (!isValidProjectId(id)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+    if (!isValidCommitHash(hash)) {
+      return res.status(400).json({ error: 'Invalid commit hash' });
+    }
+
     const filesDir = getFilesDir(id);
 
     if (!existsSync(filesDir)) {
@@ -463,6 +550,15 @@ router.get('/:id/commit/:hash/file', async (req, res) => {
   try {
     const { id, hash } = req.params;
     const { path: filePath } = req.query;
+
+    // GIT-002 fix: Validate project ID and commit hash
+    if (!isValidProjectId(id)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+    if (!isValidCommitHash(hash)) {
+      return res.status(400).json({ error: 'Invalid commit hash' });
+    }
+
     const filesDir = getFilesDir(id);
 
     if (!filePath) {

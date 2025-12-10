@@ -113,6 +113,7 @@ export function useProject(onFilesChange?: (files: FileSystem) => void): UseProj
   const hasRestoredRef = useRef<boolean>(false);
   const isInitializedRef = useRef<boolean>(false); // Prevents sync before load
   const restoreAbortedRef = useRef<boolean>(false); // Track if restore was cancelled
+  const openProjectIdRef = useRef<string | null>(null); // Track current openProject operation
 
   // Check server health on mount
   useEffect(() => {
@@ -269,6 +270,9 @@ export function useProject(onFilesChange?: (files: FileSystem) => void): UseProj
     // IMPORTANT: Abort any in-flight restore operation
     restoreAbortedRef.current = true;
 
+    // Track this operation - used to detect if a newer openProject was called
+    openProjectIdRef.current = id;
+
     // IMPORTANT: Clear any pending syncs from old project FIRST
     if (syncTimeoutRef.current) {
       clearTimeout(syncTimeoutRef.current);
@@ -287,6 +291,13 @@ export function useProject(onFilesChange?: (files: FileSystem) => void): UseProj
         projectApi.get(id),
         projectApi.getContext(id).catch(() => null) // Don't fail if context doesn't exist
       ]);
+
+      // Check if a newer openProject call was made while we were fetching
+      if (openProjectIdRef.current !== id) {
+        console.log('[Project] openProject aborted - newer request in progress');
+        return { success: false, files: {}, context: null };
+      }
+
       const projectFiles = project.files || {};
 
       setState(prev => ({
@@ -311,10 +322,13 @@ export function useProject(onFilesChange?: (files: FileSystem) => void): UseProj
 
       // Refresh git status async - single source of truth
       gitApi.status(id).then(gitStatus => {
-        setState(prev => ({
-          ...prev,
-          gitStatus,
-        }));
+        // Only update if this project is still the current one
+        if (openProjectIdRef.current === id) {
+          setState(prev => ({
+            ...prev,
+            gitStatus,
+          }));
+        }
       }).catch(() => {
         // Git might not be initialized - gitStatus stays null
       });
@@ -326,14 +340,17 @@ export function useProject(onFilesChange?: (files: FileSystem) => void): UseProj
 
       return { success: true, files: projectFiles, context: savedContext };
     } catch (err) {
-      console.error('[Project] Failed to open project:', err);
-      // Re-enable syncing if open fails
-      isInitializedRef.current = true;
-      setState(prev => ({
-        ...prev,
-        isSyncing: false,
-        error: 'Failed to open project',
-      }));
+      // Only handle error if this is still the current operation
+      if (openProjectIdRef.current === id) {
+        console.error('[Project] Failed to open project:', err);
+        // Re-enable syncing if open fails
+        isInitializedRef.current = true;
+        setState(prev => ({
+          ...prev,
+          isSyncing: false,
+          error: 'Failed to open project',
+        }));
+      }
       return { success: false, files: {}, context: null };
     }
   }, []);
