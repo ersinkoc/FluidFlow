@@ -46,6 +46,82 @@ export function cleanGeneratedCode(code: string): string {
 }
 
 /**
+ * Strips PLAN comment from AI response if present.
+ * PLAN comments have format: // PLAN: {"create":[...],"update":[...],"delete":[],"total":N}
+ * This should be called before JSON.parse on any AI response that might contain PLAN.
+ */
+export function stripPlanComment(response: string): string {
+  if (!response) return '';
+
+  // Trim leading whitespace and invisible characters
+  let cleaned = response.trimStart();
+  cleaned = cleaned.replace(/^[\uFEFF\u200B-\u200D\u00A0]+/, '');
+
+  // Check for PLAN comment
+  const planIndex = cleaned.indexOf('// PLAN:');
+  if (planIndex === -1) return cleaned;
+
+  // Only process if PLAN is at start or preceded only by whitespace
+  if (planIndex !== 0 && !/^[\s]*$/.test(cleaned.slice(0, planIndex))) {
+    return cleaned;
+  }
+
+  // Find the PLAN JSON's opening brace
+  const firstBrace = cleaned.indexOf('{', planIndex);
+  if (firstBrace === -1 || firstBrace <= planIndex) return cleaned;
+
+  // Use brace counting to find where PLAN JSON ends
+  let braceCount = 0;
+  let planEnd = firstBrace;
+
+  for (let i = firstBrace; i < cleaned.length; i++) {
+    const char = cleaned[i];
+    if (char === '{') braceCount++;
+    else if (char === '}') {
+      braceCount--;
+      if (braceCount === 0) {
+        planEnd = i + 1;
+        break;
+      }
+    }
+  }
+
+  // Remove PLAN comment and return the rest
+  return cleaned.substring(planEnd).trimStart();
+}
+
+/**
+ * Safely parses JSON from AI response, handling PLAN comments and other artifacts.
+ * Returns null if parsing fails instead of throwing.
+ */
+export function safeParseAIResponse<T = unknown>(response: string): T | null {
+  if (!response) return null;
+
+  try {
+    // Strip PLAN comment first
+    let cleaned = stripPlanComment(response);
+
+    // Try to extract JSON from markdown code blocks
+    const codeBlockMatch = cleaned.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+    if (codeBlockMatch) {
+      cleaned = codeBlockMatch[1].trimStart();
+      cleaned = cleaned.replace(/^[\uFEFF\u200B-\u200D\u00A0]+/, '');
+    }
+
+    // Find JSON object
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]) as T;
+    }
+
+    return null;
+  } catch (e) {
+    console.debug('[safeParseAIResponse] Parse failed:', e);
+    return null;
+  }
+}
+
+/**
  * Attempts to repair truncated JSON from AI responses
  * Returns the repaired JSON string or throws a descriptive error
  */
@@ -210,15 +286,23 @@ export function parseMultiFileResponse(response: string, noThrow: boolean = fals
     let jsonString = codeBlockMatch ? codeBlockMatch[1] : response;
 
     // Trim leading whitespace/newlines (common in AI responses)
-    jsonString = jsonString.replace(/^[\s\r\n]+/, '');
+    // Use trimStart() which handles more Unicode whitespace than regex
+    jsonString = jsonString.trimStart();
+    // Also strip BOM and other invisible characters
+    jsonString = jsonString.replace(/^[\uFEFF\u200B-\u200D\u00A0]+/, '');
 
     // Remove PLAN comment if present (it has its own JSON that would confuse parsing)
     // Format: // PLAN: {"create":[...],"update":[...],"delete":[],"total":N}
     // Strategy: Find the PLAN line, use brace counting to find where its JSON ends
-    if (jsonString.startsWith('//') && jsonString.includes('PLAN')) {
-      // Find where the PLAN JSON starts (first { after //)
-      const firstBrace = jsonString.indexOf('{');
-      if (firstBrace !== -1) {
+    // Also handle case where PLAN might appear after some whitespace on the first line
+    const planIndex = jsonString.indexOf('// PLAN:');
+    const hasPlanComment = planIndex !== -1 && (planIndex === 0 || /^[\s]*$/.test(jsonString.slice(0, planIndex)));
+    if (hasPlanComment) {
+      // Start from the PLAN comment position
+      const planStart = planIndex;
+      // Find where the PLAN JSON starts (first { after the PLAN: prefix, not from string start)
+      const firstBrace = jsonString.indexOf('{', planStart);
+      if (firstBrace !== -1 && firstBrace > planStart) {
         // Use brace counting to find where the PLAN JSON ends
         let braceCount = 0;
         let planEnd = firstBrace;
@@ -236,7 +320,7 @@ export function parseMultiFileResponse(response: string, noThrow: boolean = fals
         }
 
         // Remove everything from start to planEnd (including any trailing whitespace/newlines)
-        const afterPlan = jsonString.substring(planEnd).replace(/^[\s\r\n]+/, '');
+        const afterPlan = jsonString.substring(planEnd).trimStart();
         console.log('[parseMultiFileResponse] Removed PLAN comment, remaining:', afterPlan.slice(0, 100) + '...');
         jsonString = afterPlan;
       }

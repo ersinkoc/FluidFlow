@@ -1,10 +1,9 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   Monitor, Smartphone, Tablet, RefreshCw, Eye, Code2, Copy, Check, Download, Database,
-  ShieldCheck, Pencil, Send, FileText, Wrench, FlaskConical, Package, Loader2,
+  ShieldCheck, Pencil, Send, FileText, Wrench, Package, Loader2,
   SplitSquareVertical, X, Zap, ZapOff, MousePointer2, Bug, Settings, ChevronDown, Shield,
-  ChevronLeft, ChevronRight, Globe, GitBranch, Play, AlertTriangle, Box, MessageSquare, Bot,
-  Layers
+  ChevronLeft, ChevronRight, Globe, GitBranch, Play, AlertTriangle, Box, MessageSquare, Bot
 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { getProviderManager } from '../../services/ai';
@@ -34,7 +33,7 @@ import { GitPanel } from '../GitPanel';
 import { RunnerPanel } from './RunnerPanel';
 import { WebContainerPanel } from './WebContainerPanel';
 import { ErrorFixPanel } from './ErrorFixPanel';
-import { SandpackPanel } from './SandpackPanel';
+import { DocsPanel } from './DocsPanel';
 import { GitStatus } from '../../services/projectApi';
 
 interface PreviewPanelProps {
@@ -84,8 +83,6 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
 
   // Loading states
   const [isGeneratingDB, setIsGeneratingDB] = useState(false);
-  const [isGeneratingTests, setIsGeneratingTests] = useState(false);
-  const [isGeneratingDocs, setIsGeneratingDocs] = useState(false);
 
   // Accessibility
   const [accessibilityReport, setAccessibilityReport] = useState<AccessibilityReport | null>(null);
@@ -171,10 +168,6 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
   const [hoveredElement, setHoveredElement] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   const [inspectedElement, setInspectedElement] = useState<InspectedElement | null>(null);
   const [isInspectEditing, setIsInspectEditing] = useState(false);
-
-  // Confirmation dialogs for docs/tests generation
-  const [showDocsConfirm, setShowDocsConfirm] = useState(false);
-  const [showTestsConfirm, setShowTestsConfirm] = useState(false);
 
   // URL Bar state
   const [currentUrl, setCurrentUrl] = useState('/');
@@ -813,47 +806,6 @@ Only return files that need changes. Maintain all existing functionality.`,
   };
 
   // API functions
-  const generateUnitTests = async () => {
-    if (!appCode) return;
-    setIsGeneratingTests(true);
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: selectedModel,
-        contents: [{ parts: [{ text: `Generate unit tests for this React component using React Testing Library.\nComponent:\n${appCode}\n\nOutput ONLY the raw code for the test file.` }] }]
-      });
-      const tests = cleanGeneratedCode(response.text || '');
-      setFiles({ ...files, 'src/App.test.tsx': tests });
-      setActiveFile('src/App.test.tsx');
-      setActiveTab('code');
-    } catch (e) {
-      console.error("Test Generation Error", e);
-    } finally {
-      setIsGeneratingTests(false);
-    }
-  };
-
-  const generateDocs = async () => {
-    if (!appCode) return;
-    setIsGeneratingDocs(true);
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: selectedModel,
-        contents: [{ parts: [{ text: `Analyze the following React component and generate a professional README.md file.\n\nReact Component Code:\n${appCode}` }] }]
-      });
-      const docs = cleanGeneratedCode(response.text || '');
-      setFiles({ ...files, 'README.md': docs });
-      setActiveFile('README.md');
-      // Keep the user in the current tab to show the README.md content
-      // Don't change tabs, let the user stay where they are
-    } catch (e) {
-      console.error("Docs Generation Error", e);
-    } finally {
-      setIsGeneratingDocs(false);
-    }
-  };
-
   const generateDatabaseSchema = async () => {
     if (!appCode) return;
     setIsGeneratingDB(true);
@@ -1208,36 +1160,8 @@ Thumbs.db
 
   const handleTabChange = (tab: TabType) => {
     setActiveTab(tab);
-    // Reset confirmation dialogs when changing tabs
-    setShowDocsConfirm(false);
-    setShowTestsConfirm(false);
-
-    // Database tab now opens DB Studio directly
-    if (tab === 'database') {
-      // DB Studio handles everything - no auto-generation
-    } else if (tab === 'tests' && !files['src/App.test.tsx'] && appCode) {
-      // Show confirmation instead of auto-generating
-      setShowTestsConfirm(true);
-    } else if (tab === 'tests' && files['src/App.test.tsx']) {
-      setActiveFile('src/App.test.tsx');
-      setActiveTab('code');
-    } else if (tab === 'docs' && !files['README.md'] && appCode) {
-      // Show confirmation instead of auto-generating
-      setShowDocsConfirm(true);
-    } else if (tab === 'docs' && files['README.md']) {
-      setActiveFile('README.md');
-    }
-  };
-
-  // Handle confirmed generation
-  const handleConfirmDocsGeneration = () => {
-    setShowDocsConfirm(false);
-    generateDocs();
-  };
-
-  const handleConfirmTestsGeneration = () => {
-    setShowTestsConfirm(false);
-    generateUnitTests();
+    // Database and Docs tabs open their panels directly
+    // No special handling needed - panels manage their own state
   };
 
   return (
@@ -1255,12 +1179,10 @@ Thumbs.db
             {[
               { id: 'preview', icon: Eye, label: 'Preview' },
               { id: 'code', icon: Code2, label: 'Code' },
-              { id: 'sandpack', icon: Layers, label: 'Sandpack' },
               { id: 'git', icon: GitBranch, label: 'Git' },
               { id: 'run', icon: Play, label: 'Run' },
               { id: 'webcontainer', icon: Box, label: 'WebContainer' },
               { id: 'database', icon: Database, label: 'DB Studio' },
-              { id: 'tests', icon: FlaskConical, label: 'Tests' },
               { id: 'docs', icon: FileText, label: 'Docs' },
               { id: 'env', icon: Shield, label: 'Env' },
               { id: 'debug', icon: Bug, label: 'Debug' },
@@ -1427,10 +1349,16 @@ Thumbs.db
 
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-hidden bg-[#050811] group flex flex-col">
+        {/* DBStudio - always rendered but hidden when not active to preserve state */}
+        <div className={activeTab === 'database' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'}>
+          <DBStudio files={files} setFiles={setFiles} />
+        </div>
+        {/* DocsPanel - always rendered but hidden when not active to preserve state */}
+        <div className={activeTab === 'docs' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'}>
+          <DocsPanel files={files} setFiles={setFiles} />
+        </div>
         {activeTab === 'debug' ? (
           <DebugPanel />
-        ) : activeTab === 'database' ? (
-          <DBStudio files={files} setFiles={setFiles} selectedModel={selectedModel} />
         ) : activeTab === 'env' ? (
           <EnvironmentPanel files={files} setFiles={setFiles} />
         ) : activeTab === 'git' ? (
@@ -1479,13 +1407,6 @@ Thumbs.db
                   setCurrentErrorStack(undefined);
                 }
               }}
-            />
-          </div>
-        ) : activeTab === 'sandpack' ? (
-          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-            <SandpackPanel
-              files={files}
-              onFilesChange={setFiles}
             />
           </div>
         ) : activeTab === 'preview' ? (
@@ -1624,99 +1545,17 @@ Thumbs.db
               </div>
 
               {/* Generation Progress Toast - Non-blocking */}
-              {(isGeneratingDB || isGeneratingTests || isGeneratingDocs) && (
+              {isGeneratingDB && (
                 <div className="absolute top-2 right-2 z-50 flex items-center gap-2 px-3 py-2 bg-blue-500/20 backdrop-blur-xl border border-blue-500/30 rounded-lg shadow-lg animate-in slide-in-from-top-2 duration-300">
                   <div className="w-4 h-4 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
                   <span className="text-xs font-medium text-blue-300">
-                    {isGeneratingDB && 'Generating SQL Schema...'}
-                    {isGeneratingTests && 'Writing Tests...'}
-                    {isGeneratingDocs && 'Writing Documentation...'}
+                    Generating SQL Schema...
                   </span>
                 </div>
               )}
 
-              {/* Docs Confirmation Dialog */}
-              {showDocsConfirm && (
-                <div className="flex-1 flex flex-col items-center justify-center text-slate-400 gap-4 p-8">
-                  <div className="p-4 rounded-full bg-orange-500/10 border border-orange-500/20">
-                    <FileText className="w-10 h-10 text-orange-400" />
-                  </div>
-                  <div className="text-center">
-                    <h3 className="text-lg font-semibold text-white mb-2">Generate Documentation?</h3>
-                    <p className="text-sm text-slate-400 max-w-md">
-                      No README.md found. Would you like me to generate documentation for this project?
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3 mt-2">
-                    <button
-                      onClick={() => setShowDocsConfirm(false)}
-                      className="px-4 py-2 text-sm text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleConfirmDocsGeneration}
-                      disabled={isGeneratingDocs}
-                      className="px-4 py-2 text-sm text-white bg-orange-600 hover:bg-orange-500 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
-                    >
-                      {isGeneratingDocs ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Generating...
-                        </>
-                      ) : (
-                        <>
-                          <FileText className="w-4 h-4" />
-                          Generate README
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Tests Confirmation Dialog */}
-              {showTestsConfirm && (
-                <div className="flex-1 flex flex-col items-center justify-center text-slate-400 gap-4 p-8">
-                  <div className="p-4 rounded-full bg-purple-500/10 border border-purple-500/20">
-                    <FlaskConical className="w-10 h-10 text-purple-400" />
-                  </div>
-                  <div className="text-center">
-                    <h3 className="text-lg font-semibold text-white mb-2">Generate Tests?</h3>
-                    <p className="text-sm text-slate-400 max-w-md">
-                      No test files found. Would you like me to generate unit tests for this project?
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3 mt-2">
-                    <button
-                      onClick={() => setShowTestsConfirm(false)}
-                      className="px-4 py-2 text-sm text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleConfirmTestsGeneration}
-                      disabled={isGeneratingTests}
-                      className="px-4 py-2 text-sm text-white bg-purple-600 hover:bg-purple-500 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
-                    >
-                      {isGeneratingTests ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Generating...
-                        </>
-                      ) : (
-                        <>
-                          <FlaskConical className="w-4 h-4" />
-                          Generate Tests
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Normal content - show when no confirmation dialogs */}
-              {!showDocsConfirm && !showTestsConfirm && files[activeFile] ? (
+              {/* Normal content */}
+              {files[activeFile] ? (
                 <div className={`flex-1 flex min-h-0 overflow-hidden ${isSplitView ? 'flex-row' : 'flex-col'}`}>
                   {/* Primary Editor / Preview */}
                   <div className={isSplitView ? 'flex-1 min-w-0 min-h-0 h-full overflow-hidden border-r border-white/5' : 'flex-1 min-h-0 h-full overflow-hidden'}>
@@ -1724,8 +1563,6 @@ Thumbs.db
                       <MarkdownPreview
                         content={files[activeFile]}
                         fileName={activeFile.split('/').pop() || activeFile}
-                        onRegenerate={activeFile === 'README.md' ? generateDocs : undefined}
-                        isGenerating={isGeneratingDocs}
                       />
                     ) : (
                       <CodeEditor files={files} setFiles={setFiles} activeFile={activeFile} />
@@ -1752,8 +1589,6 @@ Thumbs.db
                           <MarkdownPreview
                             content={files[splitFile]}
                             fileName={splitFile.split('/').pop() || splitFile}
-                            onRegenerate={splitFile === 'README.md' ? generateDocs : undefined}
-                            isGenerating={isGeneratingDocs}
                           />
                         ) : (
                           <CodeEditor files={files} setFiles={setFiles} activeFile={splitFile} />
@@ -1762,12 +1597,12 @@ Thumbs.db
                     </div>
                   )}
                 </div>
-              ) : !showDocsConfirm && !showTestsConfirm ? (
+              ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center text-slate-600 gap-3">
                   <Code2 className="w-10 h-10 opacity-50" />
                   <p className="text-sm font-medium">Select a file to edit</p>
                 </div>
-              ) : null}
+              )}
             </div>
           </div>
         )}

@@ -207,7 +207,13 @@ export const ComponentInspector: React.FC<ComponentInspectorProps> = ({
               ? `Changes will apply to all "${element.ffGroup}" elements`
               : hasId
                 ? `Changes will apply only to "${element.ffId}"`
-                : 'Press Enter to apply changes'
+                : element.id
+                  ? `Editing <${element.tagName.toLowerCase()}>#${element.id}`
+                  : element.className
+                    ? `Editing <${element.tagName.toLowerCase()}>.${element.className.split(' ')[0]}`
+                    : element.textContent
+                      ? `Editing <${element.tagName.toLowerCase()}> "${element.textContent.slice(0, 30)}${element.textContent.length > 30 ? '...' : ''}"`
+                      : `Editing <${element.tagName.toLowerCase()}> in ${element.componentName || 'component'}`
             }
           </p>
         </div>

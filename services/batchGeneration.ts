@@ -1,5 +1,6 @@
 import { getProviderManager } from './ai';
 import { FileSystem } from '../types';
+import { stripPlanComment } from '../utils/cleanCode';
 
 interface BatchGenerationOptions {
   maxFilesPerBatch?: number;
@@ -192,9 +193,10 @@ IMPORTANT: You are generating files in batches. This is batch ${Math.floor(compl
       responseFormat: 'json'
     }, activeConfig.defaultModel);
 
-    // Parse response
+    // Parse response (with PLAN comment handling)
     try {
-      const jsonMatch = response.text?.match(/\{[\s\S]*\}?/);
+      const cleanedResponse = stripPlanComment(response.text || '');
+      const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}?/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
 

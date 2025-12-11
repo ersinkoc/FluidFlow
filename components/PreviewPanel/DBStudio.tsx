@@ -20,13 +20,12 @@ import {
   Download, Upload, Copy, Check, Loader2, Wand2, Save,
   RefreshCw, FileUp, Settings, ChevronDown
 } from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
+import { getProviderManager } from '../../services/ai';
 import { FileSystem } from '../../types';
 
 interface DBStudioProps {
   files: FileSystem;
   setFiles: (files: FileSystem) => void;
-  selectedModel: string;
 }
 
 interface Column {
@@ -419,7 +418,7 @@ function relationsToEdges(relations: RelationsData): Edge[] {
   }));
 }
 
-export const DBStudio: React.FC<DBStudioProps> = ({ files, setFiles, selectedModel }) => {
+export const DBStudio: React.FC<DBStudioProps> = ({ files, setFiles }) => {
   const [tables, setTables] = useState<TableSchema[]>([]);
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -573,7 +572,7 @@ export const DBStudio: React.FC<DBStudioProps> = ({ files, setFiles, selectedMod
     setIsGenerating(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const providerManager = getProviderManager();
 
       let prompt = '';
       if (extend && tables.length > 0) {
@@ -588,11 +587,7 @@ Generate ADDITIONAL tables/modifications as JSON. Keep existing tables and add n
         prompt = `Generate a database schema as JSON for: "${aiPrompt}"`;
       }
 
-      const response = await ai.models.generateContent({
-        model: selectedModel,
-        contents: [{
-          parts: [{
-            text: `${prompt}
+      const fullPrompt = `${prompt}
 
 Return ONLY valid JSON in this exact format:
 {
@@ -610,9 +605,13 @@ Return ONLY valid JSON in this exact format:
   ]
 }
 
-Use appropriate SQL types: INT, BIGINT, SERIAL, VARCHAR(255), TEXT, BOOLEAN, DATE, DATETIME, TIMESTAMP, DECIMAL(10,2), FLOAT, JSON, UUID`
-          }]
-        }]
+Use appropriate SQL types: INT, BIGINT, SERIAL, VARCHAR(255), TEXT, BOOLEAN, DATE, DATETIME, TIMESTAMP, DECIMAL(10,2), FLOAT, JSON, UUID`;
+
+      // Don't pass selectedModel - use provider's default model from settings
+      const response = await providerManager.generate({
+        prompt: fullPrompt,
+        responseFormat: 'json',
+        debugCategory: 'other',
       });
 
       const text = response.text || '';

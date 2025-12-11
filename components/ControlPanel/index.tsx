@@ -1,16 +1,17 @@
 import React, { useState, useCallback, useImperativeHandle, forwardRef, useRef, useEffect } from 'react';
 import { Layers, RotateCcw, AlertTriangle, X, MessageSquare, FileCode, History, Settings, ChevronDown, SlidersHorizontal, Upload } from 'lucide-react';
 import { FileSystem, ChatMessage, ChatAttachment, FileChange } from '../../types';
-import { cleanGeneratedCode, parseMultiFileResponse, GenerationMeta } from '../../utils/cleanCode';
+import { cleanGeneratedCode, parseMultiFileResponse, GenerationMeta, stripPlanComment, safeParseAIResponse } from '../../utils/cleanCode';
 import { extractFilesFromTruncatedResponse } from '../../utils/extractPartialFiles';
 
 // Helper function to extract file list from response
 function extractFileListFromResponse(response: string): string[] {
   const files = new Set<string>();
 
-  // Try JSON parsing first
+  // Try JSON parsing first (with PLAN comment handling)
   try {
-    const jsonMatch = response.match(/\{[\s\S]*\}?/);
+    const cleaned = stripPlanComment(response);
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}?/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
       if (parsed.files) {
@@ -974,77 +975,45 @@ Generate the remaining files. Each file must be COMPLETE and FUNCTIONAL.`;
       const currentModel = activeProvider?.defaultModel || selectedModel;
       const providerName = activeProvider?.name || 'AI';
 
-      if (isConsultantMode) {
-        // Consultant mode - return suggestions
-        const systemInstruction = `You are a Senior Product Manager and UX Expert. Analyze the provided wireframe/sketch deeply.
-Identify missing UX elements, accessibility gaps, logical inconsistencies, or edge cases.
-Output ONLY a raw JSON array of strings containing your specific suggestions. Do not include markdown formatting.`;
+      if (inspectContext) {
+        // INSPECT EDIT MODE - Strict element-scoped editing (takes priority over consultant mode)
+        const { element, scope } = inspectContext;
+        console.log('[InspectEdit] Context received:', { element, scope, prompt });
 
-        const images: { data: string; mimeType: string }[] = [];
-        if (sketchAtt) {
-          const base64Data = sketchAtt.preview.split(',')[1];
-          images.push({ data: base64Data, mimeType: sketchAtt.file.type });
-        }
-
-        const request: GenerationRequest = {
-          prompt: prompt ? `Analyze this design. Context: ${prompt}` : 'Analyze this design for UX gaps.',
-          systemInstruction,
-          images,
-          responseFormat: 'json'
+        // Build a specific selector for the target element
+        const buildElementSelector = (): string => {
+          // 1. FluidFlow ID (most specific for single element)
+          if (scope === 'element' && element.ffId) {
+            return `data-ff-id="${element.ffId}"`;
+          }
+          // 2. FluidFlow Group (for group editing)
+          if (scope === 'group' && element.ffGroup) {
+            return `data-ff-group="${element.ffGroup}"`;
+          }
+          // 3. HTML id attribute
+          if (element.id) {
+            return `#${element.id}`;
+          }
+          // 4. CSS classes (filter out generated/utility prefixes, take meaningful ones)
+          if (element.className) {
+            const classes = element.className.split(' ')
+              .filter(c => c && c.length > 2 && !c.startsWith('css-') && !c.match(/^[a-z]+-\d+$/))
+              .slice(0, 3);
+            if (classes.length > 0) {
+              return `<${element.tagName.toLowerCase()}>.${classes.join('.')}`;
+            }
+          }
+          // 5. Text content as identifier
+          if (element.textContent && element.textContent.trim().length > 0) {
+            const text = element.textContent.trim().slice(0, 40);
+            return `<${element.tagName.toLowerCase()}> with text "${text}"`;
+          }
+          // 6. Tag + component (last resort)
+          return `<${element.tagName.toLowerCase()}> in ${element.componentName || 'component'}`;
         };
 
-        const requestId = debugLog.request('generation', {
-          model: currentModel,
-          prompt: request.prompt,
-          systemInstruction,
-          attachments: attachments.map(a => ({ type: a.type, size: a.file.size })),
-          metadata: { mode: 'consultant', provider: providerName }
-        });
-        const startTime = Date.now();
-
-        const response = await manager.generate(request, currentModel);
-        const text = response.text || '[]';
-        const duration = Date.now() - startTime;
-
-        debugLog.response('generation', {
-          id: requestId,
-          model: currentModel,
-          duration,
-          response: text,
-          metadata: { mode: 'consultant', provider: providerName }
-        });
-        try {
-          const suggestionsData = JSON.parse(text);
-          setSuggestions(Array.isArray(suggestionsData) ? suggestionsData : ['Could not parse suggestions.']);
-
-          // Add assistant message with token usage
-          const assistantMessage: ChatMessage = {
-            id: crypto.randomUUID(),
-            role: 'assistant',
-            timestamp: Date.now(),
-            explanation: `## UX Analysis Complete\n\nI found **${Array.isArray(suggestionsData) ? suggestionsData.length : 0} suggestions** to improve your design. Check the suggestions panel on the right.`,
-            snapshotFiles: { ...files },
-            model: currentModel,
-            provider: providerName,
-            generationTime: duration,
-            tokenUsage: response.usage ? {
-              inputTokens: response.usage.inputTokens || 0,
-              outputTokens: response.usage.outputTokens || 0,
-              totalTokens: (response.usage.inputTokens || 0) + (response.usage.outputTokens || 0)
-            } : undefined
-          };
-          setMessages(prev => [...prev, assistantMessage]);
-        } catch {
-          setSuggestions(['Error parsing consultant suggestions.']);
-        }
-      } else if (inspectContext) {
-        // INSPECT EDIT MODE - Strict element-scoped editing
-        const { element, scope } = inspectContext;
-        const targetSelector = scope === 'element' && element.ffId
-          ? `data-ff-id="${element.ffId}"`
-          : scope === 'group' && element.ffGroup
-            ? `data-ff-group="${element.ffGroup}"`
-            : `<${element.tagName.toLowerCase()}> in ${element.componentName}`;
+        const targetSelector = buildElementSelector();
+        console.log('[InspectEdit] Target selector:', targetSelector);
 
         const systemInstruction = `You are an expert React Developer performing a SURGICAL EDIT on a specific element.
 
@@ -1132,11 +1101,6 @@ ${prompt}
         const finalPrompt = promptParts.join('\n');
 
         // Make AI request
-        const manager = getProviderManager();
-        const activeProvider = manager.getActiveConfig();
-        const currentModel = activeProvider?.defaultModel || selectedModel;
-        const providerName = activeProvider?.name || 'AI';
-
         debugLog.request('quick-edit', {
           model: currentModel,
           prompt: finalPrompt.slice(0, 500) + '...',
@@ -1149,38 +1113,99 @@ ${prompt}
           prompt: finalPrompt,
           systemInstruction: systemInstruction + techStackInstruction,
           responseFormat: 'json',
-          images: images.length > 0 ? images : undefined
+          images: images.length > 0 ? images : undefined,
+          debugCategory: 'quick-edit'
         }, currentModel);
 
         const rawResponse = response.text || '';
 
-        // Parse response
-        const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
-          if (parsed.files && Object.keys(parsed.files).length > 0) {
-            const newFiles = { ...files, ...parsed.files };
+        // Parse response (with PLAN comment handling)
+        const parsed = safeParseAIResponse<{ files?: Record<string, string>; explanation?: string }>(rawResponse);
+        if (parsed?.files && Object.keys(parsed.files).length > 0) {
+          const newFiles = { ...files, ...parsed.files };
 
-            const assistantMessage: ChatMessage = {
-              id: crypto.randomUUID(),
-              role: 'assistant',
-              timestamp: Date.now(),
-              explanation: parsed.explanation || `🎯 Modified element: ${targetSelector}`,
-              files: parsed.files,
-              fileChanges: calculateFileChanges(files, newFiles),
-              snapshotFiles: { ...files },
-              model: currentModel,
-              provider: providerName
-            };
-            setMessages(prev => [...prev, assistantMessage]);
+          const assistantMessage: ChatMessage = {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            timestamp: Date.now(),
+            explanation: parsed.explanation || `🎯 Modified element: ${targetSelector}`,
+            files: parsed.files,
+            fileChanges: calculateFileChanges(files, newFiles),
+            snapshotFiles: { ...files },
+            model: currentModel,
+            provider: providerName
+          };
+          setMessages(prev => [...prev, assistantMessage]);
 
-            reviewChange(`Edit: ${element.ffId || element.tagName}`, newFiles);
-          }
+          reviewChange(`Edit: ${element.ffId || element.tagName}`, newFiles);
         }
 
         setIsGenerating(false);
         return;
 
+      } else if (isConsultantMode) {
+        // Consultant mode - return suggestions
+        const systemInstruction = `You are a Senior Product Manager and UX Expert. Analyze the provided wireframe/sketch deeply.
+Identify missing UX elements, accessibility gaps, logical inconsistencies, or edge cases.
+Output ONLY a raw JSON array of strings containing your specific suggestions. Do not include markdown formatting.`;
+
+        const images: { data: string; mimeType: string }[] = [];
+        if (sketchAtt) {
+          const base64Data = sketchAtt.preview.split(',')[1];
+          images.push({ data: base64Data, mimeType: sketchAtt.file.type });
+        }
+
+        const request: GenerationRequest = {
+          prompt: prompt ? `Analyze this design. Context: ${prompt}` : 'Analyze this design for UX gaps.',
+          systemInstruction,
+          images,
+          responseFormat: 'json'
+        };
+
+        const requestId = debugLog.request('generation', {
+          model: currentModel,
+          prompt: request.prompt,
+          systemInstruction,
+          attachments: attachments.map(a => ({ type: a.type, size: a.file.size })),
+          metadata: { mode: 'consultant', provider: providerName }
+        });
+        const startTime = Date.now();
+
+        const response = await manager.generate(request, currentModel);
+        const text = response.text || '[]';
+        const duration = Date.now() - startTime;
+
+        debugLog.response('generation', {
+          id: requestId,
+          model: currentModel,
+          duration,
+          response: text,
+          metadata: { mode: 'consultant', provider: providerName }
+        });
+        try {
+          const suggestionsData = JSON.parse(text);
+          setSuggestions(Array.isArray(suggestionsData) ? suggestionsData : ['Could not parse suggestions.']);
+
+          // Add assistant message with token usage
+          const assistantMessage: ChatMessage = {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            timestamp: Date.now(),
+            explanation: `## UX Analysis Complete\n\nI found **${Array.isArray(suggestionsData) ? suggestionsData.length : 0} suggestions** to improve your design. Check the suggestions panel on the right.`,
+            snapshotFiles: { ...files },
+            model: currentModel,
+            provider: providerName,
+            generationTime: duration,
+            tokenUsage: response.usage ? {
+              inputTokens: response.usage.inputTokens || 0,
+              outputTokens: response.usage.outputTokens || 0,
+              totalTokens: (response.usage.inputTokens || 0) + (response.usage.outputTokens || 0)
+            } : undefined
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+        } catch {
+          setSuggestions(['Error parsing consultant suggestions.']);
+        }
       } else {
         // Generate/Update app mode
         let systemInstruction = `You are an expert React Developer. Your task is to generate or update a React application.
@@ -2351,6 +2376,7 @@ Generate ONLY these files. Each file must be COMPLETE and FUNCTIONAL.`;
 
   // Handle inspect edit from PreviewPanel - with strict scope enforcement
   const handleInspectEdit = useCallback(async (prompt: string, element: InspectedElement, scope: EditScope) => {
+    console.log('[ControlPanel.handleInspectEdit] Called with:', { prompt, element, scope });
     // Use handleSend with inspectContext for strict scope enforcement
     await handleSend(prompt, [], undefined, { element, scope });
   }, [handleSend]);

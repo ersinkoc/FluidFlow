@@ -104,7 +104,7 @@ export interface PushResult {
 
 // Device types for preview
 export type PreviewDevice = 'desktop' | 'tablet' | 'mobile';
-export type TabType = 'preview' | 'code' | 'database' | 'tests' | 'docs' | 'env' | 'debug' | 'git' | 'run' | 'webcontainer' | 'errorfix' | 'sandpack';
+export type TabType = 'preview' | 'code' | 'database' | 'docs' | 'env' | 'debug' | 'git' | 'run' | 'webcontainer' | 'errorfix';
 export type TerminalTab = 'console' | 'network';
 
 // AI Model types

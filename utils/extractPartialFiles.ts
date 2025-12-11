@@ -31,15 +31,18 @@ export function extractFilesFromTruncatedResponse(
   // 1. Try to parse as JSON first
   try {
     // Remove PLAN comment if present (it has its own JSON that confuses parsing)
-    let cleanResponse = response;
-    const planMatch = response.match(/^(\/\/\s*PLAN:\s*)(\{)/m);
+    let cleanResponse = response.trimStart();
+    // Strip BOM and other invisible characters
+    cleanResponse = cleanResponse.replace(/^[\uFEFF\u200B-\u200D\u00A0]+/, '');
+
+    const planMatch = cleanResponse.match(/^(\/\/\s*PLAN:\s*)(\{)/m);
     if (planMatch && planMatch.index !== undefined) {
       const jsonStart = planMatch.index + planMatch[1].length;
       let braceCount = 0;
       let planEnd = jsonStart;
 
-      for (let i = jsonStart; i < response.length; i++) {
-        const char = response[i];
+      for (let i = jsonStart; i < cleanResponse.length; i++) {
+        const char = cleanResponse[i];
         if (char === '{') braceCount++;
         else if (char === '}') {
           braceCount--;
@@ -49,7 +52,7 @@ export function extractFilesFromTruncatedResponse(
           }
         }
       }
-      cleanResponse = response.substring(planEnd).replace(/^\s*\n/, '');
+      cleanResponse = cleanResponse.substring(planEnd).trimStart();
     }
 
     const jsonMatch = cleanResponse.match(/\{[\s\S]*\}?/);
