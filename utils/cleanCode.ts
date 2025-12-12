@@ -233,9 +233,15 @@ export function repairTruncatedJson(jsonStr: string): string {
   }
 
   // Close remaining open containers in reverse order (LIFO)
+  // BUG-004 fix: Add explicit undefined check for type safety
   while (openStack.length > 0) {
     const open = openStack.pop();
-    repaired += open === '{' ? '}' : ']';
+    if (open === '{') {
+      repaired += '}';
+    } else if (open === '[') {
+      repaired += ']';
+    }
+    // Skip if undefined (shouldn't happen but defensive)
   }
 
   return repaired;

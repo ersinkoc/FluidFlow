@@ -704,6 +704,11 @@ Return ONLY the complete fixed ${targetFile} code.
         if (!isInspectEditing) {
           setHoveredElement(null);
         }
+      } else if (event.data.type === 'INSPECT_SCROLL') {
+        // Update selected element rect on scroll (functional update handles null case)
+        if (!isInspectEditing) {
+          setInspectedElement(prev => prev ? { ...prev, rect: event.data.rect } : null);
+        }
       } else if (event.data.type === 'URL_CHANGE') {
         // URL changed in sandbox
         setCurrentUrl(event.data.url || '/');
@@ -2163,6 +2168,28 @@ const buildIframeHtml = (files: FileSystem, isInspectMode: boolean = false): str
             ffId: target.getAttribute('data-ff-id') || null
           }
         }, '*');
+      }, true);
+
+      // Update selection rect on scroll
+      document.addEventListener('scroll', function() {
+        if (selectedEl) {
+          const rect = selectedEl.getBoundingClientRect();
+          window.parent.postMessage({
+            type: 'INSPECT_SCROLL',
+            rect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height }
+          }, '*');
+        }
+      }, true);
+
+      // Also listen to window scroll for cases where body doesn't scroll
+      window.addEventListener('scroll', function() {
+        if (selectedEl) {
+          const rect = selectedEl.getBoundingClientRect();
+          window.parent.postMessage({
+            type: 'INSPECT_SCROLL',
+            rect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height }
+          }, '*');
+        }
       }, true);
     })();
     ` : ''}

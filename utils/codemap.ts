@@ -4,6 +4,12 @@ import { FileSystem } from '../types';
 // Larger files will have basic info only to prevent performance issues
 const MAX_ANALYSIS_SIZE = 500 * 1024;
 
+// BUG-FIX (MED-U02): Helper to escape regex special characters in strings
+// Prevents regex injection when building patterns from user/code data
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export interface ComponentInfo {
   name: string;
   props: string[];
@@ -129,7 +135,9 @@ function analyzeFile(path: string, content: string): FileInfo {
       };
 
       // Extract props interface if exists
-      const propsMatch = content.match(new RegExp(`interface\\s+${name}Props\\s*{([^}]+)}`));
+      // BUG-FIX (MED-U02): Escape component name to prevent regex injection
+      const escapedName = escapeRegExp(name);
+      const propsMatch = content.match(new RegExp(`interface\\s+${escapedName}Props\\s*{([^}]+)}`));
       if (propsMatch) {
         const propsContent = propsMatch[1];
         const propNames = propsContent.match(/(\w+)\s*[?:]?\s*:/g);
@@ -139,7 +147,7 @@ function analyzeFile(path: string, content: string): FileInfo {
       }
 
       // Also try to extract from React.FC<{...}> inline props
-      const inlinePropsMatch = content.match(new RegExp(`${name}[^=]*=.*?\\(\\{([^}]+)\\}`));
+      const inlinePropsMatch = content.match(new RegExp(`${escapedName}[^=]*=.*?\\(\\{([^}]+)\\}`));
       if (inlinePropsMatch) {
         const inlineProps = inlinePropsMatch[1].split(',').map(p => p.trim().split(':')[0].trim()).filter(Boolean);
         componentInfo.props = [...new Set([...componentInfo.props, ...inlineProps])];
@@ -190,11 +198,13 @@ function analyzeFile(path: string, content: string): FileInfo {
 
 // Helper to get component body (simplified)
 function getComponentBody(content: string, componentName: string): string | null {
+  // BUG-FIX (MED-U02): Escape component name to prevent regex injection
+  const escapedName = escapeRegExp(componentName);
   // Find the component definition
   const patterns = [
-    new RegExp(`(?:export\\s+)?(?:const|function)\\s+${componentName}[^{]*\\{`, 'g'),
-    new RegExp(`(?:export\\s+)?const\\s+${componentName}[^=]*=\\s*\\([^)]*\\)\\s*=>\\s*\\{`, 'g'),
-    new RegExp(`(?:export\\s+)?const\\s+${componentName}[^=]*=\\s*\\([^)]*\\)\\s*=>\\s*\\(`, 'g')
+    new RegExp(`(?:export\\s+)?(?:const|function)\\s+${escapedName}[^{]*\\{`, 'g'),
+    new RegExp(`(?:export\\s+)?const\\s+${escapedName}[^=]*=\\s*\\([^)]*\\)\\s*=>\\s*\\{`, 'g'),
+    new RegExp(`(?:export\\s+)?const\\s+${escapedName}[^=]*=\\s*\\([^)]*\\)\\s*=>\\s*\\(`, 'g')
   ];
 
   for (const pattern of patterns) {

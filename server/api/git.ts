@@ -177,6 +177,10 @@ router.get('/:id/log', async (req, res) => {
       return res.status(400).json({ error: 'Invalid project ID' });
     }
 
+    // BUG-FIX: Validate and clamp limit to prevent abuse (max 100 commits)
+    const MAX_LOG_LIMIT = 100;
+    const parsedLimit = Math.min(Math.max(1, parseInt(String(limit), 10) || 20), MAX_LOG_LIMIT);
+
     const filesDir = getFilesDir(id);
 
     if (!existsSync(filesDir)) {
@@ -188,7 +192,7 @@ router.get('/:id/log', async (req, res) => {
     }
 
     const git: SimpleGit = simpleGit(filesDir);
-    const log = await git.log({ maxCount: Number(limit) });
+    const log = await git.log({ maxCount: parsedLimit });
 
     res.json({
       initialized: true,
@@ -533,7 +537,19 @@ router.get('/:id/commit/:hash/diff', async (req, res) => {
     // Get diff for commit (compare with parent)
     const args = [`${hash}^..${hash}`];
     if (file) {
-      args.push('--', file as string);
+      // BUG-FIX: Validate file path to prevent path traversal attacks
+      const filePath = String(file).replace(/\\/g, '/');
+      if (
+        filePath.includes('..') ||
+        filePath.startsWith('/') ||
+        /^[a-zA-Z]:/.test(filePath) ||
+        filePath.includes('\0') ||
+        /%2e%2e/i.test(filePath) ||
+        /%00/.test(filePath)
+      ) {
+        return res.status(400).json({ error: 'Invalid file path' });
+      }
+      args.push('--', filePath);
     }
 
     const diff = await git.diff(args);

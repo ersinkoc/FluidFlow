@@ -49,11 +49,13 @@ export async function loadProvidersFromLocalStorage(): Promise<ProviderConfig[]>
     console.error('Failed to load providers from localStorage:', e);
   }
 
-  // Return default Gemini config if nothing saved
+  // SEC-004 fix: Return default Gemini config without embedded API key
+  // Users must configure their API key through Settings UI
+  // For development, backend seeds default provider from .env
   const defaultConfig: ProviderConfig = {
     id: 'default-gemini',
     ...DEFAULT_PROVIDERS.gemini,
-    apiKey: process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '',
+    apiKey: '', // Key must be configured through settings
   };
 
   return [defaultConfig];
@@ -70,11 +72,12 @@ export function loadProvidersFromLocalStorageSync(): ProviderConfig[] {
     console.error('Failed to load providers from localStorage:', e);
   }
 
-  // Return default Gemini config if nothing saved
+  // SEC-004 fix: Return default Gemini config without embedded API key
+  // Users must configure their API key through Settings UI
   const defaultConfig: ProviderConfig = {
     id: 'default-gemini',
     ...DEFAULT_PROVIDERS.gemini,
-    apiKey: process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '',
+    apiKey: '', // Key must be configured through settings
   };
 
   return [defaultConfig];

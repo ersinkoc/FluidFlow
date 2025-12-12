@@ -401,11 +401,25 @@ let isSaving = false;  // Lock to prevent concurrent saves
 let pendingSave: { projectId: string; files: Record<string, string> } | null = null;
 
 // Internal save function that handles the lock
+// BUG-006 fix: Merge pending saves to prevent lost updates
 async function performSave(projectId: string, files: Record<string, string>): Promise<boolean> {
-  // If already saving, queue this save for later
+  // If already saving, merge this save with pending
   if (isSaving) {
-    pendingSave = { projectId, files };
-    console.log('[AutoSave] Save queued (another save in progress)');
+    if (pendingSave) {
+      // BUG-006 fix: Merge files instead of overwriting to prevent data loss
+      // If project changed, start fresh; otherwise merge
+      if (pendingSave.projectId === projectId) {
+        pendingSave.files = { ...pendingSave.files, ...files };
+        console.log('[AutoSave] Save merged with existing pending save');
+      } else {
+        // Different project - replace (can't merge across projects)
+        pendingSave = { projectId, files };
+        console.log('[AutoSave] Save queued (different project)');
+      }
+    } else {
+      pendingSave = { projectId, files };
+      console.log('[AutoSave] Save queued (another save in progress)');
+    }
     return false;
   }
 

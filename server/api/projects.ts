@@ -6,6 +6,27 @@ import { existsSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { isValidProjectId, isValidFilePath, sanitizeFilePath } from '../utils/validation';
 
+// BUG-FIX: Safe JSON parsing helper to prevent crashes on corrupted files
+function safeJsonParse<T>(jsonString: string, fallback: T): T {
+  try {
+    return JSON.parse(jsonString) as T;
+  } catch (error) {
+    console.error('[Projects] JSON parse error:', error instanceof Error ? error.message : error);
+    return fallback;
+  }
+}
+
+// BUG-FIX: Safe file read + JSON parse helper
+async function safeReadJson<T>(filePath: string, fallback: T): Promise<T> {
+  try {
+    const content = await fs.readFile(filePath, 'utf-8');
+    return safeJsonParse(content, fallback);
+  } catch (error) {
+    console.error(`[Projects] Failed to read JSON from ${filePath}:`, error instanceof Error ? error.message : error);
+    return fallback;
+  }
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -49,54 +70,50 @@ const getFilesDir = (id: string) => path.join(getProjectPath(id), 'files');
 const getContextPath = (id: string) => path.join(getProjectPath(id), 'context.json');
 
 // Per-project locks to prevent concurrent file updates
-// PROJ-001/PROJ-004 fix: Track lock metadata for proper cleanup
-interface LockEntry {
-  promise: Promise<void>;
-  resolve: () => void;
-  timestamp: number;
-}
-const projectLocks = new Map<string, LockEntry>();
+// HIGH-002 FIX: Queue-based approach to eliminate TOCTOU race condition
+// Previous implementation had a gap between checking for existing lock and setting new one
+// This queue-based approach chains promises to ensure sequential execution
+const projectLockQueues = new Map<string, { promise: Promise<void>; timestamp: number }>();
 
-// PROJ-004 fix: Periodic cleanup of stale locks (locks older than 5 minutes)
+// Periodic cleanup of stale lock queues (queues not accessed for 5 minutes)
 const LOCK_TIMEOUT_MS = 5 * 60 * 1000;
 setInterval(() => {
   const now = Date.now();
-  for (const [projectId, lock] of projectLocks.entries()) {
-    if (now - lock.timestamp > LOCK_TIMEOUT_MS) {
-      console.warn(`[Projects] Cleaning up stale lock for project ${projectId}`);
-      lock.resolve(); // Release the lock
-      projectLocks.delete(projectId);
+  for (const [projectId, entry] of projectLockQueues.entries()) {
+    if (now - entry.timestamp > LOCK_TIMEOUT_MS) {
+      console.warn(`[Projects] Cleaning up stale lock queue for project ${projectId}`);
+      projectLockQueues.delete(projectId);
     }
   }
 }, 60 * 1000); // Check every minute
 
 async function withProjectLock<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
-  // Wait for any existing lock on this project
-  const existingLock = projectLocks.get(projectId);
-  if (existingLock) {
-    await existingLock.promise;
-  }
+  // Get the current queue for this project (or resolved promise if none)
+  const existingEntry = projectLockQueues.get(projectId);
+  const previousLock = existingEntry?.promise || Promise.resolve();
 
-  // Create new lock with metadata
-  let resolveLock: () => void = () => {};
-  const lockPromise = new Promise<void>((resolve) => {
-    resolveLock = resolve;
+  // Create our lock promise
+  let releaseLock: () => void = () => {};
+  const myLock = new Promise<void>((resolve) => {
+    releaseLock = resolve;
   });
-  const lockEntry: LockEntry = {
-    promise: lockPromise,
-    resolve: resolveLock,
-    timestamp: Date.now()
-  };
-  projectLocks.set(projectId, lockEntry);
+
+  // CRITICAL: Set our lock in the queue BEFORE any await
+  // This ensures no interleaving - the set happens synchronously
+  projectLockQueues.set(projectId, { promise: myLock, timestamp: Date.now() });
 
   try {
+    // Wait for all previous operations on this project to complete
+    await previousLock;
+    // Now execute our function
     return await fn();
   } finally {
-    resolveLock();
-    // PROJ-001 fix: Only clean up if it's still our lock (atomic check-and-delete)
-    const currentLock = projectLocks.get(projectId);
-    if (currentLock && currentLock.promise === lockPromise) {
-      projectLocks.delete(projectId);
+    // Release our lock so the next operation can proceed
+    releaseLock();
+    // Clean up the queue entry if this is still the latest lock
+    const currentEntry = projectLockQueues.get(projectId);
+    if (currentEntry && currentEntry.promise === myLock) {
+      projectLockQueues.delete(projectId);
     }
   }
 }
@@ -156,11 +173,10 @@ router.get('/', async (req, res) => {
     for (const entry of entries) {
       if (entry.isDirectory()) {
         const metaPath = getMetaPath(entry.name);
-        try {
-          const meta = JSON.parse(await fs.readFile(metaPath, 'utf-8'));
+        // BUG-FIX: Use safe JSON parsing to prevent crashes
+        const meta = await safeReadJson<ProjectMeta | null>(metaPath, null);
+        if (meta && meta.id) {
           projects.push(meta);
-        } catch {
-          // Skip invalid projects
         }
       }
     }
@@ -189,7 +205,11 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Project not found' });
     }
 
-    const meta: ProjectMeta = JSON.parse(await fs.readFile(getMetaPath(id), 'utf-8'));
+    // BUG-FIX: Use safe JSON parsing to prevent crashes on corrupted files
+    const meta = await safeReadJson<ProjectMeta | null>(getMetaPath(id), null);
+    if (!meta) {
+      return res.status(500).json({ error: 'Project metadata corrupted' });
+    }
     const filesDir = getFilesDir(id);
     const files: Record<string, string> = {};
 
@@ -367,8 +387,11 @@ router.put('/:id', async (req, res) => {
 
     // Use lock to prevent concurrent updates to the same project
     const result = await withProjectLock(id, async () => {
-      // Update meta
-      const meta: ProjectMeta = JSON.parse(await fs.readFile(getMetaPath(id), 'utf-8'));
+      // Update meta - BUG-FIX: Use safe JSON parsing
+      const meta = await safeReadJson<ProjectMeta | null>(getMetaPath(id), null);
+      if (!meta) {
+        throw new Error('Project metadata corrupted');
+      }
     if (name) meta.name = name;
     if (description !== undefined) meta.description = description;
     meta.updatedAt = Date.now();
@@ -577,8 +600,11 @@ router.post('/:id/duplicate', async (req, res) => {
       return res.status(404).json({ error: 'Project not found' });
     }
 
-    // Get source project
-    const sourceMeta: ProjectMeta = JSON.parse(await fs.readFile(getMetaPath(id), 'utf-8'));
+    // Get source project - BUG-FIX: Use safe JSON parsing
+    const sourceMeta = await safeReadJson<ProjectMeta | null>(getMetaPath(id), null);
+    if (!sourceMeta) {
+      return res.status(500).json({ error: 'Source project metadata corrupted' });
+    }
 
     // Create new project
     const newId = uuidv4();
@@ -632,16 +658,19 @@ router.get('/:id/context', async (req, res) => {
 
     const contextPath = getContextPath(id);
 
+    // BUG-FIX: Use safe JSON parsing with fallback
+    const defaultContext = {
+      history: [],
+      currentIndex: -1,
+      savedAt: 0
+    };
+
     if (existsSync(contextPath)) {
-      const context = JSON.parse(await fs.readFile(contextPath, 'utf-8'));
+      const context = await safeReadJson<ProjectContext>(contextPath, defaultContext as ProjectContext);
       res.json(context);
     } else {
       // Return empty context if not exists
-      res.json({
-        history: [],
-        currentIndex: -1,
-        savedAt: 0
-      });
+      res.json(defaultContext);
     }
   } catch (error) {
     console.error('Get context error:', error);
@@ -667,14 +696,11 @@ router.put('/:id/context', async (req, res) => {
     }
 
     // Load existing context to merge with (for partial updates like aiHistory-only)
+    // BUG-FIX: Use safe JSON parsing
     const contextPath = getContextPath(id);
     let existingContext: Partial<ProjectContext> = {};
     if (existsSync(contextPath)) {
-      try {
-        existingContext = JSON.parse(await fs.readFile(contextPath, 'utf-8'));
-      } catch {
-        // Ignore parse errors
-      }
+      existingContext = await safeReadJson<Partial<ProjectContext>>(contextPath, {});
     }
 
     // Validate and limit history size (max 30 entries to avoid huge files)
@@ -711,9 +737,12 @@ router.put('/:id/context', async (req, res) => {
 
     // Also update project meta updatedAt
     const metaPath = getMetaPath(id);
-    const meta = JSON.parse(await fs.readFile(metaPath, 'utf-8'));
-    meta.updatedAt = Date.now();
-    await fs.writeFile(metaPath, JSON.stringify(meta, null, 2));
+    // BUG-FIX: Use safe JSON parsing
+    const meta = await safeReadJson<ProjectMeta | null>(metaPath, null);
+    if (meta) {
+      meta.updatedAt = Date.now();
+      await fs.writeFile(metaPath, JSON.stringify(meta, null, 2));
+    }
 
     res.json({ message: 'Context saved', savedAt: context.savedAt });
   } catch (error) {
@@ -740,14 +769,11 @@ router.post('/:id/context', async (req, res) => {
     }
 
     // Load existing context to merge with (for partial updates like aiHistory-only)
+    // BUG-FIX: Use safe JSON parsing
     const contextPath = getContextPath(id);
     let existingContext: Partial<ProjectContext> = {};
     if (existsSync(contextPath)) {
-      try {
-        existingContext = JSON.parse(await fs.readFile(contextPath, 'utf-8'));
-      } catch {
-        // Ignore parse errors
-      }
+      existingContext = await safeReadJson<Partial<ProjectContext>>(contextPath, {});
     }
 
     // Validate and limit history size (max 30 entries to avoid huge files)
@@ -784,9 +810,12 @@ router.post('/:id/context', async (req, res) => {
 
     // Also update project meta updatedAt
     const metaPath = getMetaPath(id);
-    const meta = JSON.parse(await fs.readFile(metaPath, 'utf-8'));
-    meta.updatedAt = Date.now();
-    await fs.writeFile(metaPath, JSON.stringify(meta, null, 2));
+    // BUG-FIX: Use safe JSON parsing
+    const meta = await safeReadJson<ProjectMeta | null>(metaPath, null);
+    if (meta) {
+      meta.updatedAt = Date.now();
+      await fs.writeFile(metaPath, JSON.stringify(meta, null, 2));
+    }
 
     res.json({ message: 'Context saved', savedAt: context.savedAt });
   } catch (error) {

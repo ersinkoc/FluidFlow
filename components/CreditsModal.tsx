@@ -293,9 +293,9 @@ export const CreditsModal: React.FC<CreditsModalProps> = ({ isOpen, onClose, sho
                 {/* Project Indicators */}
                 {projects.length > 1 && (
                   <div className="flex justify-center gap-2">
-                    {projects.map((_, index) => (
+                    {projects.map((project, index) => (
                       <button
-                        key={index}
+                        key={project.id}
                         onClick={() => setCurrentProjectIndex(index)}
                         className={`w-2 h-2 rounded-full transition-all ${
                           index === currentProjectIndex

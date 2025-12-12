@@ -20,20 +20,54 @@ const escapeHtml = (text: string): string => {
   return text.replace(/[&<>"']/g, char => htmlEntities[char]);
 };
 
-// Simple markdown to HTML parser
-function parseMarkdown(markdown: string): string {
-  let html = markdown;
+// BUG-009 fix: Sanitize URL to prevent javascript: protocol XSS
+// BUG-011 fix: Also block data:image/svg+xml which can contain embedded JavaScript
+const sanitizeUrl = (url: string): string => {
+  const trimmed = url.trim().toLowerCase();
+  // Block dangerous protocols
+  if (trimmed.startsWith('javascript:') ||
+      trimmed.startsWith('vbscript:') ||
+      trimmed.startsWith('data:text/html') ||
+      trimmed.startsWith('data:image/svg+xml') ||  // SVG can contain <script> tags
+      trimmed.startsWith('data:application/')) {   // Block application/* data URIs
+    return '#blocked-unsafe-url';
+  }
+  return url;
+};
 
-  // Code blocks (must be done first)
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+// Simple markdown to HTML parser
+// BUG-009 fix: Escape HTML first to prevent XSS, then apply markdown transformations
+function parseMarkdown(markdown: string): string {
+  // First, extract code blocks and replace with placeholders (they need special handling)
+  const codeBlocks: string[] = [];
+  let html = markdown.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
     const escapedCode = escapeHtml(code.trim());
-    return `<pre class="bg-slate-900 rounded-lg p-4 overflow-x-auto my-4 border border-white/10"><code class="text-sm font-mono text-slate-300">${escapedCode}</code></pre>`;
+    const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`;
+    codeBlocks.push(`<pre class="bg-slate-900 rounded-lg p-4 overflow-x-auto my-4 border border-white/10"><code class="text-sm font-mono text-slate-300">${escapedCode}</code></pre>`);
+    return placeholder;
   });
 
-  // Inline code
-  html = html.replace(/`([^`]+)`/g, '<code class="bg-slate-800 px-1.5 py-0.5 rounded text-blue-300 text-sm font-mono">$1</code>');
+  // Extract inline code and replace with placeholders
+  const inlineCodes: string[] = [];
+  html = html.replace(/`([^`]+)`/g, (_, code) => {
+    const escapedCode = escapeHtml(code);
+    const placeholder = `__INLINE_CODE_${inlineCodes.length}__`;
+    inlineCodes.push(`<code class="bg-slate-800 px-1.5 py-0.5 rounded text-blue-300 text-sm font-mono">${escapedCode}</code>`);
+    return placeholder;
+  });
 
-  // Headers
+  // BUG-009 fix: Escape all remaining HTML to prevent XSS
+  html = escapeHtml(html);
+
+  // Restore code blocks and inline code (they were already escaped)
+  codeBlocks.forEach((block, i) => {
+    html = html.replace(`__CODE_BLOCK_${i}__`, block);
+  });
+  inlineCodes.forEach((code, i) => {
+    html = html.replace(`__INLINE_CODE_${i}__`, code);
+  });
+
+  // Headers (content is now escaped)
   html = html.replace(/^### (.+)$/gm, '<h3 class="text-lg font-semibold text-white mt-6 mb-3">$1</h3>');
   html = html.replace(/^## (.+)$/gm, '<h2 class="text-xl font-bold text-white mt-8 mb-4 pb-2 border-b border-white/10">$1</h2>');
   html = html.replace(/^# (.+)$/gm, '<h1 class="text-2xl font-bold text-white mt-8 mb-4">$1</h1>');
@@ -47,14 +81,20 @@ function parseMarkdown(markdown: string): string {
   // Strikethrough
   html = html.replace(/~~(.+?)~~/g, '<del class="line-through text-slate-500">$1</del>');
 
-  // Links
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline">$1</a>');
+  // Links - BUG-009 fix: sanitize URLs
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) => {
+    const safeUrl = sanitizeUrl(url);
+    return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline">${text}</a>`;
+  });
 
-  // Images
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="max-w-full rounded-lg my-4 border border-white/10" />');
+  // Images - BUG-009 fix: sanitize URLs
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, url) => {
+    const safeUrl = sanitizeUrl(url);
+    return `<img src="${safeUrl}" alt="${alt}" class="max-w-full rounded-lg my-4 border border-white/10" />`;
+  });
 
   // Blockquotes
-  html = html.replace(/^> (.+)$/gm, '<blockquote class="border-l-4 border-blue-500 pl-4 py-1 my-4 bg-blue-500/5 text-slate-300 italic">$1</blockquote>');
+  html = html.replace(/^&gt; (.+)$/gm, '<blockquote class="border-l-4 border-blue-500 pl-4 py-1 my-4 bg-blue-500/5 text-slate-300 italic">$1</blockquote>');
 
   // Horizontal rules
   html = html.replace(/^---$/gm, '<hr class="my-6 border-white/10" />');
@@ -74,7 +114,7 @@ function parseMarkdown(markdown: string): string {
     return `<ol class="my-4 space-y-1">${match}</ol>`;
   });
 
-  // Task lists
+  // Task lists (note: [ ] becomes escaped as &amp;#91; etc, so we match the escaped version)
   html = html.replace(/^- \[x\] (.+)$/gm, '<div class="flex items-center gap-2 py-1"><input type="checkbox" checked disabled class="rounded" /><span class="text-slate-300">$1</span></div>');
   html = html.replace(/^- \[ \] (.+)$/gm, '<div class="flex items-center gap-2 py-1"><input type="checkbox" disabled class="rounded" /><span class="text-slate-300">$1</span></div>');
 

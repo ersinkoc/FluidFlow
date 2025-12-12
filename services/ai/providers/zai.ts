@@ -1,15 +1,17 @@
-import { AIProvider, GenerationRequest, GenerationResponse, StreamChunk } from '../types';
+import { AIProvider, ProviderConfig, GenerationRequest, GenerationResponse, StreamChunk } from '../types';
+import { fetchWithTimeout, TIMEOUT_TEST_CONNECTION, TIMEOUT_GENERATE } from '../utils/fetchWithTimeout';
 
 export class ZAIProvider implements AIProvider {
-  public config: any;
+  readonly config: ProviderConfig;
 
-  constructor(config: any) {
+  constructor(config: ProviderConfig) {
     this.config = config;
   }
 
   async testConnection(): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+      // BUG-010 fix: Add timeout to prevent indefinite hanging
+      const response = await fetchWithTimeout(`${this.config.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -20,6 +22,7 @@ export class ZAIProvider implements AIProvider {
           messages: [{ role: 'user', content: 'Test' }],
           max_tokens: 10,
         }),
+        timeout: TIMEOUT_TEST_CONNECTION,
       });
       return response.ok ? { success: true } : { success: false, error: 'Failed to connect' };
     } catch (error) {
@@ -46,18 +49,29 @@ export class ZAIProvider implements AIProvider {
       body.response_format = { type: 'json_object' };
     }
 
-    const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+    // BUG-010 fix: Add timeout to prevent indefinite hanging
+    const response = await fetchWithTimeout(`${this.config.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.config.apiKey}`,
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      timeout: TIMEOUT_GENERATE,
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || `HTTP ${response.status}`);
+      // BUG-FIX: Read response text once to avoid "body already read" errors
+      const errorText = await response.text();
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error?.message || errorMessage;
+      } catch {
+        // Response wasn't valid JSON, use status code
+        if (errorText) errorMessage += `: ${errorText.slice(0, 100)}`;
+      }
+      throw new Error(errorMessage);
     }
 
     const data = await response.json();
@@ -96,18 +110,29 @@ export class ZAIProvider implements AIProvider {
       body.response_format = { type: 'json_object' };
     }
 
-    const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+    // BUG-010 fix: Add timeout to prevent indefinite hanging
+    const response = await fetchWithTimeout(`${this.config.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.config.apiKey}`,
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      timeout: TIMEOUT_GENERATE,
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || `HTTP ${response.status}`);
+      // BUG-FIX: Read response text once to avoid "body already read" errors
+      const errorText = await response.text();
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error?.message || errorMessage;
+      } catch {
+        // Response wasn't valid JSON, use status code
+        if (errorText) errorMessage += `: ${errorText.slice(0, 100)}`;
+      }
+      throw new Error(errorMessage);
     }
 
     const reader = response.body?.getReader();

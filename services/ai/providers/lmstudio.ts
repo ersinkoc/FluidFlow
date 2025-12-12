@@ -1,4 +1,5 @@
 import { AIProvider, ProviderConfig, GenerationRequest, GenerationResponse, StreamChunk, ModelOption } from '../types';
+import { fetchWithTimeout, TIMEOUT_TEST_CONNECTION, TIMEOUT_GENERATE, TIMEOUT_LIST_MODELS } from '../utils/fetchWithTimeout';
 
 export class LMStudioProvider implements AIProvider {
   readonly config: ProviderConfig;
@@ -9,7 +10,10 @@ export class LMStudioProvider implements AIProvider {
 
   async testConnection(): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await fetch(`${this.config.baseUrl}/models`);
+      // BUG-010 fix: Add timeout to prevent indefinite hanging
+      const response = await fetchWithTimeout(`${this.config.baseUrl}/models`, {
+        timeout: TIMEOUT_TEST_CONNECTION,
+      });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return { success: true };
     } catch (error) {
@@ -62,10 +66,12 @@ export class LMStudioProvider implements AIProvider {
       headers['Authorization'] = `Bearer ${this.config.apiKey}`;
     }
 
-    const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+    // BUG-010 fix: Add timeout to prevent indefinite hanging
+    const response = await fetchWithTimeout(`${this.config.baseUrl}/chat/completions`, {
       method: 'POST',
       headers,
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      timeout: TIMEOUT_GENERATE,
     });
 
     if (!response.ok) {
@@ -130,10 +136,12 @@ export class LMStudioProvider implements AIProvider {
       headers['Authorization'] = `Bearer ${this.config.apiKey}`;
     }
 
-    const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+    // BUG-010 fix: Add timeout to prevent indefinite hanging
+    const response = await fetchWithTimeout(`${this.config.baseUrl}/chat/completions`, {
       method: 'POST',
       headers,
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      timeout: TIMEOUT_GENERATE,
     });
 
     if (!response.ok) {
@@ -142,12 +150,15 @@ export class LMStudioProvider implements AIProvider {
     }
 
     const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('No response body');
+    }
+
     const decoder = new TextDecoder();
     let fullText = '';
     let buffer = ''; // Buffer for incomplete lines
 
-    if (reader) {
-      try {
+    try {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -199,10 +210,9 @@ export class LMStudioProvider implements AIProvider {
             }
           }
         }
-      } finally {
-        // Release the reader lock to prevent memory leaks
-        reader.releaseLock();
-      }
+    } finally {
+      // Release the reader lock to prevent memory leaks
+      reader.releaseLock();
     }
 
     onChunk({ text: '', done: true });
@@ -210,7 +220,10 @@ export class LMStudioProvider implements AIProvider {
   }
 
   async listModels(): Promise<ModelOption[]> {
-    const response = await fetch(`${this.config.baseUrl}/models`);
+    // BUG-010 fix: Add timeout to prevent indefinite hanging
+    const response = await fetchWithTimeout(`${this.config.baseUrl}/models`, {
+      timeout: TIMEOUT_LIST_MODELS,
+    });
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 

@@ -1,4 +1,5 @@
 import { AIProvider, ProviderConfig, GenerationRequest, GenerationResponse, StreamChunk } from '../types';
+import { fetchWithTimeout, TIMEOUT_TEST_CONNECTION, TIMEOUT_GENERATE } from '../utils/fetchWithTimeout';
 
 export class AnthropicProvider implements AIProvider {
   readonly config: ProviderConfig;
@@ -9,8 +10,8 @@ export class AnthropicProvider implements AIProvider {
 
   async testConnection(): Promise<{ success: boolean; error?: string }> {
     try {
-      // Make a minimal request to test connection
-      const response = await fetch(`${this.config.baseUrl}/v1/messages`, {
+      // BUG-010 fix: Add timeout to prevent indefinite hanging
+      const response = await fetchWithTimeout(`${this.config.baseUrl}/v1/messages`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -21,11 +22,21 @@ export class AnthropicProvider implements AIProvider {
           model: this.config.defaultModel,
           max_tokens: 10,
           messages: [{ role: 'user', content: 'Hi' }]
-        })
+        }),
+        timeout: TIMEOUT_TEST_CONNECTION,
       });
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error?.message || `HTTP ${response.status}`);
+        // BUG-FIX: Read response text once to avoid "body already read" errors
+        const errorText = await response.text();
+        let errorMessage = `HTTP ${response.status}`;
+        try {
+          const error = JSON.parse(errorText);
+          errorMessage = error.error?.message || errorMessage;
+        } catch {
+          // Response wasn't valid JSON, use status code
+          if (errorText) errorMessage += `: ${errorText.slice(0, 100)}`;
+        }
+        throw new Error(errorMessage);
       }
       return { success: true };
     } catch (error) {
@@ -66,7 +77,8 @@ export class AnthropicProvider implements AIProvider {
       body.system = request.systemInstruction;
     }
 
-    const response = await fetch(`${this.config.baseUrl}/v1/messages`, {
+    // BUG-010 fix: Add timeout to prevent indefinite hanging
+    const response = await fetchWithTimeout(`${this.config.baseUrl}/v1/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -74,12 +86,22 @@ export class AnthropicProvider implements AIProvider {
         'anthropic-version': '2023-06-01',
         ...this.config.headers,
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      timeout: TIMEOUT_GENERATE,
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || `HTTP ${response.status}`);
+      // BUG-FIX: Read response text once to avoid "body already read" errors
+      const errorText = await response.text();
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error?.message || errorMessage;
+      } catch {
+        // Response wasn't valid JSON, use status code
+        if (errorText) errorMessage += `: ${errorText.slice(0, 100)}`;
+      }
+      throw new Error(errorMessage);
     }
 
     const data = await response.json();
@@ -131,7 +153,8 @@ export class AnthropicProvider implements AIProvider {
       body.system = request.systemInstruction;
     }
 
-    const response = await fetch(`${this.config.baseUrl}/v1/messages`, {
+    // BUG-010 fix: Add timeout to prevent indefinite hanging
+    const response = await fetchWithTimeout(`${this.config.baseUrl}/v1/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -139,21 +162,34 @@ export class AnthropicProvider implements AIProvider {
         'anthropic-version': '2023-06-01',
         ...this.config.headers,
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      timeout: TIMEOUT_GENERATE,
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || `HTTP ${response.status}`);
+      // BUG-FIX: Read response text once to avoid "body already read" errors
+      const errorText = await response.text();
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error?.message || errorMessage;
+      } catch {
+        // Response wasn't valid JSON, use status code
+        if (errorText) errorMessage += `: ${errorText.slice(0, 100)}`;
+      }
+      throw new Error(errorMessage);
     }
 
     const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('No response body');
+    }
+
     const decoder = new TextDecoder();
     let fullText = '';
     let buffer = ''; // Buffer for incomplete lines
 
-    if (reader) {
-      try {
+    try {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -205,10 +241,9 @@ export class AnthropicProvider implements AIProvider {
             }
           }
         }
-      } finally {
-        // Release the reader lock to prevent memory leaks
-        reader.releaseLock();
-      }
+    } finally {
+      // Release the reader lock to prevent memory leaks
+      reader.releaseLock();
     }
 
     onChunk({ text: '', done: true });

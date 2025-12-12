@@ -36,10 +36,11 @@ export default defineConfig(({ mode }) => {
     css: {
       postcss: './postcss.config.js',
     },
-    define: {
-      'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
-    },
+    // SEC-004 fix: API keys are NOT exposed in frontend bundle
+    // Users must configure their API keys through Settings UI, which stores them
+    // securely (encrypted) in localStorage and backend. For development, set
+    // GEMINI_API_KEY in .env and the backend will automatically configure the default provider.
+    define: {},
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

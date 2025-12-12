@@ -3,7 +3,7 @@
  * Prevents command injection by properly escaping arguments
  */
 
-import { spawn, ChildProcess, execFileSync, execSync } from 'child_process';
+import { spawn, ChildProcess, execFileSync } from 'child_process';
 
 /**
  * Securely executes a command with proper argument escaping
@@ -62,20 +62,36 @@ export function secureSpawn(command: string, args: string[], options?: any): Chi
 
 /**
  * Kills a process by PID securely
+ * BUG-001 fix: Use execFileSync with args array instead of execSync with string interpolation
+ * to prevent command injection vulnerabilities
  */
 export function secureKillProcess(pid: number | string): void {
   const pidStr = String(pid);
 
-  // Validate PID is numeric
+  // Validate PID is numeric (defense in depth)
   if (!/^\d+$/.test(pidStr)) {
     throw new Error(`Invalid PID: ${pid}`);
   }
 
-  if (process.platform !== 'win32') {
-    // On Unix systems
-    execSync(`kill -9 ${pidStr}`, { stdio: 'ignore' });
-  } else {
-    // On Windows
-    execSync(`taskkill /pid ${pidStr} /f`, { stdio: 'ignore' });
+  // Validate PID is within reasonable range (1 to 4194304 on Linux, similar on others)
+  const pidNum = parseInt(pidStr, 10);
+  if (pidNum < 1 || pidNum > 4194304) {
+    throw new Error(`PID out of valid range: ${pid}`);
+  }
+
+  try {
+    if (process.platform !== 'win32') {
+      // On Unix systems - use execFileSync with args array (no shell)
+      execFileSync('kill', ['-9', pidStr], { stdio: 'ignore' });
+    } else {
+      // On Windows - use execFileSync with args array (no shell)
+      execFileSync('taskkill', ['/pid', pidStr, '/f'], { stdio: 'ignore' });
+    }
+  } catch (error) {
+    // Process may already be dead, which is fine
+    const err = error as NodeJS.ErrnoException;
+    if (err.code !== 'ESRCH' && err.code !== 'EPERM') {
+      console.warn(`[secureKillProcess] Failed to kill PID ${pidStr}:`, err.message);
+    }
   }
 }

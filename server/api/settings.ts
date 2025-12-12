@@ -63,6 +63,7 @@ interface ProviderConfig {
   type: string;
   apiKey?: string;
   baseUrl?: string;
+  defaultModel?: string;
   models?: string[];
   isLocal?: boolean;
 }
@@ -110,26 +111,81 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   updatedAt: 0
 };
 
-// Lock to prevent concurrent settings saves
-let settingsLock: Promise<void> | null = null;
+// SEC-004 fix: Initialize default provider from .env for development convenience
+// This runs once on server startup if no providers are configured
+async function initializeDefaultProvider(): Promise<void> {
+  try {
+    // Check if settings file exists
+    if (existsSync(SETTINGS_FILE)) {
+      const data = await fs.readFile(SETTINGS_FILE, 'utf-8');
+      const settings = safeJsonParse(data, {}) as GlobalSettings;
+      // If providers already configured, don't overwrite
+      if (settings.aiProviders && settings.aiProviders.length > 0) {
+        return;
+      }
+    }
+
+    // Check for GEMINI_API_KEY in environment
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (!geminiKey) {
+      console.log('[Settings] No GEMINI_API_KEY found in .env - users must configure via Settings UI');
+      return;
+    }
+
+    // Create default provider with key from .env
+    const defaultProvider: ProviderConfig = {
+      id: 'default-gemini',
+      name: 'Google Gemini',
+      type: 'gemini',
+      apiKey: geminiKey,
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      defaultModel: 'gemini-2.5-flash',
+      models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3-pro'],
+    };
+
+    // Encrypt and save
+    const encryptedProvider = await encryptProviderConfig(defaultProvider);
+    const settings: GlobalSettings = {
+      ...DEFAULT_SETTINGS,
+      aiProviders: [encryptedProvider],
+      activeProviderId: 'default-gemini',
+      updatedAt: Date.now(),
+    };
+
+    await fs.writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+    console.log('[Settings] Initialized default Gemini provider from GEMINI_API_KEY');
+  } catch (error) {
+    console.error('[Settings] Failed to initialize default provider:', error);
+  }
+}
+
+// Run initialization on module load
+initializeDefaultProvider();
+
+// BUG-008 fix: Proper mutex pattern to prevent TOCTOU race condition
+// Using a queue-based approach where each request waits for the previous one
+let settingsLockQueue: Promise<void> = Promise.resolve();
 
 async function withSettingsLock<T>(fn: () => Promise<T>): Promise<T> {
-  // Wait for any existing lock
-  if (settingsLock) {
-    await settingsLock;
-  }
-
-  // Create new lock
-  let resolveLock: () => void;
-  settingsLock = new Promise<void>((resolve) => {
-    resolveLock = resolve;
+  // Each call chains onto the previous lock, ensuring sequential execution
+  // This eliminates the TOCTOU race between checking and acquiring the lock
+  let releaseLock: () => void;
+  const myLock = new Promise<void>((resolve) => {
+    releaseLock = resolve;
   });
 
+  // Chain our lock onto the queue - wait for all previous operations
+  const previousLock = settingsLockQueue;
+  settingsLockQueue = myLock;
+
   try {
+    // Wait for the previous operation to complete
+    await previousLock;
+    // Now execute our function
     return await fn();
   } finally {
-    resolveLock!();
-    settingsLock = null;
+    // Release our lock so the next operation can proceed
+    releaseLock!();
   }
 }
 

@@ -1,4 +1,5 @@
 import { AIProvider, ProviderConfig, GenerationRequest, GenerationResponse, StreamChunk, ModelOption } from '../types';
+import { fetchWithTimeout, TIMEOUT_TEST_CONNECTION, TIMEOUT_GENERATE, TIMEOUT_LIST_MODELS } from '../utils/fetchWithTimeout';
 
 export class OpenAIProvider implements AIProvider {
   readonly config: ProviderConfig;
@@ -9,10 +10,12 @@ export class OpenAIProvider implements AIProvider {
 
   async testConnection(): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await fetch(`${this.config.baseUrl}/models`, {
+      // BUG-010 fix: Add timeout to prevent indefinite hanging
+      const response = await fetchWithTimeout(`${this.config.baseUrl}/models`, {
         headers: {
           'Authorization': `Bearer ${this.config.apiKey}`,
-        }
+        },
+        timeout: TIMEOUT_TEST_CONNECTION,
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return { success: true };
@@ -58,19 +61,30 @@ export class OpenAIProvider implements AIProvider {
       }
     }
 
-    const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+    // BUG-010 fix: Add timeout to prevent indefinite hanging
+    const response = await fetchWithTimeout(`${this.config.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.config.apiKey}`,
         ...this.config.headers,
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      timeout: TIMEOUT_GENERATE,
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || `HTTP ${response.status}`);
+      // BUG-FIX: Read response text once to avoid "body already read" errors
+      const errorText = await response.text();
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error?.message || errorMessage;
+      } catch {
+        // Response wasn't valid JSON, use status code
+        if (errorText) errorMessage += `: ${errorText.slice(0, 100)}`;
+      }
+      throw new Error(errorMessage);
     }
 
     const data = await response.json();
@@ -127,30 +141,44 @@ export class OpenAIProvider implements AIProvider {
       }
     }
 
-    const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+    // BUG-010 fix: Add timeout to prevent indefinite hanging
+    const response = await fetchWithTimeout(`${this.config.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.config.apiKey}`,
         ...this.config.headers,
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      timeout: TIMEOUT_GENERATE,
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || `HTTP ${response.status}`);
+      // BUG-FIX: Read response text once to avoid "body already read" errors
+      const errorText = await response.text();
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error?.message || errorMessage;
+      } catch {
+        // Response wasn't valid JSON, use status code
+        if (errorText) errorMessage += `: ${errorText.slice(0, 100)}`;
+      }
+      throw new Error(errorMessage);
     }
 
     const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('No response body');
+    }
+
     const decoder = new TextDecoder();
     let fullText = '';
     let buffer = ''; // Buffer for incomplete SSE lines
     let usage: { inputTokens?: number; outputTokens?: number } | undefined;
 
-    if (reader) {
-      try {
-        while (true) {
+    try {
+      while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
@@ -218,10 +246,9 @@ export class OpenAIProvider implements AIProvider {
             }
           }
         }
-      } finally {
-        // Release the reader lock to prevent memory leaks
-        reader.releaseLock();
-      }
+    } finally {
+      // Release the reader lock to prevent memory leaks
+      reader.releaseLock();
     }
 
     onChunk({ text: '', done: true });
@@ -241,10 +268,12 @@ export class OpenAIProvider implements AIProvider {
   }
 
   async listModels(): Promise<ModelOption[]> {
-    const response = await fetch(`${this.config.baseUrl}/models`, {
+    // BUG-010 fix: Add timeout to prevent indefinite hanging
+    const response = await fetchWithTimeout(`${this.config.baseUrl}/models`, {
       headers: {
         'Authorization': `Bearer ${this.config.apiKey}`,
-      }
+      },
+      timeout: TIMEOUT_LIST_MODELS,
     });
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);

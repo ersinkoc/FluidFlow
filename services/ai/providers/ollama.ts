@@ -1,4 +1,5 @@
 import { AIProvider, ProviderConfig, GenerationRequest, GenerationResponse, StreamChunk, ModelOption } from '../types';
+import { fetchWithTimeout, TIMEOUT_TEST_CONNECTION, TIMEOUT_GENERATE, TIMEOUT_LIST_MODELS } from '../utils/fetchWithTimeout';
 
 export class OllamaProvider implements AIProvider {
   readonly config: ProviderConfig;
@@ -9,7 +10,10 @@ export class OllamaProvider implements AIProvider {
 
   async testConnection(): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await fetch(`${this.config.baseUrl}/api/tags`);
+      // BUG-010 fix: Add timeout to prevent indefinite hanging
+      const response = await fetchWithTimeout(`${this.config.baseUrl}/api/tags`, {
+        timeout: TIMEOUT_TEST_CONNECTION,
+      });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return { success: true };
     } catch (error) {
@@ -43,11 +47,12 @@ export class OllamaProvider implements AIProvider {
       body.images = request.images.map(img => img.data);
     }
 
-    // Use chat endpoint for better compatibility
-    const response = await fetch(`${this.config.baseUrl}/api/generate`, {
+    // BUG-010 fix: Add timeout to prevent indefinite hanging
+    const response = await fetchWithTimeout(`${this.config.baseUrl}/api/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      timeout: TIMEOUT_GENERATE,
     });
 
     if (!response.ok) {
@@ -89,10 +94,12 @@ export class OllamaProvider implements AIProvider {
       body.images = request.images.map(img => img.data);
     }
 
-    const response = await fetch(`${this.config.baseUrl}/api/generate`, {
+    // BUG-010 fix: Add timeout to prevent indefinite hanging
+    const response = await fetchWithTimeout(`${this.config.baseUrl}/api/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      timeout: TIMEOUT_GENERATE,
     });
 
     if (!response.ok) {
@@ -101,12 +108,15 @@ export class OllamaProvider implements AIProvider {
     }
 
     const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('No response body');
+    }
+
     const decoder = new TextDecoder();
     let fullText = '';
     let buffer = ''; // Buffer for incomplete lines
 
-    if (reader) {
-      try {
+    try {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -153,17 +163,19 @@ export class OllamaProvider implements AIProvider {
             // Skip invalid JSON
           }
         }
-      } finally {
-        // Release the reader lock to prevent memory leaks
-        reader.releaseLock();
-      }
+    } finally {
+      // Release the reader lock to prevent memory leaks
+      reader.releaseLock();
     }
 
     return { text: fullText };
   }
 
   async listModels(): Promise<ModelOption[]> {
-    const response = await fetch(`${this.config.baseUrl}/api/tags`);
+    // BUG-010 fix: Add timeout to prevent indefinite hanging
+    const response = await fetchWithTimeout(`${this.config.baseUrl}/api/tags`, {
+      timeout: TIMEOUT_LIST_MODELS,
+    });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
     const data = await response.json();

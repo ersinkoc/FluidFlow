@@ -75,9 +75,33 @@ async function deriveKey(secret: string, salt: Uint8Array): Promise<CryptoKey> {
   );
 }
 
+// BUG-003 fix: Track if crypto API is available to avoid silent failures
+let cryptoAvailable: boolean | null = null;
+
+function isCryptoAvailable(): boolean {
+  if (cryptoAvailable === null) {
+    try {
+      cryptoAvailable = !!(
+        typeof crypto !== 'undefined' &&
+        crypto.subtle &&
+        typeof crypto.subtle.encrypt === 'function' &&
+        typeof crypto.getRandomValues === 'function'
+      );
+      if (!cryptoAvailable) {
+        console.warn('[Encryption] Web Crypto API not available - encryption disabled');
+      }
+    } catch {
+      cryptoAvailable = false;
+      console.warn('[Encryption] Web Crypto API check failed - encryption disabled');
+    }
+  }
+  return cryptoAvailable;
+}
+
 /**
  * Encrypts a string value.
  * Returns format: "encrypted:<salt>:<iv>:<ciphertext>" (all base64 encoded)
+ * BUG-003 fix: Explicitly check crypto availability and throw on unexpected failures
  */
 export async function encrypt(plaintext: string): Promise<string> {
   if (!plaintext) {
@@ -86,6 +110,13 @@ export async function encrypt(plaintext: string): Promise<string> {
 
   // Don't double-encrypt
   if (plaintext.startsWith(ENCRYPTED_PREFIX)) {
+    return plaintext;
+  }
+
+  // BUG-003 fix: Early return with warning if crypto is unavailable
+  if (!isCryptoAvailable()) {
+    // In environments without crypto, return plaintext but log a clear warning
+    console.warn('[Encryption] Storing value without encryption (crypto unavailable)');
     return plaintext;
   }
 
@@ -103,22 +134,24 @@ export async function encrypt(plaintext: string): Promise<string> {
       encoder.encode(plaintext)
     );
 
-    // Encode as base64
-    const saltB64 = btoa(String.fromCharCode(...salt));
-    const ivB64 = btoa(String.fromCharCode(...iv));
-    const ciphertextB64 = btoa(String.fromCharCode(...new Uint8Array(ciphertext)));
+    // Encode as base64 using Uint8Array iteration (safer than spread for large arrays)
+    const saltB64 = btoa(Array.from(salt, b => String.fromCharCode(b)).join(''));
+    const ivB64 = btoa(Array.from(iv, b => String.fromCharCode(b)).join(''));
+    const ciphertextB64 = btoa(Array.from(new Uint8Array(ciphertext), b => String.fromCharCode(b)).join(''));
 
     return `${ENCRYPTED_PREFIX}${saltB64}:${ivB64}:${ciphertextB64}`;
   } catch (error) {
+    // BUG-003 fix: Log detailed error and re-throw for unexpected failures
+    // This ensures callers know encryption failed rather than silently storing plaintext
     console.error('[Encryption] Client-side encryption failed:', error);
-    // Return plaintext on failure (graceful degradation)
-    return plaintext;
+    throw new Error(`Encryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
 /**
  * Decrypts an encrypted string.
  * Handles both encrypted (prefixed) and plaintext values for backwards compatibility.
+ * BUG-003 fix: On decryption failure, throw error instead of returning empty string
  */
 export async function decrypt(encryptedValue: string): Promise<string> {
   if (!encryptedValue) {
@@ -130,22 +163,28 @@ export async function decrypt(encryptedValue: string): Promise<string> {
     return encryptedValue;
   }
 
+  // BUG-003 fix: Early check for crypto availability
+  if (!isCryptoAvailable()) {
+    console.warn('[Encryption] Cannot decrypt - crypto unavailable, returning original value');
+    return encryptedValue; // Return encrypted value rather than empty string
+  }
+
   try {
     const secret = getOrCreateSecret();
 
     // Parse the encrypted format
     const parts = encryptedValue.slice(ENCRYPTED_PREFIX.length).split(':');
     if (parts.length !== 3) {
-      console.error('[Encryption] Invalid encrypted format');
-      return '';
+      console.error('[Encryption] Invalid encrypted format - expected 3 parts, got', parts.length);
+      throw new Error('Invalid encrypted format');
     }
 
     const [saltB64, ivB64, ciphertextB64] = parts;
 
-    // Decode from base64
-    const salt = new Uint8Array(atob(saltB64).split('').map(c => c.charCodeAt(0)));
-    const iv = new Uint8Array(atob(ivB64).split('').map(c => c.charCodeAt(0)));
-    const ciphertext = new Uint8Array(atob(ciphertextB64).split('').map(c => c.charCodeAt(0)));
+    // Decode from base64 using Array.from (safer for binary data)
+    const salt = new Uint8Array(Array.from(atob(saltB64), c => c.charCodeAt(0)));
+    const iv = new Uint8Array(Array.from(atob(ivB64), c => c.charCodeAt(0)));
+    const ciphertext = new Uint8Array(Array.from(atob(ciphertextB64), c => c.charCodeAt(0)));
 
     const key = await deriveKey(secret, salt);
     const decoder = new TextDecoder();
@@ -158,8 +197,10 @@ export async function decrypt(encryptedValue: string): Promise<string> {
 
     return decoder.decode(plaintext);
   } catch (error) {
+    // BUG-003 fix: Log detailed error and throw instead of returning empty string
+    // This prevents data loss and makes failures explicit
     console.error('[Encryption] Client-side decryption failed:', error);
-    return '';
+    throw new Error(`Decryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { spawn, spawnSync, ChildProcess, execSync } from 'child_process';
+import { spawn, spawnSync, ChildProcess } from 'child_process';
 import path from 'path';
 import { existsSync } from 'fs';
 import { isValidProjectId, isValidInteger } from '../utils/validation';
@@ -41,8 +41,14 @@ function cleanupOrphanProcesses() {
     }
   } else {
     // On Windows, use netstat + taskkill
+    // BUG-012 fix: Use spawnSync with args array instead of execSync with shell string
     try {
-      const output = execSync('netstat -ano', { encoding: 'utf-8' });
+      const netstatResult = spawnSync('netstat', ['-ano'], { encoding: 'utf-8' });
+      if (netstatResult.status !== 0 || !netstatResult.stdout) {
+        console.warn('[Runner] netstat command failed');
+        return;
+      }
+      const output = netstatResult.stdout;
       const lines = output.split('\n');
       const pidsToKill = new Set<string>();
 
@@ -366,9 +372,17 @@ router.post('/:id/stop', (req, res) => {
   running.status = 'stopped';
   pushLog(running.logs,`[${new Date().toISOString()}] Stopped by user`);
 
+  // BUG-FIX (MED-S04): Store startedAt to prevent deleting a restarted project entry
+  // If user restarts the project within 5 seconds, this closure's startedAt won't match
+  const stoppedEntryStartedAt = running.startedAt;
+
   // Clean up after a delay
   setTimeout(() => {
-    runningProjects.delete(id);
+    const currentEntry = runningProjects.get(id);
+    // Only delete if the entry is the same one we stopped (same startedAt timestamp)
+    if (currentEntry && currentEntry.startedAt === stoppedEntryStartedAt) {
+      runningProjects.delete(id);
+    }
   }, 5000);
 
   res.json({ message: 'Project stopped', status: 'stopped' });

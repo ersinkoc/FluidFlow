@@ -6,7 +6,7 @@ import crypto from 'crypto';
 import fs from 'fs/promises';
 import { existsSync, mkdirSync } from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 const ALGORITHM = 'aes-256-gcm';
 const KEY_LENGTH = 32; // 256 bits
@@ -48,9 +48,10 @@ async function getOrCreateKey(): Promise<Buffer> {
     await fs.writeFile(KEY_FILE, cachedKey.toString('hex'), { mode: 0o600 });
 
     // ENC-001 fix: On Windows, mode:0o600 is ignored, so use attrib to hide the file
+    // BUG-FIX: Use execFileSync with args array to prevent command injection
     if (process.platform === 'win32') {
       try {
-        execSync(`attrib +H "${KEY_FILE}"`, { stdio: 'ignore' });
+        execFileSync('attrib', ['+H', KEY_FILE], { stdio: 'ignore' });
       } catch {
         // Ignore errors - hiding is best-effort security measure
       }

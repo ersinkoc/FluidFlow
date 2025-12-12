@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 
 interface UseSpeechRecognitionResult {
   isListening: boolean;
@@ -82,6 +82,21 @@ export function useSpeechRecognition(
       startListening();
     }
   }, [isListening, startListening, stopListening]);
+
+  // BUG-002 fix: Cleanup effect to stop speech recognition when component unmounts
+  // This prevents memory leaks and ensures microphone is released
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+          recognitionRef.current = null;
+        } catch {
+          // Ignore errors during cleanup (recognition may already be stopped)
+        }
+      }
+    };
+  }, []);
 
   return {
     isListening,

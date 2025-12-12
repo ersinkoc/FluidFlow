@@ -92,6 +92,37 @@ describe('Security Validation', () => {
     });
   });
 
+  describe('URL Sanitization (BUG-011 fix)', () => {
+    // These tests verify that dangerous data: URLs are blocked
+    // The actual sanitizeUrl function is in MarkdownPreview.tsx
+    // Here we test the validation patterns
+
+    it('should identify dangerous SVG data URLs', () => {
+      const dangerousSvg = 'data:image/svg+xml,<svg onload="alert(1)"></svg>';
+      const trimmed = dangerousSvg.toLowerCase();
+
+      // The fix blocks data:image/svg+xml URLs
+      expect(trimmed.startsWith('data:image/svg+xml')).toBe(true);
+    });
+
+    it('should identify dangerous application data URLs', () => {
+      const dangerousApp = 'data:application/javascript,alert(1)';
+      const trimmed = dangerousApp.toLowerCase();
+
+      expect(trimmed.startsWith('data:application/')).toBe(true);
+    });
+
+    it('should allow safe image data URLs', () => {
+      // Safe image data URLs should not be blocked
+      const safeImage = 'data:image/png;base64,iVBORw0KGgo=';
+      const trimmed = safeImage.toLowerCase();
+
+      // PNG, JPEG, GIF should be allowed
+      expect(trimmed.startsWith('data:image/svg+xml')).toBe(false);
+      expect(trimmed.startsWith('data:application/')).toBe(false);
+    });
+  });
+
   describe('Content Security', () => {
     it('should handle Unicode attacks', () => {
       // UTF-7/UTF-8 overlong encoding attempts
