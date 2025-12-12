@@ -1,5 +1,6 @@
 import { AIProvider, ProviderConfig, GenerationRequest, GenerationResponse, StreamChunk } from '../types';
 import { fetchWithTimeout, TIMEOUT_TEST_CONNECTION, TIMEOUT_GENERATE } from '../utils/fetchWithTimeout';
+import { prepareJsonRequest } from '../utils/jsonOutput';
 
 export class ZAIProvider implements AIProvider {
   readonly config: ProviderConfig;
@@ -33,13 +34,12 @@ export class ZAIProvider implements AIProvider {
   async generate(request: GenerationRequest, model: string): Promise<GenerationResponse> {
     const messages: any[] = [];
 
-    // Build system instruction with optional JSON schema guidance
-    let systemContent = request.systemInstruction || '';
-    if (request.responseFormat === 'json' && request.responseSchema) {
-      // Include schema in system prompt for Z.AI (no native schema enforcement)
-      const schemaInstruction = `\n\nYou MUST respond with valid JSON that follows this exact schema:\n${JSON.stringify(request.responseSchema, null, 2)}\n\nDo not include any text outside the JSON object.`;
-      systemContent = systemContent ? systemContent + schemaInstruction : schemaInstruction.trim();
-    }
+    // Use unified JSON output handling
+    const jsonRequest = request.responseFormat === 'json'
+      ? prepareJsonRequest('zai', request.systemInstruction || '', request.responseSchema)
+      : null;
+
+    const systemContent = jsonRequest?.systemInstruction ?? request.systemInstruction ?? '';
 
     if (systemContent) {
       messages.push({ role: 'system', content: systemContent });
@@ -53,7 +53,8 @@ export class ZAIProvider implements AIProvider {
       temperature: request.temperature ?? 0.7,
     };
 
-    if (request.responseFormat === 'json') {
+    // Z.AI supports json_object mode but not strict schema enforcement
+    if (request.responseFormat === 'json' && jsonRequest?.useJsonObject) {
       body.response_format = { type: 'json_object' };
     }
 
@@ -101,13 +102,12 @@ export class ZAIProvider implements AIProvider {
   ): Promise<GenerationResponse> {
     const messages: any[] = [];
 
-    // Build system instruction with optional JSON schema guidance
-    let systemContent = request.systemInstruction || '';
-    if (request.responseFormat === 'json' && request.responseSchema) {
-      // Include schema in system prompt for Z.AI (no native schema enforcement)
-      const schemaInstruction = `\n\nYou MUST respond with valid JSON that follows this exact schema:\n${JSON.stringify(request.responseSchema, null, 2)}\n\nDo not include any text outside the JSON object.`;
-      systemContent = systemContent ? systemContent + schemaInstruction : schemaInstruction.trim();
-    }
+    // Use unified JSON output handling
+    const jsonRequest = request.responseFormat === 'json'
+      ? prepareJsonRequest('zai', request.systemInstruction || '', request.responseSchema)
+      : null;
+
+    const systemContent = jsonRequest?.systemInstruction ?? request.systemInstruction ?? '';
 
     if (systemContent) {
       messages.push({ role: 'system', content: systemContent });
@@ -122,7 +122,8 @@ export class ZAIProvider implements AIProvider {
       stream: true,
     };
 
-    if (request.responseFormat === 'json') {
+    // Z.AI supports json_object mode but not strict schema enforcement
+    if (request.responseFormat === 'json' && jsonRequest?.useJsonObject) {
       body.response_format = { type: 'json_object' };
     }
 

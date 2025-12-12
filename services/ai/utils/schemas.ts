@@ -98,8 +98,17 @@ export function supportsNativeSchema(providerType: ProviderType, schema?: Record
   // Dynamic key schemas can't use native enforcement on any provider
   if (schemaHasDynamicKeys(schema)) return false;
 
-  // Static schemas work with Gemini, OpenAI, and Anthropic
-  return providerType === 'gemini' || providerType === 'openai' || providerType === 'anthropic';
+  // Static schemas work with these providers:
+  // - Gemini: responseSchema
+  // - OpenAI: json_schema response_format
+  // - Anthropic: output_format with beta header
+  // - OpenRouter: json_schema (routes to compatible models)
+  return (
+    providerType === 'gemini' ||
+    providerType === 'openai' ||
+    providerType === 'anthropic' ||
+    providerType === 'openrouter'
+  );
 }
 
 /**

@@ -1,5 +1,6 @@
 import { AIProvider, ProviderConfig, GenerationRequest, GenerationResponse, StreamChunk, ModelOption } from '../types';
 import { fetchWithTimeout, TIMEOUT_TEST_CONNECTION, TIMEOUT_GENERATE, TIMEOUT_LIST_MODELS } from '../utils/fetchWithTimeout';
+import { prepareJsonRequest } from '../utils/jsonOutput';
 
 export class OpenAIProvider implements AIProvider {
   readonly config: ProviderConfig;
@@ -27,14 +28,13 @@ export class OpenAIProvider implements AIProvider {
   async generate(request: GenerationRequest, model: string): Promise<GenerationResponse> {
     const messages: any[] = [];
 
-    // Build system instruction with optional JSON schema guidance for non-native providers
-    let systemContent = request.systemInstruction || '';
-    if (request.responseFormat === 'json' && request.responseSchema && this.config.type !== 'openai') {
-      // OpenRouter and custom endpoints don't support native schema enforcement
-      // Include schema in system prompt for guidance
-      const schemaInstruction = `\n\nYou MUST respond with valid JSON that follows this exact schema:\n${JSON.stringify(request.responseSchema, null, 2)}\n\nDo not include any text outside the JSON object.`;
-      systemContent = systemContent ? systemContent + schemaInstruction : schemaInstruction.trim();
-    }
+    // Use unified JSON output handling
+    // Supports OpenAI, OpenRouter (native schema), and custom (fallback)
+    const jsonRequest = request.responseFormat === 'json'
+      ? prepareJsonRequest(this.config.type, request.systemInstruction || '', request.responseSchema)
+      : null;
+
+    const systemContent = jsonRequest?.systemInstruction ?? request.systemInstruction ?? '';
 
     if (systemContent) {
       messages.push({ role: 'system', content: systemContent });
@@ -62,23 +62,20 @@ export class OpenAIProvider implements AIProvider {
       temperature: request.temperature ?? 0.7,
     };
 
-    // Only add response_format for native OpenAI models that support it
-    // OpenRouter and other providers may not support this parameter
-    if (request.responseFormat === 'json' && this.config.type === 'openai') {
-      if (model.includes('gpt-4') || model.includes('gpt-3.5') || model.includes('gpt-5') || model.includes('o3') || model.includes('o4')) {
-        // Use json_schema for strict structured output when schema provided
-        if (request.responseSchema) {
-          body.response_format = {
-            type: 'json_schema',
-            json_schema: {
-              name: 'response_schema',
-              strict: true,
-              schema: request.responseSchema
-            }
-          };
-        } else {
-          body.response_format = { type: 'json_object' };
-        }
+    // Add response_format for providers that support it (OpenAI, OpenRouter)
+    if (request.responseFormat === 'json') {
+      if (jsonRequest?.useNativeSchema && request.responseSchema) {
+        // Use json_schema for strict structured output
+        body.response_format = {
+          type: 'json_schema',
+          json_schema: {
+            name: 'response_schema',
+            strict: true,
+            schema: request.responseSchema
+          }
+        };
+      } else if (jsonRequest?.useJsonObject) {
+        body.response_format = { type: 'json_object' };
       }
     }
 
@@ -127,14 +124,13 @@ export class OpenAIProvider implements AIProvider {
   ): Promise<GenerationResponse> {
     const messages: any[] = [];
 
-    // Build system instruction with optional JSON schema guidance for non-native providers
-    let systemContent = request.systemInstruction || '';
-    if (request.responseFormat === 'json' && request.responseSchema && this.config.type !== 'openai') {
-      // OpenRouter and custom endpoints don't support native schema enforcement
-      // Include schema in system prompt for guidance
-      const schemaInstruction = `\n\nYou MUST respond with valid JSON that follows this exact schema:\n${JSON.stringify(request.responseSchema, null, 2)}\n\nDo not include any text outside the JSON object.`;
-      systemContent = systemContent ? systemContent + schemaInstruction : schemaInstruction.trim();
-    }
+    // Use unified JSON output handling
+    // Supports OpenAI, OpenRouter (native schema), and custom (fallback)
+    const jsonRequest = request.responseFormat === 'json'
+      ? prepareJsonRequest(this.config.type, request.systemInstruction || '', request.responseSchema)
+      : null;
+
+    const systemContent = jsonRequest?.systemInstruction ?? request.systemInstruction ?? '';
 
     if (systemContent) {
       messages.push({ role: 'system', content: systemContent });
@@ -164,22 +160,20 @@ export class OpenAIProvider implements AIProvider {
       stream_options: { include_usage: true },
     };
 
-    // Only add response_format for native OpenAI models that support it
-    if (request.responseFormat === 'json' && this.config.type === 'openai') {
-      if (model.includes('gpt-4') || model.includes('gpt-3.5') || model.includes('gpt-5') || model.includes('o3') || model.includes('o4')) {
-        // Use json_schema for strict structured output when schema provided
-        if (request.responseSchema) {
-          body.response_format = {
-            type: 'json_schema',
-            json_schema: {
-              name: 'response_schema',
-              strict: true,
-              schema: request.responseSchema
-            }
-          };
-        } else {
-          body.response_format = { type: 'json_object' };
-        }
+    // Add response_format for providers that support it (OpenAI, OpenRouter)
+    if (request.responseFormat === 'json') {
+      if (jsonRequest?.useNativeSchema && request.responseSchema) {
+        // Use json_schema for strict structured output
+        body.response_format = {
+          type: 'json_schema',
+          json_schema: {
+            name: 'response_schema',
+            strict: true,
+            schema: request.responseSchema
+          }
+        };
+      } else if (jsonRequest?.useJsonObject) {
+        body.response_format = { type: 'json_object' };
       }
     }
 

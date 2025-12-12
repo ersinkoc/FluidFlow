@@ -7,6 +7,8 @@ import { debugLog } from '../../hooks/useDebugStore';
 
 export * from './types';
 export * from './providers';
+export * from './utils/schemas';
+export * from './utils/jsonOutput';
 
 // Provider factory
 export function createProvider(config: ProviderConfig): AIProvider {

@@ -1,5 +1,6 @@
 import { AIProvider, ProviderConfig, GenerationRequest, GenerationResponse, StreamChunk } from '../types';
 import { fetchWithTimeout, TIMEOUT_TEST_CONNECTION, TIMEOUT_GENERATE } from '../utils/fetchWithTimeout';
+import { prepareJsonRequest } from '../utils/jsonOutput';
 
 export class AnthropicProvider implements AIProvider {
   readonly config: ProviderConfig;
@@ -47,6 +48,12 @@ export class AnthropicProvider implements AIProvider {
   async generate(request: GenerationRequest, model: string): Promise<GenerationResponse> {
     const messages: any[] = [];
 
+    // Use unified JSON output handling
+    // Checks schema compatibility (dynamic keys require fallback to prompt guidance)
+    const jsonRequest = request.responseFormat === 'json'
+      ? prepareJsonRequest('anthropic', request.systemInstruction || '', request.responseSchema)
+      : null;
+
     // Build user message content
     const content: any[] = [];
 
@@ -73,14 +80,14 @@ export class AnthropicProvider implements AIProvider {
       temperature: request.temperature ?? 0.7,
     };
 
-    if (request.systemInstruction) {
-      body.system = request.systemInstruction;
+    // System instruction (may include schema guidance for fallback)
+    const systemContent = jsonRequest?.systemInstruction ?? request.systemInstruction;
+    if (systemContent) {
+      body.system = systemContent;
     }
 
-    // Use native structured output when schema is provided (beta feature)
-    // Falls back to system prompt guidance for models without structured output support
-    const useNativeSchema = request.responseFormat === 'json' && request.responseSchema;
-    if (useNativeSchema) {
+    // Use native structured output only for compatible schemas (no dynamic keys)
+    if (jsonRequest?.useNativeSchema && request.responseSchema) {
       body.output_format = {
         type: 'json_schema',
         schema: request.responseSchema
@@ -96,7 +103,7 @@ export class AnthropicProvider implements AIProvider {
     };
 
     // Add beta header for structured outputs
-    if (useNativeSchema) {
+    if (jsonRequest?.useNativeSchema) {
       headers['anthropic-beta'] = 'structured-outputs-2025-11-13';
     }
 
@@ -140,6 +147,13 @@ export class AnthropicProvider implements AIProvider {
     onChunk: (chunk: StreamChunk) => void
   ): Promise<GenerationResponse> {
     const messages: any[] = [];
+
+    // Use unified JSON output handling
+    // Checks schema compatibility (dynamic keys require fallback to prompt guidance)
+    const jsonRequest = request.responseFormat === 'json'
+      ? prepareJsonRequest('anthropic', request.systemInstruction || '', request.responseSchema)
+      : null;
+
     const content: any[] = [];
 
     if (request.images) {
@@ -166,13 +180,14 @@ export class AnthropicProvider implements AIProvider {
       stream: true,
     };
 
-    if (request.systemInstruction) {
-      body.system = request.systemInstruction;
+    // System instruction (may include schema guidance for fallback)
+    const systemContent = jsonRequest?.systemInstruction ?? request.systemInstruction;
+    if (systemContent) {
+      body.system = systemContent;
     }
 
-    // Use native structured output when schema is provided (beta feature)
-    const useNativeSchema = request.responseFormat === 'json' && request.responseSchema;
-    if (useNativeSchema) {
+    // Use native structured output only for compatible schemas (no dynamic keys)
+    if (jsonRequest?.useNativeSchema && request.responseSchema) {
       body.output_format = {
         type: 'json_schema',
         schema: request.responseSchema
@@ -188,7 +203,7 @@ export class AnthropicProvider implements AIProvider {
     };
 
     // Add beta header for structured outputs
-    if (useNativeSchema) {
+    if (jsonRequest?.useNativeSchema) {
       headers['anthropic-beta'] = 'structured-outputs-2025-11-13';
     }
 
