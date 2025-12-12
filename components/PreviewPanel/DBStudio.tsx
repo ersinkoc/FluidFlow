@@ -21,6 +21,7 @@ import {
   RefreshCw, FileUp, Settings, ChevronDown
 } from 'lucide-react';
 import { getProviderManager } from '../../services/ai';
+import { DATABASE_SCHEMA_SCHEMA } from '../../services/ai/utils/schemas';
 import { FileSystem } from '../../types';
 
 interface DBStudioProps {
@@ -611,6 +612,7 @@ Use appropriate SQL types: INT, BIGINT, SERIAL, VARCHAR(255), TEXT, BOOLEAN, DAT
       const response = await providerManager.generate({
         prompt: fullPrompt,
         responseFormat: 'json',
+        responseSchema: DATABASE_SCHEMA_SCHEMA,
         debugCategory: 'other',
       });
 

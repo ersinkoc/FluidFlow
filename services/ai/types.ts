@@ -95,6 +95,9 @@ export interface GenerationRequest {
   maxTokens?: number;
   temperature?: number;
   responseFormat?: 'text' | 'json';
+  // JSON Schema for structured output (used by Gemini's responseJsonSchema)
+  // When provided with responseFormat: 'json', ensures response conforms to schema
+  responseSchema?: Record<string, unknown>;
   // Debug category for logging (optional, defaults to 'generation')
   debugCategory?: 'generation' | 'accessibility' | 'quick-edit' | 'auto-fix' | 'other';
 }

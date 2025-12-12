@@ -1,5 +1,6 @@
 import { AIProvider, ProviderConfig, GenerationRequest, GenerationResponse, StreamChunk, ModelOption } from '../types';
 import { GoogleGenAI } from '@google/genai';
+import { supportsNativeSchema } from '../utils/schemas';
 
 export class GeminiProvider implements AIProvider {
   readonly config: ProviderConfig;
@@ -37,15 +38,39 @@ export class GeminiProvider implements AIProvider {
     // Add text prompt
     parts.push({ text: request.prompt });
 
+    // Check if native schema enforcement can be used (only for static schemas)
+    const useNativeSchema = request.responseFormat === 'json' &&
+      request.responseSchema &&
+      supportsNativeSchema('gemini', request.responseSchema as Record<string, unknown>);
+
+    // Build system instruction with optional JSON schema guidance for dynamic schemas
+    let systemContent = request.systemInstruction || '';
+    if (request.responseFormat === 'json' && request.responseSchema && !useNativeSchema) {
+      // Dynamic key schemas need system prompt guidance (native schema won't work)
+      const schemaInstruction = `\n\nYou MUST respond with valid JSON that follows this exact schema:\n${JSON.stringify(request.responseSchema, null, 2)}\n\nDo not include any text outside the JSON object.`;
+      systemContent = systemContent ? systemContent + schemaInstruction : schemaInstruction.trim();
+    }
+
+    // Build config
+    const config: Record<string, unknown> = {
+      systemInstruction: systemContent || undefined,
+      maxOutputTokens: request.maxTokens,
+      temperature: request.temperature,
+    };
+
+    // Enable JSON mode
+    if (request.responseFormat === 'json') {
+      config.responseMimeType = 'application/json';
+      // Use native schema enforcement for static schemas (ACCESSIBILITY_AUDIT_SCHEMA, etc.)
+      if (useNativeSchema) {
+        config.responseSchema = request.responseSchema;
+      }
+    }
+
     const response = await this.client.models.generateContent({
       model,
       contents: [{ parts }],
-      config: {
-        systemInstruction: request.systemInstruction,
-        maxOutputTokens: request.maxTokens,
-        temperature: request.temperature,
-        responseMimeType: request.responseFormat === 'json' ? 'application/json' : undefined,
-      }
+      config,
     });
 
     return {
@@ -74,16 +99,40 @@ export class GeminiProvider implements AIProvider {
 
     let fullText = '';
 
+    // Check if native schema enforcement can be used (only for static schemas)
+    const useNativeSchema = request.responseFormat === 'json' &&
+      request.responseSchema &&
+      supportsNativeSchema('gemini', request.responseSchema as Record<string, unknown>);
+
+    // Build system instruction with optional JSON schema guidance for dynamic schemas
+    let systemContent = request.systemInstruction || '';
+    if (request.responseFormat === 'json' && request.responseSchema && !useNativeSchema) {
+      // Dynamic key schemas need system prompt guidance (native schema won't work)
+      const schemaInstruction = `\n\nYou MUST respond with valid JSON that follows this exact schema:\n${JSON.stringify(request.responseSchema, null, 2)}\n\nDo not include any text outside the JSON object.`;
+      systemContent = systemContent ? systemContent + schemaInstruction : schemaInstruction.trim();
+    }
+
+    // Build config
+    const config: Record<string, unknown> = {
+      systemInstruction: systemContent || undefined,
+      maxOutputTokens: request.maxTokens,
+      temperature: request.temperature,
+    };
+
+    // Enable JSON mode
+    if (request.responseFormat === 'json') {
+      config.responseMimeType = 'application/json';
+      // Use native schema enforcement for static schemas (ACCESSIBILITY_AUDIT_SCHEMA, etc.)
+      if (useNativeSchema) {
+        config.responseSchema = request.responseSchema;
+      }
+    }
+
     try {
       const stream = await this.client.models.generateContentStream({
         model,
         contents: [{ parts }],
-        config: {
-          systemInstruction: request.systemInstruction,
-          maxOutputTokens: request.maxTokens,
-          temperature: request.temperature,
-          responseMimeType: request.responseFormat === 'json' ? 'application/json' : undefined,
-        }
+        config,
       });
 
       for await (const chunk of stream) {

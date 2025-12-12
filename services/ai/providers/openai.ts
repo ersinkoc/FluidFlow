@@ -27,8 +27,17 @@ export class OpenAIProvider implements AIProvider {
   async generate(request: GenerationRequest, model: string): Promise<GenerationResponse> {
     const messages: any[] = [];
 
-    if (request.systemInstruction) {
-      messages.push({ role: 'system', content: request.systemInstruction });
+    // Build system instruction with optional JSON schema guidance for non-native providers
+    let systemContent = request.systemInstruction || '';
+    if (request.responseFormat === 'json' && request.responseSchema && this.config.type !== 'openai') {
+      // OpenRouter and custom endpoints don't support native schema enforcement
+      // Include schema in system prompt for guidance
+      const schemaInstruction = `\n\nYou MUST respond with valid JSON that follows this exact schema:\n${JSON.stringify(request.responseSchema, null, 2)}\n\nDo not include any text outside the JSON object.`;
+      systemContent = systemContent ? systemContent + schemaInstruction : schemaInstruction.trim();
+    }
+
+    if (systemContent) {
+      messages.push({ role: 'system', content: systemContent });
     }
 
     // Build user message content
@@ -56,8 +65,20 @@ export class OpenAIProvider implements AIProvider {
     // Only add response_format for native OpenAI models that support it
     // OpenRouter and other providers may not support this parameter
     if (request.responseFormat === 'json' && this.config.type === 'openai') {
-      if (model.includes('gpt-4') || model.includes('gpt-3.5')) {
-        body.response_format = { type: 'json_object' };
+      if (model.includes('gpt-4') || model.includes('gpt-3.5') || model.includes('gpt-5') || model.includes('o3') || model.includes('o4')) {
+        // Use json_schema for strict structured output when schema provided
+        if (request.responseSchema) {
+          body.response_format = {
+            type: 'json_schema',
+            json_schema: {
+              name: 'response_schema',
+              strict: true,
+              schema: request.responseSchema
+            }
+          };
+        } else {
+          body.response_format = { type: 'json_object' };
+        }
       }
     }
 
@@ -106,8 +127,17 @@ export class OpenAIProvider implements AIProvider {
   ): Promise<GenerationResponse> {
     const messages: any[] = [];
 
-    if (request.systemInstruction) {
-      messages.push({ role: 'system', content: request.systemInstruction });
+    // Build system instruction with optional JSON schema guidance for non-native providers
+    let systemContent = request.systemInstruction || '';
+    if (request.responseFormat === 'json' && request.responseSchema && this.config.type !== 'openai') {
+      // OpenRouter and custom endpoints don't support native schema enforcement
+      // Include schema in system prompt for guidance
+      const schemaInstruction = `\n\nYou MUST respond with valid JSON that follows this exact schema:\n${JSON.stringify(request.responseSchema, null, 2)}\n\nDo not include any text outside the JSON object.`;
+      systemContent = systemContent ? systemContent + schemaInstruction : schemaInstruction.trim();
+    }
+
+    if (systemContent) {
+      messages.push({ role: 'system', content: systemContent });
     }
 
     const content: any[] = [];
@@ -136,8 +166,20 @@ export class OpenAIProvider implements AIProvider {
 
     // Only add response_format for native OpenAI models that support it
     if (request.responseFormat === 'json' && this.config.type === 'openai') {
-      if (model.includes('gpt-4') || model.includes('gpt-3.5')) {
-        body.response_format = { type: 'json_object' };
+      if (model.includes('gpt-4') || model.includes('gpt-3.5') || model.includes('gpt-5') || model.includes('o3') || model.includes('o4')) {
+        // Use json_schema for strict structured output when schema provided
+        if (request.responseSchema) {
+          body.response_format = {
+            type: 'json_schema',
+            json_schema: {
+              name: 'response_schema',
+              strict: true,
+              schema: request.responseSchema
+            }
+          };
+        } else {
+          body.response_format = { type: 'json_object' };
+        }
       }
     }
 

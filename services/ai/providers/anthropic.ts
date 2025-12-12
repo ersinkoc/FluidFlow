@@ -77,15 +77,32 @@ export class AnthropicProvider implements AIProvider {
       body.system = request.systemInstruction;
     }
 
+    // Use native structured output when schema is provided (beta feature)
+    // Falls back to system prompt guidance for models without structured output support
+    const useNativeSchema = request.responseFormat === 'json' && request.responseSchema;
+    if (useNativeSchema) {
+      body.output_format = {
+        type: 'json_schema',
+        schema: request.responseSchema
+      };
+    }
+
     // BUG-010 fix: Add timeout to prevent indefinite hanging
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-api-key': this.config.apiKey || '',
+      'anthropic-version': '2023-06-01',
+      ...this.config.headers,
+    };
+
+    // Add beta header for structured outputs
+    if (useNativeSchema) {
+      headers['anthropic-beta'] = 'structured-outputs-2025-11-13';
+    }
+
     const response = await fetchWithTimeout(`${this.config.baseUrl}/v1/messages`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': this.config.apiKey || '',
-        'anthropic-version': '2023-06-01',
-        ...this.config.headers,
-      },
+      headers,
       body: JSON.stringify(body),
       timeout: TIMEOUT_GENERATE,
     });
@@ -153,15 +170,31 @@ export class AnthropicProvider implements AIProvider {
       body.system = request.systemInstruction;
     }
 
+    // Use native structured output when schema is provided (beta feature)
+    const useNativeSchema = request.responseFormat === 'json' && request.responseSchema;
+    if (useNativeSchema) {
+      body.output_format = {
+        type: 'json_schema',
+        schema: request.responseSchema
+      };
+    }
+
     // BUG-010 fix: Add timeout to prevent indefinite hanging
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-api-key': this.config.apiKey || '',
+      'anthropic-version': '2023-06-01',
+      ...this.config.headers,
+    };
+
+    // Add beta header for structured outputs
+    if (useNativeSchema) {
+      headers['anthropic-beta'] = 'structured-outputs-2025-11-13';
+    }
+
     const response = await fetchWithTimeout(`${this.config.baseUrl}/v1/messages`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': this.config.apiKey || '',
-        'anthropic-version': '2023-06-01',
-        ...this.config.headers,
-      },
+      headers,
       body: JSON.stringify(body),
       timeout: TIMEOUT_GENERATE,
     });

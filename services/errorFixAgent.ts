@@ -10,6 +10,7 @@ import { FileSystem } from '../types';
 import { parseMultiFileResponse } from '../utils/cleanCode';
 import { localFixEngine } from './localFixEngine';
 import { errorAnalyzer, ParsedError } from './errorAnalyzer';
+import { FILE_GENERATION_SCHEMA, supportsAdditionalProperties } from './ai/utils/schemas';
 
 // Agent states
 export type AgentState =
@@ -896,7 +897,12 @@ class ErrorFixAgent {
     const request = {
       prompt,
       systemInstruction: ERROR_FIX_SYSTEM_PROMPT,
-      temperature: 0.2 // Low temperature for more deterministic fixes
+      temperature: 0.2, // Low temperature for more deterministic fixes
+      responseFormat: 'json' as const,
+      // Only use native schema for providers that support dynamic keys
+      responseSchema: config.type && supportsAdditionalProperties(config.type)
+        ? FILE_GENERATION_SCHEMA
+        : undefined
     };
 
     await provider.generateStream(

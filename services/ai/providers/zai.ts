@@ -33,8 +33,16 @@ export class ZAIProvider implements AIProvider {
   async generate(request: GenerationRequest, model: string): Promise<GenerationResponse> {
     const messages: any[] = [];
 
-    if (request.systemInstruction) {
-      messages.push({ role: 'system', content: request.systemInstruction });
+    // Build system instruction with optional JSON schema guidance
+    let systemContent = request.systemInstruction || '';
+    if (request.responseFormat === 'json' && request.responseSchema) {
+      // Include schema in system prompt for Z.AI (no native schema enforcement)
+      const schemaInstruction = `\n\nYou MUST respond with valid JSON that follows this exact schema:\n${JSON.stringify(request.responseSchema, null, 2)}\n\nDo not include any text outside the JSON object.`;
+      systemContent = systemContent ? systemContent + schemaInstruction : schemaInstruction.trim();
+    }
+
+    if (systemContent) {
+      messages.push({ role: 'system', content: systemContent });
     }
     messages.push({ role: 'user', content: request.prompt });
 
@@ -93,8 +101,16 @@ export class ZAIProvider implements AIProvider {
   ): Promise<GenerationResponse> {
     const messages: any[] = [];
 
-    if (request.systemInstruction) {
-      messages.push({ role: 'system', content: request.systemInstruction });
+    // Build system instruction with optional JSON schema guidance
+    let systemContent = request.systemInstruction || '';
+    if (request.responseFormat === 'json' && request.responseSchema) {
+      // Include schema in system prompt for Z.AI (no native schema enforcement)
+      const schemaInstruction = `\n\nYou MUST respond with valid JSON that follows this exact schema:\n${JSON.stringify(request.responseSchema, null, 2)}\n\nDo not include any text outside the JSON object.`;
+      systemContent = systemContent ? systemContent + schemaInstruction : schemaInstruction.trim();
+    }
+
+    if (systemContent) {
+      messages.push({ role: 'system', content: systemContent });
     }
     messages.push({ role: 'user', content: request.prompt });
 

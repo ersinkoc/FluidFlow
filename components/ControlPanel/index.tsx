@@ -45,6 +45,7 @@ import { generateContextForPrompt, generateCodeMap } from '../../utils/codemap';
 import { debugLog } from '../../hooks/useDebugStore';
 import { useTechStack } from '../../hooks/useTechStack';
 import { getProviderManager, GenerationRequest, GenerationResponse } from '../../services/ai';
+import { FILE_GENERATION_SCHEMA, SUGGESTIONS_SCHEMA, supportsAdditionalProperties } from '../../services/ai/utils/schemas';
 import { InspectedElement, EditScope } from '../PreviewPanel/ComponentInspector';
 import { useAIHistory } from '../../hooks/useAIHistory';
 import { AIHistoryModal } from '../AIHistoryModal';
@@ -476,7 +477,11 @@ Return ONLY a JSON object with the files:
           systemInstruction,
           maxTokens: 32768,
           temperature: 0.7,
-          responseFormat: 'json'
+          responseFormat: 'json',
+          // Only use native schema for providers that support dynamic keys
+          responseSchema: activeConfig?.type && supportsAdditionalProperties(activeConfig.type)
+            ? FILE_GENERATION_SCHEMA
+            : undefined
         },
         (chunk) => {
           if (chunk.text) {
@@ -562,7 +567,11 @@ Generate the remaining files. Each file must be COMPLETE and FUNCTIONAL.`;
           systemInstruction,
           maxTokens: 32768,
           temperature: 0.7,
-          responseFormat: 'json'
+          responseFormat: 'json',
+          // Only use native schema for providers that support dynamic keys
+          responseSchema: activeConfig?.type && supportsAdditionalProperties(activeConfig.type)
+            ? FILE_GENERATION_SCHEMA
+            : undefined
         },
         (chunk) => {
           fullText += chunk.text || '';
@@ -1144,7 +1153,11 @@ ${prompt}
           systemInstruction: systemInstruction + techStackInstruction,
           responseFormat: 'json',
           images: images.length > 0 ? images : undefined,
-          debugCategory: 'quick-edit'
+          debugCategory: 'quick-edit',
+          // Only use native schema for providers that support dynamic keys
+          responseSchema: activeProvider?.type && supportsAdditionalProperties(activeProvider.type)
+            ? FILE_GENERATION_SCHEMA
+            : undefined
         }, currentModel);
 
         const rawResponse = response.text || '';
@@ -1189,7 +1202,8 @@ Output ONLY a raw JSON array of strings containing your specific suggestions. Do
           prompt: prompt ? `Analyze this design. Context: ${prompt}` : 'Analyze this design for UX gaps.',
           systemInstruction,
           images,
-          responseFormat: 'json'
+          responseFormat: 'json',
+          responseSchema: SUGGESTIONS_SCHEMA
         };
 
         const requestId = debugLog.request('generation', {
@@ -1410,7 +1424,12 @@ Write a clear markdown explanation including:
           prompt: promptParts.join('\n\n'),
           systemInstruction,
           images,
-          responseFormat: 'json'
+          responseFormat: 'json',
+          // Only use native schema enforcement for providers that support dynamic keys
+          // (FILE_GENERATION_SCHEMA uses additionalProperties for file paths)
+          responseSchema: activeProvider?.type && supportsAdditionalProperties(activeProvider.type)
+            ? FILE_GENERATION_SCHEMA
+            : undefined
         };
 
         // Use streaming for better UX
@@ -2093,7 +2112,11 @@ Generate ONLY these files. Each file must be COMPLETE and FUNCTIONAL.`;
                         systemInstruction: contSystemInstruction,
                         maxTokens: 32768,
                         temperature: 0.7,
-                        responseFormat: 'json'
+                        responseFormat: 'json',
+                        // Only use native schema for providers that support dynamic keys
+                        responseSchema: activeConfig?.type && supportsAdditionalProperties(activeConfig.type)
+                          ? FILE_GENERATION_SCHEMA
+                          : undefined
                       },
                       (chunk) => {
                         contFullText += chunk.text || '';

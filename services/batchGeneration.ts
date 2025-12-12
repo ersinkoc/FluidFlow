@@ -1,6 +1,7 @@
 import { getProviderManager } from './ai';
 import { FileSystem } from '../types';
 import { stripPlanComment } from '../utils/cleanCode';
+import { FILE_GENERATION_SCHEMA, supportsAdditionalProperties } from './ai/utils/schemas';
 
 interface BatchGenerationOptions {
   maxFilesPerBatch?: number;
@@ -190,7 +191,11 @@ IMPORTANT: You are generating files in batches. This is batch ${Math.floor(compl
       systemInstruction: fullSystemInstruction,
       maxTokens: options.maxTokensPerBatch,
       temperature: 0.7,
-      responseFormat: 'json'
+      responseFormat: 'json',
+      // Only use native schema for providers that support dynamic keys
+      responseSchema: activeConfig.type && supportsAdditionalProperties(activeConfig.type)
+        ? FILE_GENERATION_SCHEMA
+        : undefined
     }, activeConfig.defaultModel);
 
     // Parse response (with PLAN comment handling)

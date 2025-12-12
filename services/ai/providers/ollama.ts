@@ -38,8 +38,16 @@ export class OllamaProvider implements AIProvider {
       }
     };
 
-    if (request.systemInstruction) {
-      body.system = request.systemInstruction;
+    // Build system instruction with optional JSON schema guidance
+    let systemContent = request.systemInstruction || '';
+    if (request.responseFormat === 'json' && request.responseSchema) {
+      // Include schema in system prompt for Ollama (no native schema enforcement)
+      const schemaInstruction = `\n\nYou MUST respond with valid JSON that follows this exact schema:\n${JSON.stringify(request.responseSchema, null, 2)}\n\nDo not include any text outside the JSON object.`;
+      systemContent = systemContent ? systemContent + schemaInstruction : schemaInstruction.trim();
+    }
+
+    if (systemContent) {
+      body.system = systemContent;
     }
 
     // Handle images for vision models
@@ -86,8 +94,16 @@ export class OllamaProvider implements AIProvider {
       }
     };
 
-    if (request.systemInstruction) {
-      body.system = request.systemInstruction;
+    // Build system instruction with optional JSON schema guidance
+    let systemContent = request.systemInstruction || '';
+    if (request.responseFormat === 'json' && request.responseSchema) {
+      // Include schema in system prompt for Ollama (no native schema enforcement)
+      const schemaInstruction = `\n\nYou MUST respond with valid JSON that follows this exact schema:\n${JSON.stringify(request.responseSchema, null, 2)}\n\nDo not include any text outside the JSON object.`;
+      systemContent = systemContent ? systemContent + schemaInstruction : schemaInstruction.trim();
+    }
+
+    if (systemContent) {
+      body.system = systemContent;
     }
 
     if (request.images && request.images.length > 0) {

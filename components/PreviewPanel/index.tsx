@@ -5,7 +5,6 @@ import {
   SplitSquareVertical, X, Zap, ZapOff, MousePointer2, Bug, Settings, ChevronDown, Shield,
   ChevronLeft, ChevronRight, Globe, GitBranch, Play, AlertTriangle, Box, MessageSquare, Bot, Map
 } from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
 import { getProviderManager } from '../../services/ai';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
@@ -14,6 +13,7 @@ import { FileSystem, LogEntry, NetworkRequest, AccessibilityReport, TabType, Ter
 import { cleanGeneratedCode, isValidCode } from '../../utils/cleanCode';
 import { debugLog } from '../../hooks/useDebugStore';
 import { attemptAutoFix, classifyError, canAutoFix, wasRecentlyFixed } from '../../services/autoFixService';
+import { ACCESSIBILITY_AUDIT_SCHEMA, FILE_GENERATION_SCHEMA, supportsAdditionalProperties } from '../../services/ai/utils/schemas';
 import { useTechStack } from '../../hooks/useTechStack';
 
 // Sub-components
@@ -759,9 +759,11 @@ Return ONLY the complete fixed ${targetFile} code.
       return;
     }
 
-    // Fallback to local implementation
+    // Fallback to local implementation using provider manager
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const manager = getProviderManager();
+      const activeConfig = manager.getActiveConfig();
+      const currentModel = activeConfig?.defaultModel || selectedModel;
 
       const elementContext = `
 Target Element:
@@ -773,15 +775,7 @@ Target Element:
 ${element.parentComponents ? `- Parent components: ${element.parentComponents.join(' > ')}` : ''}
 `;
 
-      const response = await ai.models.generateContent({
-        model: selectedModel,
-        contents: {
-          parts: [{
-            text: `${elementContext}\n\nUser Request: ${prompt}\n\nCurrent files:\n${JSON.stringify(files, null, 2)}`
-          }]
-        },
-        config: {
-          systemInstruction: `You are an expert React developer. The user has selected a specific element/component in their app and wants to modify it.
+      const systemInstruction = `You are an expert React developer. The user has selected a specific element/component in their app and wants to modify it.
 
 Based on the element information provided, identify which file and component needs to be modified, then make the requested changes.
 
@@ -789,10 +783,18 @@ Based on the element information provided, identify which file and component nee
 1. "explanation": Brief markdown explaining what you changed
 2. "files": Object with file paths as keys and updated code as values
 
-Only return files that need changes. Maintain all existing functionality.`,
-          responseMimeType: 'application/json'
-        }
-      });
+Only return files that need changes. Maintain all existing functionality.`;
+
+      const response = await manager.generate({
+        prompt: `${elementContext}\n\nUser Request: ${prompt}\n\nCurrent files:\n${JSON.stringify(files, null, 2)}`,
+        systemInstruction,
+        responseFormat: 'json',
+        // FILE_GENERATION_SCHEMA has dynamic keys, only Gemini supports it natively
+        responseSchema: activeConfig?.type && supportsAdditionalProperties(activeConfig.type)
+          ? FILE_GENERATION_SCHEMA
+          : undefined,
+        debugCategory: 'quick-edit'
+      }, currentModel);
 
       const text = response.text || '{}';
       const result = JSON.parse(cleanGeneratedCode(text));
@@ -816,11 +818,14 @@ Only return files that need changes. Maintain all existing functionality.`,
     if (!appCode) return;
     setIsGeneratingDB(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: selectedModel,
-        contents: [{ parts: [{ text: `Based on this React App, generate a SQL schema for SQLite.\nCode: ${appCode}\nOutput ONLY SQL.` }] }]
-      });
+      const manager = getProviderManager();
+      const activeConfig = manager.getActiveConfig();
+      const currentModel = activeConfig?.defaultModel || selectedModel;
+
+      const response = await manager.generate({
+        prompt: `Based on this React App, generate a SQL schema for SQLite.\nCode: ${appCode}\nOutput ONLY SQL.`,
+        systemInstruction: 'You are a database expert. Generate only valid SQL code without any markdown formatting.',
+      }, currentModel);
       const sql = cleanGeneratedCode(response.text || '');
       setFiles({ ...files, 'db/schema.sql': sql });
       setActiveFile('db/schema.sql');
@@ -883,7 +888,9 @@ Check for these WCAG 2.1 violations:
       const response = await manager.generate({
         prompt: `Audit this React code for accessibility issues:\n\n${appCode}`,
         systemInstruction,
-        responseFormat: 'json'
+        responseFormat: 'json',
+        responseSchema: ACCESSIBILITY_AUDIT_SCHEMA,
+        debugCategory: 'accessibility'
       }, currentModel);
 
       let report: AccessibilityReport;
@@ -956,11 +963,14 @@ ${appCode}`,
     if (!appCode) return;
     setIsFixingResp(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: selectedModel,
-        contents: [{ parts: [{ text: `Optimize this React component for mobile devices.\n\nCode: ${appCode}\n\nOutput ONLY the full updated code.` }] }]
-      });
+      const manager = getProviderManager();
+      const activeConfig = manager.getActiveConfig();
+      const currentModel = activeConfig?.defaultModel || selectedModel;
+
+      const response = await manager.generate({
+        prompt: `Optimize this React component for mobile devices.\n\nCode: ${appCode}\n\nOutput ONLY the full updated code.`,
+        systemInstruction: 'You are an expert React developer. Return only valid React/TypeScript code without any markdown formatting.',
+      }, currentModel);
       const fixedCode = cleanGeneratedCode(response.text || '');
       reviewChange('Fixed Responsiveness', { ...files, 'src/App.tsx': fixedCode });
     } catch (e) {
@@ -974,23 +984,27 @@ ${appCode}`,
     if (!editPrompt.trim() || !appCode) return;
     setIsQuickEditing(true);
 
+    const manager = getProviderManager();
+    const activeConfig = manager.getActiveConfig();
+    const currentModel = activeConfig?.defaultModel || selectedModel;
+
     const requestId = debugLog.request('quick-edit', {
-      model: selectedModel,
+      model: currentModel,
       prompt: editPrompt
     });
     const startTime = Date.now();
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: selectedModel,
-        contents: [{ parts: [{ text: `Edit this React code based on: "${editPrompt}"\n\nCode: ${appCode}\n\nOutput ONLY the full updated code.` }] }]
-      });
+      const response = await manager.generate({
+        prompt: `Edit this React code based on: "${editPrompt}"\n\nCode: ${appCode}\n\nOutput ONLY the full updated code.`,
+        systemInstruction: 'You are an expert React developer. Return only valid React/TypeScript code without any markdown formatting.',
+        debugCategory: 'quick-edit'
+      }, currentModel);
       const fixedCode = cleanGeneratedCode(response.text || '');
 
       debugLog.response('quick-edit', {
         id: requestId,
-        model: selectedModel,
+        model: currentModel,
         duration: Date.now() - startTime,
         response: fixedCode.slice(0, 500) + '...'
       });
@@ -1012,11 +1026,15 @@ ${appCode}`,
   const fixError = async (logId: string, message: string) => {
     setLogs(prev => prev.map(l => l.id === logId ? { ...l, isFixing: true } : l));
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: selectedModel,
-        contents: [{ parts: [{ text: `Fix this runtime error: "${message}"\n\nCode: ${appCode}\n\nOutput ONLY the full updated code.` }] }]
-      });
+      const manager = getProviderManager();
+      const activeConfig = manager.getActiveConfig();
+      const currentModel = activeConfig?.defaultModel || selectedModel;
+
+      const response = await manager.generate({
+        prompt: `Fix this runtime error: "${message}"\n\nCode: ${appCode}\n\nOutput ONLY the full updated code.`,
+        systemInstruction: 'You are an expert React developer. Fix the error and return only valid React/TypeScript code without any markdown formatting.',
+        debugCategory: 'auto-fix'
+      }, currentModel);
       const fixedCode = cleanGeneratedCode(response.text || '');
       reviewChange('Fixed Runtime Error', { ...files, 'src/App.tsx': fixedCode });
       setLogs(prev => prev.map(l => l.id === logId ? { ...l, isFixing: false, isFixed: true } : l));
