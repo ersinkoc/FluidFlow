@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings2, Check, Info, ExternalLink, Loader2 } from 'lucide-react';
+import { Settings2, Check, Info, Loader2 } from 'lucide-react';
 import { SettingsSection } from '../shared';
 import { SettingsToggle } from '../shared/SettingsToggle';
 import { getFluidFlowConfig } from '../../../services/fluidflowConfig';

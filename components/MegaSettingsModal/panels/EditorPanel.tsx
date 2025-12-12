@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Code, Monitor, Type, Palette } from 'lucide-react';
+import { Code } from 'lucide-react';
 import { SettingsSection, SettingsToggle, SettingsSelect, SettingsSlider } from '../shared';
 import { EditorSettings, DEFAULT_EDITOR_SETTINGS, STORAGE_KEYS } from '../types';
 

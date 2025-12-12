@@ -814,7 +814,7 @@ Only return files that need changes. Maintain all existing functionality.`;
   };
 
   // API functions
-  const generateDatabaseSchema = async () => {
+  const _generateDatabaseSchema = async () => {
     if (!appCode) return;
     setIsGeneratingDB(true);
     try {
@@ -1038,7 +1038,7 @@ ${appCode}`,
       const fixedCode = cleanGeneratedCode(response.text || '');
       reviewChange('Fixed Runtime Error', { ...files, 'src/App.tsx': fixedCode });
       setLogs(prev => prev.map(l => l.id === logId ? { ...l, isFixing: false, isFixed: true } : l));
-    } catch (e) {
+    } catch (_e) {
       setLogs(prev => prev.map(l => l.id === logId ? { ...l, isFixing: false } : l));
     }
   };

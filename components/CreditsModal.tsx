@@ -24,28 +24,45 @@ export const CreditsModal: React.FC<CreditsModalProps> = ({ isOpen, onClose, sho
   const [projects, setProjects] = useState<Project[]>([]);
   const [currentProjectIndex, setCurrentProjectIndex] = useState(0);
 
+  // BUG-017 FIX: Add AbortController to prevent state updates on unmounted component
   useEffect(() => {
-    // Try to load from GitHub first, fallback to local ads.json
-    fetch('https://raw.githubusercontent.com/ersinkoc/ersinkoc/refs/heads/main/ads.json')
-      .then(res => res.json())
-      .then(data => {
-        // Randomly select 3 projects from the list
-        const shuffled = [...data].sort(() => 0.5 - Math.random());
-        const selectedProjects = shuffled.slice(0, 3);
-        setProjects(selectedProjects);
-      })
-      .catch(() => {
-        // Fallback to local ads.json
-        fetch('/ads.json')
-          .then(res => res.json())
-          .then(data => {
+    const abortController = new AbortController();
+    let isMounted = true;
+
+    const loadProjects = async () => {
+      try {
+        // Try to load from GitHub first
+        const githubResponse = await fetch(
+          'https://raw.githubusercontent.com/ersinkoc/ersinkoc/refs/heads/main/ads.json',
+          { signal: abortController.signal }
+        );
+        const data = await githubResponse.json();
+        if (isMounted) {
+          // Randomly select 3 projects from the list
+          const shuffled = [...data].sort(() => 0.5 - Math.random());
+          const selectedProjects = shuffled.slice(0, 3);
+          setProjects(selectedProjects);
+        }
+      } catch (_githubError) {
+        // Ignore abort errors
+        if (abortController.signal.aborted) return;
+
+        try {
+          // Fallback to local ads.json
+          const localResponse = await fetch('/ads.json', { signal: abortController.signal });
+          const data = await localResponse.json();
+          if (isMounted) {
             // Randomly select 3 projects from local list
             const shuffled = [...data].sort(() => 0.5 - Math.random());
             const selectedProjects = shuffled.slice(0, 3);
             setProjects(selectedProjects);
-          })
-          .catch(() => {
-            // Final fallback data if both fetches fail
+          }
+        } catch {
+          // Ignore abort errors
+          if (abortController.signal.aborted) return;
+
+          // Final fallback data if both fetches fail
+          if (isMounted) {
             setProjects([
               {
                 id: "tonl",
@@ -68,8 +85,17 @@ export const CreditsModal: React.FC<CreditsModalProps> = ({ isOpen, onClose, sho
                 color: "from-emerald-500/20 to-blue-600/20"
               }
             ]);
-          });
-      });
+          }
+        }
+      }
+    };
+
+    loadProjects();
+
+    return () => {
+      isMounted = false;
+      abortController.abort();
+    };
   }, []);
 
   useEffect(() => {

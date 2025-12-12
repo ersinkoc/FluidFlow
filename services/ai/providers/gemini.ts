@@ -1,4 +1,4 @@
-import { AIProvider, ProviderConfig, GenerationRequest, GenerationResponse, StreamChunk, ModelOption } from '../types';
+import { AIProvider, ProviderConfig, GenerationRequest, GenerationResponse, StreamChunk } from '../types';
 import { GoogleGenAI } from '@google/genai';
 import { supportsNativeSchema } from '../utils/schemas';
 

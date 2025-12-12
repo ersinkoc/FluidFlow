@@ -16,7 +16,7 @@ const SECRET_KEY = 'fluidflow_encryption_secret';
 const ENCRYPTED_PREFIX = 'encrypted:';
 
 // Cache the derived key
-let cachedKey: CryptoKey | null = null;
+const _cachedKey: CryptoKey | null = null;
 let cachedSecret: string | null = null;
 
 /**

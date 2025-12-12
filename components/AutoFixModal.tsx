@@ -17,7 +17,7 @@ export const AutoFixModal: React.FC<AutoFixModalProps> = ({
   errorMessage,
   logs,
   stage,
-  originalCode,
+  originalCode: _originalCode,
   fixedCode
 }) => {
   if (!isOpen) return null;

@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import {
-  FileCode, FileJson, FileText, Database, Folder, FolderOpen,
+  FileCode, FileJson, Database,
   ChevronRight, ChevronDown, Box, Layers, GitBranch, Package,
-  Component, Code2, Braces, Hash, Type
+  Component, Braces, Hash, Type
 } from 'lucide-react';
 import { FileSystem } from '../../types';
 

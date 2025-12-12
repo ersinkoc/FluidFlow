@@ -14,7 +14,7 @@ interface ConversationStep {
   insights: string[];
 }
 
-const QUESTION_STRATEGIES = {
+const _QUESTION_STRATEGIES = {
   CLARIFICATION: {
     key: 'clarification',
     icon: Target,
@@ -50,7 +50,7 @@ export const PromptEngineerModal: React.FC<PromptEngineerModalProps> = ({
   const [currentStep, setCurrentStep] = useState(0);
   const [conversation, setConversation] = useState<ConversationStep[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [_isGenerating, setIsGenerating] = useState(false);
   const [finalPrompt, setFinalPrompt] = useState('');
   const [copied, setCopied] = useState(false);
 
@@ -148,7 +148,7 @@ export const PromptEngineerModal: React.FC<PromptEngineerModalProps> = ({
     // Simulate AI prompt generation
     await new Promise(resolve => setTimeout(resolve, 1500));
 
-    const insights = conversation.flatMap(step => step.insights);
+    const _insights = conversation.flatMap(step => step.insights);
     const answers = conversation.map(step => step.answer);
 
     let generatedPrompt = "Create a ";

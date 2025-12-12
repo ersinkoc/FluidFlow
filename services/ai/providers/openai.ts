@@ -249,7 +249,7 @@ export class OpenAIProvider implements AIProvider {
                   outputTokens: parsed.usage.completion_tokens,
                 };
               }
-            } catch (e) {
+            } catch (_e) {
               // Log but don't fail on parse errors - might be partial data
               console.debug('[OpenAI Stream] Parse error, skipping chunk:', data.slice(0, 100));
             }

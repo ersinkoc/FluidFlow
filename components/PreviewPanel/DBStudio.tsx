@@ -16,9 +16,9 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import {
-  Database, Table2, Key, Link2, Plus, Trash2, Sparkles,
-  Download, Upload, Copy, Check, Loader2, Wand2, Save,
-  RefreshCw, FileUp, Settings, ChevronDown
+  Database, Table2, Key, Plus, Trash2, Sparkles,
+  Copy, Check, Loader2, Wand2, Save,
+  RefreshCw, Settings, ChevronDown
 } from 'lucide-react';
 import { getProviderManager } from '../../services/ai';
 import { DATABASE_SCHEMA_SCHEMA } from '../../services/ai/utils/schemas';

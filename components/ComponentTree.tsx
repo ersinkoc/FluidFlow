@@ -35,9 +35,9 @@ function parseFile(content: string, filename: string): TreeNode[] {
   const hookPattern = /(?:export\s+)?(?:const|function)\s+(use[A-Z][a-zA-Z0-9]*)\s*(?:=|\()/g;
 
   // Match imports from project files
-  const importPattern = /import\s+(?:{[^}]+}|[^;]+)\s+from\s+['"]\.\/([^'"]+)['"]/g;
+  const _importPattern = /import\s+(?:{[^}]+}|[^;]+)\s+from\s+['"]\.\/([^'"]+)['"]/g;
 
-  const lines = content.split('\n');
+  const _lines = content.split('\n');
 
   // Find components
   componentPatterns.forEach(pattern => {
@@ -291,7 +291,7 @@ export const ComponentTree: React.FC<ComponentTreeProps> = ({
     return { components, hooks, files };
   }, [tree]);
 
-  const handleSelect = (file: string, line?: number) => {
+  const handleSelect = (file: string, _line?: number) => {
     onFileSelect(file);
     onClose();
   };

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Copy, Check, X, Palette, Layout, Type, Box, Move, Sparkles } from 'lucide-react';
+import { Search, Check, X, Palette, Layout, Type, Box, Move, Sparkles } from 'lucide-react';
 
 interface TailwindPaletteProps {
   isOpen: boolean;

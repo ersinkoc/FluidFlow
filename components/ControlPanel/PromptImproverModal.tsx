@@ -315,7 +315,7 @@ export const PromptImproverModal: React.FC<PromptImproverModalProps> = ({
 
       // Build context for AI
       const contextMessages = contextManager.getMessagesForAI(sessionId);
-      const historyText = contextMessages
+      const _historyText = contextMessages
         .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
         .join('\n');
 
@@ -354,10 +354,10 @@ Ask direct questions without providing options or checkboxes. Let users respond 
       }
 
       let fullResponse = '';
-      const startTime = Date.now();
+      const _startTime = Date.now();
 
       // Use streaming for real-time response
-      const streamResponse = await provider.generateStream(
+      const _streamResponse = await provider.generateStream(
         {
           prompt,
           systemInstruction: PROMPT_ENGINEER_SYSTEM,
@@ -398,7 +398,7 @@ Ask direct questions without providing options or checkboxes. Let users respond 
                 ? {
                     ...m,
                     content: displayContent,
-                    generationTime: Date.now() - startTime,
+                    generationTime: Date.now() - _startTime,
                     model: config.defaultModel,
                     provider: config.name
                   }

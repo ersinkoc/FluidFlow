@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Plus, Trash2, Check, X, Loader2,
   ChevronDown, ChevronRight, Eye, EyeOff, RefreshCw,
-  ExternalLink, AlertCircle, CheckCircle2, Settings2, Pencil, Save,
+  ExternalLink, AlertCircle, CheckCircle2, Pencil,
   Download
 } from 'lucide-react';
 import {
@@ -36,7 +36,7 @@ export const AIProviderSettings: React.FC<AIProviderSettingsProps> = ({ onProvid
     setActiveProviderId(manager.getActiveProviderId());
   }, []);
 
-  const saveProviders = (newProviders: ProviderConfig[], newActiveId?: string) => {
+  const _saveProviders = (newProviders: ProviderConfig[], newActiveId?: string) => {
     const manager = getProviderManager();
     newProviders.forEach(p => manager.addProvider(p));
     if (newActiveId) {

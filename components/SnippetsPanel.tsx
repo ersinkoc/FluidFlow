@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Search, Copy, Check, ChevronRight, Code2, Layout, Database, Zap, X, Sparkles, Plus, Trash2, Star } from 'lucide-react';
-import { settingsApi, CustomSnippet } from '../services/projectApi';
+import { settingsApi } from '../services/projectApi';
 
 interface Snippet {
   id: string;
@@ -400,7 +400,7 @@ export const SnippetsPanel: React.FC<SnippetsPanelProps> = ({ isOpen, onClose, o
         tags: ['custom'],
         isCustom: true,
       })));
-    } catch (e) {
+    } catch (_e) {
       console.log('[Snippets] Backend not available, using local only');
     }
   }, []);

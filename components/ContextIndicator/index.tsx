@@ -12,7 +12,7 @@ import { ContextManagerModal } from './ContextManagerModal';
 
 export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
   contextId,
-  showLabel = true,
+  showLabel: _showLabel = true,
   onCompact,
   className = ''
 }) => {

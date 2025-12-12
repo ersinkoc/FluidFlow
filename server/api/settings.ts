@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { existsSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
-import { safeJsonParse, safeJsonStringify } from '../../utils/safeJson';
+import { safeJsonParse } from '../../utils/safeJson';
 import { encryptProviderConfig, decryptProviderConfig } from '../utils/encryption';
 
 const __filename = fileURLToPath(import.meta.url);

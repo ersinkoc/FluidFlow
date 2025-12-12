@@ -10,8 +10,8 @@ import { isValidProjectId, isValidFilePath, sanitizeFilePath } from '../utils/va
 function safeJsonParse<T>(jsonString: string, fallback: T): T {
   try {
     return JSON.parse(jsonString) as T;
-  } catch (error) {
-    console.error('[Projects] JSON parse error:', error instanceof Error ? error.message : error);
+  } catch (_error) {
+    console.error('[Projects] JSON parse error:', _error instanceof Error ? _error.message : _error);
     return fallback;
   }
 }
@@ -21,8 +21,8 @@ async function safeReadJson<T>(filePath: string, fallback: T): Promise<T> {
   try {
     const content = await fs.readFile(filePath, 'utf-8');
     return safeJsonParse(content, fallback);
-  } catch (error) {
-    console.error(`[Projects] Failed to read JSON from ${filePath}:`, error instanceof Error ? error.message : error);
+  } catch (_error) {
+    console.error(`[Projects] Failed to read JSON from ${filePath}:`, _error instanceof Error ? _error.message : _error);
     return fallback;
   }
 }
@@ -54,12 +54,12 @@ interface ProjectMeta {
   githubRepo?: string;
 }
 
-interface ProjectFile {
+interface _ProjectFile {
   path: string;
   content: string;
 }
 
-interface Project extends ProjectMeta {
+interface _Project extends ProjectMeta {
   files: Record<string, string>;
 }
 
@@ -184,7 +184,7 @@ router.get('/', async (req, res) => {
     // Sort by updatedAt descending
     projects.sort((a, b) => b.updatedAt - a.updatedAt);
     res.json(projects);
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({ error: 'Failed to list projects' });
   }
 });
@@ -253,7 +253,7 @@ router.get('/:id', async (req, res) => {
     }
 
     res.json({ ...meta, files });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({ error: 'Failed to get project' });
   }
 });
@@ -345,8 +345,8 @@ router.post('/', async (req, res) => {
     }
 
     res.status(201).json({ ...meta, files: files || {} });
-  } catch (error) {
-    console.error('Create project error:', error);
+  } catch (_error) {
+    console.error('Create project error:', _error);
     res.status(500).json({ error: 'Failed to create project' });
   }
 });
@@ -554,8 +554,8 @@ router.put('/:id', async (req, res) => {
     }
 
     res.json({ ...result.meta, message: result.message });
-  } catch (error) {
-    console.error('Update project error:', error);
+  } catch (_error) {
+    console.error('Update project error:', _error);
     res.status(500).json({ error: 'Failed to update project' });
   }
 });
@@ -578,7 +578,7 @@ router.delete('/:id', async (req, res) => {
 
     await fs.rm(projectPath, { recursive: true });
     res.json({ message: 'Project deleted', id });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({ error: 'Failed to delete project' });
   }
 });
@@ -633,7 +633,7 @@ router.post('/:id/duplicate', async (req, res) => {
     }
 
     res.status(201).json(newMeta);
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({ error: 'Failed to duplicate project' });
   }
 });
@@ -672,8 +672,8 @@ router.get('/:id/context', async (req, res) => {
       // Return empty context if not exists
       res.json(defaultContext);
     }
-  } catch (error) {
-    console.error('Get context error:', error);
+  } catch (_error) {
+    console.error('Get context error:', _error);
     res.status(500).json({ error: 'Failed to get project context' });
   }
 });
@@ -745,8 +745,8 @@ router.put('/:id/context', async (req, res) => {
     }
 
     res.json({ message: 'Context saved', savedAt: context.savedAt });
-  } catch (error) {
-    console.error('Save context error:', error);
+  } catch (_error) {
+    console.error('Save context error:', _error);
     res.status(500).json({ error: 'Failed to save project context' });
   }
 });
@@ -818,8 +818,8 @@ router.post('/:id/context', async (req, res) => {
     }
 
     res.json({ message: 'Context saved', savedAt: context.savedAt });
-  } catch (error) {
-    console.error('Save context error:', error);
+  } catch (_error) {
+    console.error('Save context error:', _error);
     res.status(500).json({ error: 'Failed to save project context' });
   }
 });
@@ -841,8 +841,8 @@ router.delete('/:id/context', async (req, res) => {
     }
 
     res.json({ message: 'Context cleared' });
-  } catch (error) {
-    console.error('Clear context error:', error);
+  } catch (_error) {
+    console.error('Clear context error:', _error);
     res.status(500).json({ error: 'Failed to clear project context' });
   }
 });

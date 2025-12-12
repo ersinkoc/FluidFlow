@@ -411,7 +411,7 @@ export function generateProjectContextMd(files: FileSystem): string {
     }
   }
 
-  let md = `# PROJECT CONTEXT
+  const md = `# PROJECT CONTEXT
 
 > Auto-generated project structure for AI context continuity.
 > Last updated: ${new Date().toISOString()}

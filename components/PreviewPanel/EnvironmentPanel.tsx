@@ -231,7 +231,7 @@ export const EnvironmentPanel: React.FC<EnvironmentPanelProps> = ({ files, setFi
     setFiles({ ...files, '.env.example': content });
   };
 
-  const addFromTemplate = (key: string, placeholder: string) => {
+  const addFromTemplate = (key: string, _placeholder: string) => {
     addVariable(key, '');
     setShowTemplates(false);
   };

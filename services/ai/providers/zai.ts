@@ -206,7 +206,7 @@ export class ZAIProvider implements AIProvider {
                 outputTokens = parsed.usage.completion_tokens || outputTokens;
                 console.log('[ZAI] Token usage:', { inputTokens, outputTokens });
               }
-            } catch (e) {
+            } catch (_e) {
               // JSON parse failed - might be incomplete, will retry with more data
               // Only log if it looks like actual data (not empty or whitespace)
               if (data.trim().length > 10) {
@@ -234,7 +234,7 @@ export class ZAIProvider implements AIProvider {
                 inputTokens = parsed.usage.prompt_tokens || inputTokens;
                 outputTokens = parsed.usage.completion_tokens || outputTokens;
               }
-            } catch (e) {
+            } catch (_e) {
               console.debug('[ZAI] Final buffer parse failed:', data.slice(0, 50));
             }
           }

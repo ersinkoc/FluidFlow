@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
-  X, Plus, Trash2, Check, Loader2, Server,
-  ChevronDown, ChevronRight, Eye, EyeOff, RefreshCw,
+  X, Plus, Trash2, Check, Loader2, Server, Settings2,
+  Eye, EyeOff, RefreshCw,
   ExternalLink, AlertCircle, CheckCircle2, Pencil, Download,
-  Settings2, Zap, Globe, Key, Link2
+  Zap, Key, Link2
 } from 'lucide-react';
 import {
   ProviderConfig, ProviderType, DEFAULT_PROVIDERS, ModelOption,
@@ -44,7 +44,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({ isOpen, onClos
 
   const selectedProvider = providers.find(p => p.id === selectedProviderId);
 
-  const saveProviders = (newProviders: ProviderConfig[], newActiveId?: string) => {
+  const _saveProviders = (newProviders: ProviderConfig[], newActiveId?: string) => {
     const manager = getProviderManager();
     newProviders.forEach(p => manager.addProvider(p));
     if (newActiveId) {

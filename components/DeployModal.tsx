@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Rocket, Copy, Check, ExternalLink, Terminal, Github, Loader2 } from 'lucide-react';
+import { X, Rocket, Copy, Check, ExternalLink, Terminal, Github } from 'lucide-react';
 import { FileSystem } from '../types';
 
 interface DeployModalProps {
@@ -8,7 +8,7 @@ interface DeployModalProps {
   files: FileSystem;
 }
 
-export const DeployModal: React.FC<DeployModalProps> = ({ isOpen, onClose, files }) => {
+export const DeployModal: React.FC<DeployModalProps> = ({ isOpen, onClose, files: _files }) => {
   const [activeTab, setActiveTab] = useState<'vercel' | 'netlify' | 'manual'>('vercel');
   const [copied, setCopied] = useState<string | null>(null);
 

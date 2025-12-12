@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { Terminal, ChevronUp, ChevronDown, Trash2, Wifi, Check, Loader2, Sparkles } from 'lucide-react';
+import { Terminal, ChevronUp, ChevronDown, Trash2, Wifi, Check, Sparkles, Loader2 } from 'lucide-react';
 import { LogEntry, NetworkRequest, TerminalTab } from '../../types';
 
 interface ConsolePanelProps {
@@ -92,7 +92,7 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                activeTab === 'console' ? onClearLogs() : onClearNetwork();
+                if (activeTab === 'console') { onClearLogs(); } else { onClearNetwork(); }
               }}
               className="text-xs text-slate-500 hover:text-red-400 flex items-center gap-1 transition-colors"
               title="Clear"

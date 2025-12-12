@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Link2, Copy, Check, QrCode, Twitter, Linkedin, Mail, Loader2 } from 'lucide-react';
+import { X, Link2, Copy, Check, Twitter, Linkedin, Mail, Loader2 } from 'lucide-react';
 import { FileSystem } from '../types';
 
 interface ShareModalProps {
@@ -88,7 +88,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, files }
       } else {
         setShareUrl(url);
       }
-    } catch (err) {
+    } catch (_err) {
       setError('Failed to generate share URL');
       setShareUrl('');
     } finally {

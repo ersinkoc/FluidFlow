@@ -363,7 +363,7 @@ class ErrorFixAgent {
         // Step 5: Apply ALL fixes
         this.setState('applying');
 
-        let appliedFiles: string[] = [];
+        const appliedFiles: string[] = [];
         for (const [filePath, content] of fileEntries) {
           if (!content) continue;
 
@@ -441,7 +441,7 @@ class ErrorFixAgent {
    * Report a new error (called after applying fix)
    * This continues the loop if the fix didn't work
    */
-  reportError(errorMessage: string, errorStack?: string): void {
+  reportError(errorMessage: string, _errorStack?: string): void {
     if (this.state !== 'verifying') return;
 
     this.log('error', 'New Error After Fix', errorMessage);

@@ -1,5 +1,5 @@
 // AI Service - Provider Management
-import { AIProvider, ProviderConfig, ProviderType, DEFAULT_PROVIDERS, GenerationRequest, GenerationResponse, StreamChunk } from './types';
+import { AIProvider, ProviderConfig, DEFAULT_PROVIDERS, GenerationRequest, GenerationResponse, StreamChunk } from './types';
 import { GeminiProvider, OpenAIProvider, AnthropicProvider, OllamaProvider, LMStudioProvider, ZAIProvider } from './providers';
 import { settingsApi } from '../projectApi';
 import { encryptProviderConfigs, decryptProviderConfigs } from '../../utils/clientEncryption';
@@ -194,7 +194,7 @@ export class ProviderManager {
 
         console.log('[AI] Loaded providers from backend:', providers.length);
       }
-    } catch (e) {
+    } catch (_e) {
       console.log('[AI] Backend not available, using localStorage');
     }
     this.isInitialized = true;

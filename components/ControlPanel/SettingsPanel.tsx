@@ -27,7 +27,7 @@ interface SettingsPanelProps {
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   isEducationMode,
   onEducationModeChange,
-  hasApiKey,
+  hasApiKey: _hasApiKey,
   onOpenAISettings,
   onOpenMegaSettings,
   aiHistoryCount = 0,

@@ -107,31 +107,6 @@ export const WebContainerPanel: React.FC<WebContainerPanelProps> = ({
     setIsConfigured(!!settings?.enabled);
   }, []);
 
-  // No project selected
-  if (!projectId) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 flex items-center justify-center mb-4">
-          <FolderOpen className="w-8 h-8 text-amber-500" />
-        </div>
-        <h3 className="text-lg font-medium text-white mb-2">No Project Selected</h3>
-        <p className="text-zinc-400 text-sm mb-6 max-w-md">
-          Select or create a project first to use WebContainer preview.
-          WebContainer runs your project with a real Node.js runtime in the browser.
-        </p>
-        {onOpenProjectManager && (
-          <button
-            onClick={onOpenProjectManager}
-            className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition-colors"
-          >
-            <FolderOpen className="w-4 h-4" />
-            Open Project Manager
-          </button>
-        )}
-      </div>
-    );
-  }
-
   // Subscribe to state changes
   useEffect(() => {
     const unsubscribe = webContainerService.subscribe(setState);
@@ -177,6 +152,31 @@ export const WebContainerPanel: React.FC<WebContainerPanelProps> = ({
   const isRunning = state.status === 'running';
   const isBusy = ['booting', 'installing', 'starting', 'initializing', 'syncing'].includes(state.status);
   const canSync = webContainerService.isBooted() && !isBusy;
+
+  // No project selected
+  if (!projectId) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 flex items-center justify-center mb-4">
+          <FolderOpen className="w-8 h-8 text-amber-500" />
+        </div>
+        <h3 className="text-lg font-medium text-white mb-2">No Project Selected</h3>
+        <p className="text-zinc-400 text-sm mb-6 max-w-md">
+          Select or create a project first to use WebContainer preview.
+          WebContainer runs your project with a real Node.js runtime in the browser.
+        </p>
+        {onOpenProjectManager && (
+          <button
+            onClick={onOpenProjectManager}
+            className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition-colors"
+          >
+            <FolderOpen className="w-4 h-4" />
+            Open Project Manager
+          </button>
+        )}
+      </div>
+    );
+  }
 
   // Not configured state
   if (!isConfigured) {

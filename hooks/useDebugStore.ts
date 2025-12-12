@@ -27,7 +27,7 @@ const initialState: DebugState = {
 };
 
 let globalDebugState: DebugState = initialState;
-let globalListeners: Set<() => void> = new Set();
+const globalListeners: Set<() => void> = new Set();
 
 // Reset global debug state - useful for app resets or testing
 export function resetDebugState(): void {

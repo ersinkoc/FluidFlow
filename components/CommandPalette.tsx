@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
-  Search, FileCode, Hash, Command, ArrowRight,
-  FileText, Folder, CornerDownLeft, ArrowUp, ArrowDown,
+  Search, FileCode, Hash, Command,
+  FileText, CornerDownLeft, ArrowUp, ArrowDown,
   Settings, Trash2, Download, Github, Zap, Eye, Code2,
   Undo2, Redo2, Palette, Layers, Rocket, Link2, Cpu
 } from 'lucide-react';
@@ -47,7 +47,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   isOpen,
   onClose,
   files,
-  activeFile,
+  activeFile: _activeFile,
   onFileSelect,
   onAction
 }) => {
@@ -217,7 +217,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         e.preventDefault();
         onClose();
         break;
-      case 'Tab':
+      case 'Tab': {
         e.preventDefault();
         // Cycle through modes
         const modes: typeof mode[] = ['files', 'symbols', 'content', 'actions'];
@@ -226,6 +226,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         setMode(nextMode);
         setQuery(nextMode === 'files' ? '' : nextMode === 'symbols' ? '@' : nextMode === 'content' ? '#' : '>');
         break;
+      }
     }
   }, [results, selectedIndex, mode, onClose]);
 

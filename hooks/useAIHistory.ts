@@ -123,7 +123,7 @@ export function useAIHistory(projectId: string | null): UseAIHistoryReturn {
   }, [projectId]);
 
   // Debounced save to backend (fallback for failed immediate saves)
-  const saveToBackend = useCallback(async (entries: AIHistoryEntry[]) => {
+  const _saveToBackend = useCallback(async (entries: AIHistoryEntry[]) => {
     if (!projectId) return;
 
     // Track pending save
@@ -165,7 +165,7 @@ export function useAIHistory(projectId: string | null): UseAIHistoryReturn {
     try {
       (window as any).__lastAIHistoryEntry = newEntry;
       (window as any).__aiHistoryCount = history.length + 1;
-    } catch (e) {
+    } catch (_e) {
       // Ignore
     }
 

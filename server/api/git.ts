@@ -6,6 +6,27 @@ import { existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { isValidProjectId } from '../utils/validation';
 
+// BUG-015 FIX: Safe JSON parsing helper to prevent crashes on corrupted files
+function safeJsonParse<T>(jsonString: string, fallback: T): T {
+  try {
+    return JSON.parse(jsonString) as T;
+  } catch (error) {
+    console.error('[Git API] JSON parse error:', error instanceof Error ? error.message : error);
+    return fallback;
+  }
+}
+
+// BUG-015 FIX: Safe file read + JSON parse helper
+async function safeReadJson<T>(filePath: string, fallback: T): Promise<T> {
+  try {
+    const content = await fs.readFile(filePath, 'utf-8');
+    return safeJsonParse(content, fallback);
+  } catch (error) {
+    console.error(`[Git API] Failed to read JSON from ${filePath}:`, error instanceof Error ? error.message : error);
+    return fallback;
+  }
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -95,11 +116,13 @@ dist/
     await git.add('.');
     await git.commit('Initial commit - Created with FluidFlow');
 
-    // Update meta
-    const meta = JSON.parse(await fs.readFile(getMetaPath(id), 'utf-8'));
-    meta.gitInitialized = true;
-    meta.updatedAt = Date.now();
-    await fs.writeFile(getMetaPath(id), JSON.stringify(meta, null, 2));
+    // Update meta - BUG-015 FIX: Use safe JSON parsing
+    const meta = await safeReadJson<{ gitInitialized?: boolean; updatedAt?: number } | null>(getMetaPath(id), null);
+    if (meta) {
+      meta.gitInitialized = true;
+      meta.updatedAt = Date.now();
+      await fs.writeFile(getMetaPath(id), JSON.stringify(meta, null, 2));
+    }
 
     res.json({ message: 'Git initialized', initialized: true });
   } catch (error) {
@@ -259,10 +282,12 @@ router.post('/:id/commit', async (req, res) => {
     await git.add('.');
     const commitResult = await git.commit(message || 'Update from FluidFlow');
 
-    // Update project meta
-    const meta = JSON.parse(await fs.readFile(getMetaPath(id), 'utf-8'));
-    meta.updatedAt = Date.now();
-    await fs.writeFile(getMetaPath(id), JSON.stringify(meta, null, 2));
+    // Update project meta - BUG-015 FIX: Use safe JSON parsing
+    const meta = await safeReadJson<{ updatedAt?: number } | null>(getMetaPath(id), null);
+    if (meta) {
+      meta.updatedAt = Date.now();
+      await fs.writeFile(getMetaPath(id), JSON.stringify(meta, null, 2));
+    }
 
     res.json({
       message: 'Committed successfully',

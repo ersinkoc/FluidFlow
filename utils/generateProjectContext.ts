@@ -93,7 +93,7 @@ export function generateProjectContext(files: FileSystem): string {
   };
 
   // Build markdown
-  let md = `# Project Context
+  const md = `# Project Context
 
 > Auto-generated project structure for AI context. Last updated: ${new Date().toISOString()}
 

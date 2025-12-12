@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   ChevronRight, ChevronDown, Folder, FolderOpen,
   FileCode, FileJson, FileText, Database, FlaskConical,
-  File as FileIcon, Plus, Trash2, Pencil, X, Check, FilePlus, FolderPlus
+  File as FileIcon, Trash2, Pencil, X, Check, FilePlus
 } from 'lucide-react';
 import { FileSystem } from '../../types';
 

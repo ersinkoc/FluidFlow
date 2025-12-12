@@ -1226,7 +1226,7 @@ function tryFixJSXIssues(errorMessage: string, code: string): SimpleFixResult {
  * Fix runtime errors (null/undefined access, destructuring)
  */
 function tryFixRuntimeError(errorMessage: string, code: string): SimpleFixResult {
-  const errorLower = errorMessage.toLowerCase();
+  const _errorLower = errorMessage.toLowerCase();
 
   // "Cannot read property 'X' of undefined/null"
   // "Cannot read properties of undefined (reading 'X')"
@@ -1372,7 +1372,7 @@ function tryFixMissingClosing(errorMessage: string, code: string): SimpleFixResu
     }
 
     // Count brackets outside strings
-    if (!inString && counts.hasOwnProperty(char)) {
+    if (!inString && Object.hasOwn(counts, char)) {
       counts[char]++;
     }
   }
@@ -1812,7 +1812,7 @@ function tryFixTypeScriptErrors(errorMessage: string, code: string): SimpleFixRe
     if (varMatch) {
       const varName = varMatch[1];
       // Add type assertion
-      const pattern = new RegExp(`\\b${varName}\\b(?!\s*as\\s)`, 'g');
+      const pattern = new RegExp(`\\b${varName}\\b(?!\\s*as\\s)`, 'g');
       let firstReplace = true;
       const newCode = code.replace(pattern, (match) => {
         if (firstReplace) {

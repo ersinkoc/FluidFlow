@@ -177,7 +177,7 @@ export function parseJsonResponse<T = unknown>(
         neededCleanup: false,
         rawText,
       };
-    } catch (e) {
+    } catch (_e) {
       // Unexpected - native schema should always produce valid JSON
       // Fall through to cleanup logic
       console.warn('[jsonOutput] Native schema response failed direct parse, attempting cleanup');
@@ -255,7 +255,7 @@ export function parseJsonResponse<T = unknown>(
     neededCleanup = true;
 
     // Fix unquoted keys (rare but possible)
-    fixedText = fixedText.replace(/(\{|\,)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
+    fixedText = fixedText.replace(/(\{|,)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
 
     try {
       return {

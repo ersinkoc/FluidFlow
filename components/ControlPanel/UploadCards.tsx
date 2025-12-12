@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Image, Palette, Upload, X, Check } from 'lucide-react';
+import { Image, Palette, X, Check } from 'lucide-react';
 import { ChatAttachment } from '../../types';
 
 interface UploadCardsProps {

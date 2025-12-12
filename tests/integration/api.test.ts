@@ -5,11 +5,8 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { request } from 'http';
-import { promises as fs } from 'fs';
-import path from 'path';
 
 const API_BASE = 'http://localhost:3200/api';
-let serverProcess: any;
 
 describe('API Integration Tests', () => {
   beforeAll(async () => {
@@ -85,10 +82,10 @@ describe('API Integration Tests', () => {
 /**
  * Helper function to make HTTP requests in tests
  */
-async function makeRequest(path: string, options?: {
+async function _makeRequest(path: string, options?: {
   method?: string;
   headers?: Record<string, string>;
-  body?: any;
+  body?: unknown;
 }) {
   return new Promise((resolve, reject) => {
     const req = request(`${API_BASE}${path}`, {

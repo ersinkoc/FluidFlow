@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   FolderOpen, ChevronUp, ChevronDown, Cloud, CloudOff, Plus,
   Clock, GitBranch, Check, Loader2, RefreshCw, X, Search, Trash2, Copy,
-  AlertCircle, FolderPlus, MoreVertical, Save, FolderInput, AlertTriangle, Merge
+  AlertCircle, FolderPlus, MoreVertical, Save, FolderInput, AlertTriangle
 } from 'lucide-react';
 import type { ProjectMeta } from '@/services/projectApi';
 

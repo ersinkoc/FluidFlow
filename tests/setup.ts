@@ -3,7 +3,7 @@
  * Configures Vitest testing environment
  */
 
-import { vi, expect } from 'vitest';
+import { expect } from 'vitest';
 
 // Mock console methods to reduce noise in tests
 global.console = {
@@ -20,14 +20,17 @@ global.console = {
 process.env.NODE_ENV = 'test';
 process.env.GEMINI_API_KEY = 'test-api-key';
 
-// Setup test globals
-declare global {
-  namespace Vi {
-    interface JestAssertion<T = any> {
-      toBeValidProjectId(): T;
-      toBeValidFilePath(): T;
-    }
-  }
+// Setup custom matcher types
+interface CustomMatchers<R = unknown> {
+  toBeValidProjectId(): R;
+  toBeValidFilePath(): R;
+}
+
+declare module 'vitest' {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-empty-object-type
+  interface Assertion<T = any> extends CustomMatchers<T> {}
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  interface AsymmetricMatchersContaining extends CustomMatchers {}
 }
 
 // Custom matchers (if needed)

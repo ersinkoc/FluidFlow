@@ -11,7 +11,7 @@ import { execFileSync } from 'child_process';
 const ALGORITHM = 'aes-256-gcm';
 const KEY_LENGTH = 32; // 256 bits
 const IV_LENGTH = 12;  // 96 bits for GCM
-const AUTH_TAG_LENGTH = 16; // 128 bits
+const _AUTH_TAG_LENGTH = 16; // 128 bits
 
 // Key file location - stored in settings directory
 const SETTINGS_DIR = path.join(process.cwd(), 'settings');

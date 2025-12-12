@@ -203,7 +203,7 @@ const DiffModal: React.FC<DiffModalProps> = ({ originalFiles, newFiles, label, o
                      Modified Files ({changedFiles.length})
                   </div>
                   <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
-                     {changedFiles.map(({ file, added, removed }) => (
+                     {changedFiles.map(({ file, added: _added, removed }) => (
                         <button
                            key={file}
                            onClick={() => setSelectedFile(file)}
@@ -664,7 +664,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isAISettingsOpen, setIsAISettingsOpen] = useState(false);
   const [isMegaSettingsOpen, setIsMegaSettingsOpen] = useState(false);
-  const [megaSettingsInitialCategory, setMegaSettingsInitialCategory] = useState<'ai-providers' | 'context-manager' | 'tech-stack' | 'projects' | 'editor' | 'appearance' | 'debug' | 'shortcuts' | 'advanced'>('ai-providers');
+  const [megaSettingsInitialCategory, _setMegaSettingsInitialCategory] = useState<'ai-providers' | 'context-manager' | 'tech-stack' | 'projects' | 'editor' | 'appearance' | 'debug' | 'shortcuts' | 'advanced'>('ai-providers');
   const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
   const [isProjectManagerOpen, setIsProjectManagerOpen] = useState(false);
   const [isCreditsModalOpen, setIsCreditsModalOpen] = useState(false);

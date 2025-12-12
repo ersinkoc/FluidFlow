@@ -44,7 +44,7 @@ function estimateTokens(text: string): number {
   const wordCount = wordMatches ? wordMatches.length : 0;
 
   // Count code-like tokens (operators, brackets, special chars)
-  const codeMatches = text.match(/[{}()\[\]<>:;,=+\-*/&|!@#$%^]+/g);
+  const codeMatches = text.match(/[{}()[\]<>:;,=+\-*/&|!@#$%^]+/g);
   const codeCharCount = codeMatches ? codeMatches.reduce((sum: number, t: string) => sum + t.length, 0) : 0;
 
   // Count numbers (each number is typically 1 token)
@@ -191,7 +191,7 @@ class ConversationContextManager {
   }
 
   // Finalize streaming (save after streaming completes)
-  finalizeMessage(contextId: string): void {
+  finalizeMessage(_contextId: string): void {
     // AI-006 fix: Clear any pending debounced save
     if (this.streamingSaveTimeout) {
       clearTimeout(this.streamingSaveTimeout);

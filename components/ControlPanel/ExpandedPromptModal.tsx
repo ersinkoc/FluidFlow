@@ -6,7 +6,6 @@ import {
   Mic,
   MicOff,
   Loader2,
-  Wand2,
   Image,
   Palette,
   FileCode,

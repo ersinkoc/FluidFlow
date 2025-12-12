@@ -26,7 +26,7 @@ export class OllamaProvider implements AIProvider {
 
   async generate(request: GenerationRequest, model: string): Promise<GenerationResponse> {
     // Build prompt with images if present
-    let prompt = request.prompt;
+    const prompt = request.prompt;
 
     const body: any = {
       model,

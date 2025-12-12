@@ -7,7 +7,6 @@ import {
   Database,
   FileText,
   Loader2,
-  Check,
   ChevronDown,
   ChevronRight
 } from 'lucide-react';
@@ -27,7 +26,7 @@ export const CompactionConfirmModal: React.FC<CompactionConfirmModalProps> = ({
   isOpen,
   onClose,
   onConfirm,
-  contextId,
+  contextId: _contextId,
   currentTokens,
   targetTokens,
   messageCount,

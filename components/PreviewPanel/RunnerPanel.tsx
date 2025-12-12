@@ -23,7 +23,7 @@ interface RunnerPanelProps {
 
 export const RunnerPanel: React.FC<RunnerPanelProps> = ({
   projectId,
-  projectName,
+  projectName: _projectName,
   hasCommittedFiles
 }) => {
   const [status, setStatus] = useState<RunningProjectInfo | null>(null);
@@ -46,7 +46,7 @@ export const RunnerPanel: React.FC<RunnerPanelProps> = ({
         const logsResult = await runnerApi.logs(projectId);
         setLogs(logsResult.logs);
       }
-    } catch (err) {
+    } catch (_err) {
       // Not running is not an error
       setStatus({ status: 'stopped', running: false } as RunningProjectInfo);
     }

@@ -1,7 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { User, Bot, Image, Palette, RotateCcw, FileCode, Plus, Minus, Loader2, AlertCircle, RefreshCw, Zap, Clock, Layers, Bookmark } from 'lucide-react';
 import { ChatMessage, FileChange } from '../../types';
-import type { AIHistoryEntry } from '../../services/projectApi';
 
 interface ChatPanelProps {
   messages: ChatMessage[];
@@ -72,7 +71,7 @@ const renderMarkdown = (text: string): React.ReactNode => {
   const elements: React.ReactNode[] = [];
   let inCodeBlock = false;
   let codeContent = '';
-  let codeLanguage = '';
+  let _codeLanguage = '';
 
   lines.forEach((line, idx) => {
     if (line.startsWith('```')) {
@@ -86,7 +85,7 @@ const renderMarkdown = (text: string): React.ReactNode => {
         inCodeBlock = false;
       } else {
         inCodeBlock = true;
-        codeLanguage = line.slice(3);
+        _codeLanguage = line.slice(3);
       }
       return;
     }
@@ -185,7 +184,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   onRestoreFromHistory,
   truncatedContent,
   onTruncationRetry,
-  onBatchGeneration,
+  onBatchGeneration: _onBatchGeneration,
   onSetExternalPrompt,
   continuationState,
   onContinueGeneration,

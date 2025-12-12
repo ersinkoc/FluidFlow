@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MessageSquare, Trash2, RefreshCw, AlertCircle, Info } from 'lucide-react';
-import { SettingsSection, SettingsToggle, SettingsSlider, SettingsInput } from '../shared';
+import { SettingsSection, SettingsToggle, SettingsSlider } from '../shared';
 import { getFluidFlowConfig, ContextSettings, CompactionLog } from '../../../services/fluidflowConfig';
 
 export const ContextManagerPanel: React.FC = () => {

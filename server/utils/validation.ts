@@ -39,7 +39,8 @@ export function isValidFilePath(filePath: unknown): boolean {
   // Block URL-encoded traversal attempts
   if (/%2e%2e/i.test(normalized) || /%00/.test(normalized)) return false;
 
-  // Block control characters
+  // Block control characters (intentionally using control character regex for security)
+  // eslint-disable-next-line no-control-regex
   if (/[\x00-\x1f\x7f]/.test(normalized)) return false;
 
   return true;

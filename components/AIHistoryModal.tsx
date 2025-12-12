@@ -11,7 +11,6 @@ import {
   Trash2,
   ChevronDown,
   ChevronRight,
-  AlertTriangle,
   Sparkles,
   RotateCcw,
   Loader2,
@@ -49,7 +48,7 @@ export const AIHistoryModal: React.FC<AIHistoryModalProps> = ({
   if (!isOpen) return null;
 
   // Entry Card Component - defined once for reuse
-  const EntryCard = ({ entry, expandedId, setExpandedId, copiedId, setCopiedId, restoringId, setRestoringId, onRestore, onCopyRaw, formatDuration, formatSize, formatTime }: any) => (
+  const EntryCard = ({ entry, expandedId, setExpandedId, copiedId, setCopiedId: _setCopiedId, restoringId, setRestoringId: _setRestoringId, onRestore: _onRestore, onCopyRaw: _onCopyRaw, formatDuration, formatSize, formatTime }: any) => (
     <div
       key={entry.id}
       className={`border rounded-lg overflow-hidden transition-colors ${

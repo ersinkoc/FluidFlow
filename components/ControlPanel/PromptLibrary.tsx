@@ -3,7 +3,7 @@ import {
   X, Palette, Smartphone, Sparkles, Zap, LayoutGrid, Accessibility,
   FileText, Wrench, ChevronRight, Search, BookOpen
 } from 'lucide-react';
-import { promptLibrary, quickPrompts, PromptCategory, PromptItem } from '../../data/promptLibrary';
+import { promptLibrary, quickPrompts, PromptItem } from '../../data/promptLibrary';
 
 interface PromptLibraryProps {
   isOpen: boolean;

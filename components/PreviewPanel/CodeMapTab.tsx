@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import * as Icons from 'lucide-react';
-import { generateCodeMap, generateContextForPrompt, FileInfo, ComponentInfo, CodeMap } from '../../utils/codemap';
+import { generateCodeMap, FileInfo, CodeMap } from '../../utils/codemap';
 import { FileSystem } from '../../types';
 
 interface CodeMapTabProps {

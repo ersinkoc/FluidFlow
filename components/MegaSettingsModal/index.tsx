@@ -83,7 +83,7 @@ export const MegaSettingsModal: React.FC<MegaSettingsModalProps> = ({
 
       setImportExportMessage({ type: 'success', message: 'Settings exported successfully!' });
       setTimeout(() => setImportExportMessage(null), 3000);
-    } catch (error) {
+    } catch (_error) {
       setImportExportMessage({ type: 'error', message: 'Failed to export settings' });
       setTimeout(() => setImportExportMessage(null), 3000);
     }
@@ -119,7 +119,7 @@ export const MegaSettingsModal: React.FC<MegaSettingsModalProps> = ({
 
         setImportExportMessage({ type: 'success', message: 'Settings imported! Refresh to apply.' });
         setTimeout(() => setImportExportMessage(null), 3000);
-      } catch (error) {
+      } catch (_error) {
         setImportExportMessage({ type: 'error', message: 'Failed to import settings' });
         setTimeout(() => setImportExportMessage(null), 3000);
       }

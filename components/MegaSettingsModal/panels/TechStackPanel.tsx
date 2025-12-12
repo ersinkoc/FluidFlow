@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Check, Info } from 'lucide-react';
-import { SettingsSection } from '../shared';
 import { TechStackConfig, TECH_STACK_OPTIONS, DEFAULT_TECH_STACK } from '../../../types';
 
 const STORAGE_KEY = 'fluidflow-tech-stack';

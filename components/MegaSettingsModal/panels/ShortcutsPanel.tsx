@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Keyboard, Info } from 'lucide-react';
-import { SettingsSection } from '../shared';
 
 interface ShortcutItem {
   keys: string[];

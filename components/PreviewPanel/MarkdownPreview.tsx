@@ -101,7 +101,7 @@ function parseMarkdown(markdown: string): string {
   html = html.replace(/^\*\*\*$/gm, '<hr class="my-6 border-white/10" />');
 
   // Unordered lists
-  html = html.replace(/^[\-\*] (.+)$/gm, '<li class="ml-4 text-slate-300 py-0.5 list-disc">$1</li>');
+  html = html.replace(/^[-*] (.+)$/gm, '<li class="ml-4 text-slate-300 py-0.5 list-disc">$1</li>');
 
   // Ordered lists
   html = html.replace(/^\d+\. (.+)$/gm, '<li class="ml-4 text-slate-300 py-0.5 list-decimal">$1</li>');

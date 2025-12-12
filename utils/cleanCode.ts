@@ -129,7 +129,7 @@ export function safeParseAIResponse<T = unknown>(response: string): T | null {
 const MAX_JSON_REPAIR_SIZE = 500000; // 500KB - increased from 50KB to handle larger AI responses
 
 export function repairTruncatedJson(jsonStr: string): string {
-  let json = jsonStr.trim();
+  const json = jsonStr.trim();
 
   // Prevent recursion by limiting input size
   if (json.length > MAX_JSON_REPAIR_SIZE) {
@@ -379,7 +379,7 @@ export function parseMultiFileResponse(response: string, noThrow: boolean = fals
       let parsed;
       try {
         parsed = JSON.parse(jsonToParse);
-      } catch (parseError) {
+      } catch (_parseError) {
         // Try to repair truncated JSON
         console.log('[parseMultiFileResponse] Direct parse failed, attempting repair...');
         wasTruncated = true;
@@ -388,7 +388,7 @@ export function parseMultiFileResponse(response: string, noThrow: boolean = fals
           const repaired = repairTruncatedJson(jsonToParse);
           parsed = JSON.parse(repaired);
           console.log('[parseMultiFileResponse] Repair successful');
-        } catch (repairError) {
+        } catch (_repairError) {
           // Last resort: try to extract just the files object
           const filesMatch = jsonString.match(/"files"\s*:\s*\{([\s\S]*)/);
           if (filesMatch) {
@@ -420,7 +420,7 @@ export function parseMultiFileResponse(response: string, noThrow: boolean = fals
                     return parsed;
                   }
                 }
-              } catch (e) {
+              } catch (_e) {
                 // Final attempt: try to salvage any valid file content
                 try {
                   // Look for files in quotes with content in backticks
@@ -429,7 +429,7 @@ export function parseMultiFileResponse(response: string, noThrow: boolean = fals
 
                   if (matches && matches.length > 0) {
                     const partialFiles: Record<string, string> = {};
-                    matches.forEach(([fullMatch, filePath, fileContent]) => {
+                    matches.forEach(([_fullMatch, filePath, fileContent]) => {
                       // Clean up escaped quotes and newlines
                       const cleanedContent = fileContent
                         .replace(/\\'/g, "'")
@@ -552,7 +552,7 @@ export function parseMultiFileResponse(response: string, noThrow: boolean = fals
                       return parsed;
                     }
                   }
-                } catch (e) {
+                } catch (_e) {
                   // Final attempt failed
                 }
               }

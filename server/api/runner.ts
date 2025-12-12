@@ -149,7 +149,7 @@ const getFilesDir = (id: string) => path.join(PROJECTS_DIR, id, 'files');
 
 // List all running projects
 router.get('/', (req, res) => {
-  const projects = Array.from(runningProjects.entries()).map(([id, info]) => ({
+  const projects = Array.from(runningProjects.entries()).map(([_id, info]) => ({
     projectId: info.projectId,
     port: info.port,
     status: info.status,

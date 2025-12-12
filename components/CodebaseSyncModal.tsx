@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, Upload, FileCode, AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { X, Upload, FileCode, AlertTriangle, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import type { FileSystem } from '@/types';
 import { generateCodeMap, generateContextForPrompt } from '../utils/codemap';
 
@@ -111,11 +111,11 @@ export const CodebaseSyncModal: React.FC<CodebaseSyncModalProps> = ({
         structure[folder].push(f.path);
 
         // Create parent folders
-        let parent = '';
+        let _parent = '';
         for (let i = 0; i < parts.length - 1; i++) {
           const current = parts.slice(0, i + 1).join('/');
           if (!structure[current]) structure[current] = [];
-          parent = current;
+          _parent = current;
         }
       }
     });

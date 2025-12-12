@@ -12,7 +12,6 @@ import { FileSystem, TabType } from '../types';
 import { ProjectMeta, GitStatus as GitStatusResult } from '../services/projectApi';
 import { useProject } from '../hooks/useProject';
 import { useVersionHistory, HistoryEntry } from '../hooks/useVersionHistory';
-import { InspectedElement } from '../components/PreviewPanel/ComponentInspector';
 import { safeJsonParse } from '../utils/safeJson';
 import { gitApi, projectApi } from '../services/projectApi';
 

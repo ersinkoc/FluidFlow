@@ -5,6 +5,27 @@ import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 
+// BUG-016 FIX: Safe JSON parsing helper to prevent crashes on corrupted files
+function safeJsonParse<T>(jsonString: string, fallback: T): T {
+  try {
+    return JSON.parse(jsonString) as T;
+  } catch (error) {
+    console.error('[GitHub API] JSON parse error:', error instanceof Error ? error.message : error);
+    return fallback;
+  }
+}
+
+// BUG-016 FIX: Safe file read + JSON parse helper
+async function safeReadJson<T>(filePath: string, fallback: T): Promise<T> {
+  try {
+    const content = await fs.readFile(filePath, 'utf-8');
+    return safeJsonParse(content, fallback);
+  } catch (error) {
+    console.error(`[GitHub API] Failed to read JSON from ${filePath}:`, error instanceof Error ? error.message : error);
+    return fallback;
+  }
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -124,11 +145,13 @@ router.post('/:id/remote', async (req, res) => {
       await git.addRemote(name, url);
     }
 
-    // Update meta
-    const meta = JSON.parse(await fs.readFile(getMetaPath(id), 'utf-8'));
-    meta.githubRepo = url;
-    meta.updatedAt = Date.now();
-    await fs.writeFile(getMetaPath(id), JSON.stringify(meta, null, 2));
+    // Update meta - BUG-016 FIX: Use safe JSON parsing
+    const meta = await safeReadJson<{ githubRepo?: string; updatedAt?: number } | null>(getMetaPath(id), null);
+    if (meta) {
+      meta.githubRepo = url;
+      meta.updatedAt = Date.now();
+      await fs.writeFile(getMetaPath(id), JSON.stringify(meta, null, 2));
+    }
 
     res.json({ message: `Remote '${name}' set to ${url}` });
   } catch (error) {
@@ -385,9 +408,19 @@ router.post('/:id/create-repo', rateLimitMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Project not found' });
     }
 
-    // Get project meta for default name
-    const meta = JSON.parse(await fs.readFile(getMetaPath(id), 'utf-8'));
-    const repoName = name || meta.name.replace(/\s+/g, '-').toLowerCase();
+    // Get project meta for default name - BUG-016 FIX: Use safe JSON parsing
+    interface ProjectMeta {
+      name?: string;
+      description?: string;
+      gitInitialized?: boolean;
+      githubRepo?: string;
+      updatedAt?: number;
+    }
+    const meta = await safeReadJson<ProjectMeta | null>(getMetaPath(id), null);
+    if (!meta && !name) {
+      return res.status(500).json({ error: 'Project metadata corrupted and no name provided' });
+    }
+    const repoName = name || (meta?.name?.replace(/\s+/g, '-').toLowerCase() || 'untitled-project');
 
     // Create repo via GitHub API
     const response = await fetch('https://api.github.com/user/repos', {
@@ -399,7 +432,7 @@ router.post('/:id/create-repo', rateLimitMiddleware, async (req, res) => {
       },
       body: JSON.stringify({
         name: repoName,
-        description: description || meta.description || `Created with FluidFlow`,
+        description: description || meta?.description || `Created with FluidFlow`,
         private: isPrivate,
         auto_init: false
       })
@@ -433,11 +466,13 @@ router.post('/:id/create-repo', rateLimitMiddleware, async (req, res) => {
       await git.addRemote('origin', repo.clone_url);
     }
 
-    // Update meta
-    meta.gitInitialized = true;
-    meta.githubRepo = repo.html_url;
-    meta.updatedAt = Date.now();
-    await fs.writeFile(getMetaPath(id), JSON.stringify(meta, null, 2));
+    // Update meta - BUG-016 FIX: Handle null meta case
+    if (meta) {
+      meta.gitInitialized = true;
+      meta.githubRepo = repo.html_url;
+      meta.updatedAt = Date.now();
+      await fs.writeFile(getMetaPath(id), JSON.stringify(meta, null, 2));
+    }
 
     res.status(201).json({
       message: 'GitHub repository created',

@@ -100,7 +100,7 @@ export function errorHandler(
   err: Error,
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ) {
   // Log the error
   console.error(`[ERROR] ${req.method} ${req.path}:`, err);

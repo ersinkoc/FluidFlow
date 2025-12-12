@@ -5,7 +5,7 @@ import { cleanGeneratedCode, parseMultiFileResponse, GenerationMeta, stripPlanCo
 import { extractFilesFromTruncatedResponse } from '../../utils/extractPartialFiles';
 
 // Helper function to extract file list from response
-function extractFileListFromResponse(response: string): string[] {
+function _extractFileListFromResponse(response: string): string[] {
   const files = new Set<string>();
 
   // Try JSON parsing first (with PLAN comment handling)
@@ -18,7 +18,7 @@ function extractFileListFromResponse(response: string): string[] {
         Object.keys(parsed.files).forEach(file => files.add(file));
       }
     }
-  } catch (e) {
+  } catch (_e) {
     // Continue with regex extraction
   }
 
@@ -366,14 +366,14 @@ Original prompt: ${prompt}`;
 
       const manager = getProviderManager();
       const activeConfig = manager.getActiveConfig();
-      const providerName = activeConfig?.name || 'Unknown';
+      const _providerName = activeConfig?.name || 'Unknown';
       const currentModel = activeConfig?.defaultModel || selectedModel;
 
       let fullText = '';
-      const startTime = Date.now();
+      const _startTime = Date.now();
 
       // Generate continuation
-      const response = await manager.generateStream(
+      const _response = await manager.generateStream(
         {
           prompt: continuationPrompt,
           systemInstruction,
@@ -1518,7 +1518,7 @@ Write a clear markdown explanation including:
                     console.log('[Stream] File plan detected:', currentFilePlan);
                     setStreamingStatus(`📋 Plan: ${currentFilePlan.total} files (${createFiles.length} new, ${updateFiles.length} update)`);
                   }
-                } catch (e) {
+                } catch (_e) {
                   // Plan not complete yet or malformed - try regex extraction as fallback
                   const createMatch = fullText.match(/"create"\s*:\s*\[([^\]]*)\]/);
                   const updateMatch = fullText.match(/"update"\s*:\s*\[([^\]]*)\]/);
@@ -1639,7 +1639,7 @@ Write a clear markdown explanation including:
           }
 
           const explanation = parseResult.explanation || 'App generated successfully.';
-          let newFiles = parseResult.files;
+          const newFiles = parseResult.files;
           const deletedFiles = parseResult.deletedFiles || [];
 
           // Warn if response was truncated but we recovered
@@ -3021,7 +3021,7 @@ Fix the error in src/App.tsx.`;
             }));
 
             // Create file list for display
-            const generatedFileList = Object.keys(generatedFiles);
+            const _generatedFileList = Object.keys(generatedFiles);
 
             // Create a message for the batch generation completion
             const batchMessage: ChatMessage = {

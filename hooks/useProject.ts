@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { projectApi, gitApi, autoSave, checkServerHealth, ProjectMeta, Project, GitStatus, ProjectContext, HistoryEntry, ProjectUpdateResponse } from '@/services/projectApi';
+import { projectApi, gitApi, autoSave, checkServerHealth, ProjectMeta, GitStatus, ProjectContext } from '@/services/projectApi';
 import type { FileSystem } from '@/types';
 
 // Re-export types for use in other components
@@ -68,7 +68,7 @@ export interface UseProjectReturn extends ProjectState {
   clearError: () => void;
 }
 
-const SYNC_DEBOUNCE_MS = 2000;
+const _SYNC_DEBOUNCE_MS = 2000;
 const STORAGE_KEY_PROJECT_ID = 'fluidflow_current_project_id';
 
 // Helper to get/set localStorage (only for project ID persistence)
@@ -189,8 +189,8 @@ export function useProject(onFilesChange?: (files: FileSystem) => void): UseProj
             isInitializedRef.current = true; // Now safe to sync
             setState(prev => ({ ...prev, isInitialized: true }));
           }
-        } catch (err) {
-          console.error('[Project] Failed to restore project:', err);
+        } catch (_err) {
+          console.error('[Project] Failed to restore project:', _err);
           // Clear invalid project ID
           storage.setProjectId(null);
           isInitializedRef.current = true; // No project to restore, safe to create new
@@ -213,7 +213,7 @@ export function useProject(onFilesChange?: (files: FileSystem) => void): UseProj
     try {
       const projects = await projectApi.list();
       setState(prev => ({ ...prev, projects, isLoadingProjects: false }));
-    } catch (err) {
+    } catch (_err) {
       setState(prev => ({
         ...prev,
         isLoadingProjects: false,
@@ -259,7 +259,7 @@ export function useProject(onFilesChange?: (files: FileSystem) => void): UseProj
       onFilesChange?.(project.files || {});
 
       return project;
-    } catch (err) {
+    } catch (_err) {
       setState(prev => ({ ...prev, error: 'Failed to create project' }));
       return null;
     }
@@ -339,10 +339,10 @@ export function useProject(onFilesChange?: (files: FileSystem) => void): UseProj
       }
 
       return { success: true, files: projectFiles, context: savedContext };
-    } catch (err) {
+    } catch (_err) {
       // Only handle error if this is still the current operation
       if (openProjectIdRef.current === id) {
-        console.error('[Project] Failed to open project:', err);
+        console.error('[Project] Failed to open project:', _err);
         // Re-enable syncing if open fails
         isInitializedRef.current = true;
         setState(prev => ({
@@ -403,7 +403,7 @@ export function useProject(onFilesChange?: (files: FileSystem) => void): UseProj
       }));
 
       return true;
-    } catch (err) {
+    } catch (_err) {
       setState(prev => ({ ...prev, error: 'Failed to delete project' }));
       return false;
     }
@@ -424,7 +424,7 @@ export function useProject(onFilesChange?: (files: FileSystem) => void): UseProj
         projects: [project, ...prev.projects.filter(p => p.id !== project.id)],
       }));
       return project;
-    } catch (err) {
+    } catch (_err) {
       setState(prev => ({ ...prev, error: 'Failed to duplicate project' }));
       return null;
     }
@@ -500,7 +500,7 @@ export function useProject(onFilesChange?: (files: FileSystem) => void): UseProj
         lastSyncedAt: Date.now(),
       }));
       return true;
-    } catch (err) {
+    } catch (_err) {
       setState(prev => ({
         ...prev,
         isSyncing: false,
@@ -561,8 +561,8 @@ export function useProject(onFilesChange?: (files: FileSystem) => void): UseProj
       }));
 
       return true;
-    } catch (err) {
-      console.error('[Project] initGit failed:', err);
+    } catch (_err) {
+      console.error('[Project] initGit failed:', _err);
       setState(prev => ({ ...prev, isSyncing: false, error: 'Failed to initialize git' }));
       return false;
     }
@@ -611,8 +611,8 @@ export function useProject(onFilesChange?: (files: FileSystem) => void): UseProj
 
       console.log('[Project] Commit complete!');
       return true;
-    } catch (err) {
-      console.error('[Project] Commit failed:', err);
+    } catch (_err) {
+      console.error('[Project] Commit failed:', _err);
       setState(prev => ({ ...prev, isSyncing: false, error: 'Failed to create commit' }));
       return false;
     }
@@ -630,8 +630,8 @@ export function useProject(onFilesChange?: (files: FileSystem) => void): UseProj
         ...prev,
         gitStatus,
       }));
-    } catch (err) {
-      console.error('[Project] Failed to refresh git status:', err);
+    } catch (_err) {
+      console.error('[Project] Failed to refresh git status:', _err);
       // On error, keep current gitStatus - don't reset to null
     }
   }, [state.currentProject]);
@@ -652,8 +652,8 @@ export function useProject(onFilesChange?: (files: FileSystem) => void): UseProj
       await projectApi.saveContext(state.currentProject.id, context);
       console.log('[Project] Saved context for project:', state.currentProject.name);
       return true;
-    } catch (err) {
-      console.error('[Project] Failed to save context:', err);
+    } catch (_err) {
+      console.error('[Project] Failed to save context:', _err);
       return false;
     }
   }, [state.currentProject]);
@@ -699,7 +699,7 @@ export function useProject(onFilesChange?: (files: FileSystem) => void): UseProj
       }));
       console.log('[Project] Force sync completed after confirmation');
       return true;
-    } catch (err) {
+    } catch (_err) {
       setState(prev => ({
         ...prev,
         isSyncing: false,

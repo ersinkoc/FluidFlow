@@ -20,7 +20,7 @@ interface ExtractionResult {
 
 export function extractFilesFromTruncatedResponse(
   response: string,
-  existingFiles: FileSystem = {}
+  _existingFiles: FileSystem = {}
 ): ExtractionResult {
   const result: ExtractionResult = {
     completeFiles: {},
@@ -78,7 +78,7 @@ export function extractFilesFromTruncatedResponse(
         return result;
       }
     }
-  } catch (e) {
+  } catch (_e) {
     // JSON parsing failed, continue with regex extraction
   }
 
@@ -254,7 +254,7 @@ function isFileComplete(content: string, filePath: string): boolean {
 }
 
 function checkJSXCompleteness(content: string): boolean {
-  const lines = content.split('\n');
+  const _lines = content.split('\n');
   let openBraces = 0;
   let openTags = 0;
   let inString = false;
@@ -294,9 +294,9 @@ function checkJSXCompleteness(content: string): boolean {
     } else if (char === '<' && i + 1 < content.length && content[i + 1] !== '/' && content[i + 1] !== '!' && content[i + 1] !== ' ') {
       // Opening tag
       let j = i + 1;
-      let tagName = '';
+      let _tagName = '';
       while (j < content.length && /[a-zA-Z]/.test(content[j])) {
-        tagName += content[j];
+        _tagName += content[j];
         j++;
       }
 
