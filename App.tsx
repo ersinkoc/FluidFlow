@@ -734,6 +734,16 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   } | null>(null);
   const [autoAcceptChanges, setAutoAcceptChanges] = useState(false); // false = show DiffModal, true = auto-apply (checkpoint saved either way)
 
+  // Diff Mode (Beta) - Token-efficient updates using unified diff format
+  const [diffModeEnabled, setDiffModeEnabled] = useState(() => {
+    return localStorage.getItem('diffModeEnabled') === 'true';
+  });
+
+  // Persist diffModeEnabled to localStorage
+  useEffect(() => {
+    localStorage.setItem('diffModeEnabled', String(diffModeEnabled));
+  }, [diffModeEnabled]);
+
   // Auto-checkpoint: save files to backend after each AI generation
   const saveCheckpoint = useCallback(async (filesToSave: FileSystem, label: string) => {
     if (!project.currentProject) {
@@ -965,6 +975,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             onOpenCodeMap={() => setIsCodeMapModalOpen(true)}
             autoAcceptChanges={autoAcceptChanges}
             onAutoAcceptChangesChange={setAutoAcceptChanges}
+            diffModeEnabled={diffModeEnabled}
+            onDiffModeChange={setDiffModeEnabled}
             // Project props
             currentProject={project.currentProject}
             projects={project.projects}

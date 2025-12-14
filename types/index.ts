@@ -312,3 +312,16 @@ export const DEFAULT_WEBCONTAINER_SETTINGS: WebContainerSettings = {
   scope: '',
   enabled: false,
 };
+
+// Diff Mode Types (Beta) - Token-efficient updates
+export interface DiffFileChange {
+  diff: string;        // Unified diff format OR full content for new files
+  isNew?: boolean;     // true = new file (diff contains full content)
+  isDeleted?: boolean; // true = file should be deleted
+}
+
+export interface DiffModeResponse {
+  explanation: string;
+  changes: Record<string, DiffFileChange>;
+  deletedFiles?: string[];
+}

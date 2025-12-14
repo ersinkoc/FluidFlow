@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, ChevronUp, ChevronDown, CheckCircle, AlertCircle, GraduationCap, Bug, Settings2, ChevronRight, History, X, Map, Package, Zap, SlidersHorizontal } from 'lucide-react';
+import { Settings, ChevronUp, ChevronDown, CheckCircle, AlertCircle, GraduationCap, Bug, Settings2, ChevronRight, History, X, Map, Package, Zap, SlidersHorizontal, GitBranch } from 'lucide-react';
 import { useDebugStore } from '../../hooks/useDebugStore';
 import { getProviderManager } from '../../services/ai';
 
@@ -18,6 +18,9 @@ interface SettingsPanelProps {
   onOpenTechStack?: () => void;
   autoAcceptChanges?: boolean;
   onAutoAcceptChangesChange?: (value: boolean) => void;
+  // Diff Mode (Beta)
+  diffModeEnabled?: boolean;
+  onDiffModeChange?: (value: boolean) => void;
   // Props for modal exclusivity
   shouldClose?: boolean;
   onClosed?: () => void;
@@ -36,6 +39,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onOpenTechStack,
   autoAcceptChanges = false,
   onAutoAcceptChangesChange,
+  diffModeEnabled = false,
+  onDiffModeChange,
   shouldClose,
   onClosed,
   onOpened
@@ -176,6 +181,34 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                       aria-checked={autoAcceptChanges}
                     >
                       <span className={`${autoAcceptChanges ? 'translate-x-4' : 'translate-x-1'} inline-block h-3 w-3 transform rounded-full bg-white transition-transform`} />
+                    </button>
+                  </div>
+                )}
+
+                {/* Diff Mode (Beta) - Token-efficient updates */}
+                {onDiffModeChange && (
+                  <div className="flex items-center justify-between p-2.5 hover:bg-white/5 rounded-lg transition-colors">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-1.5 bg-orange-500/10 rounded-lg">
+                        <GitBranch className="w-4 h-4 text-orange-400" />
+                      </div>
+                      <div>
+                        <span className="text-sm text-slate-200 font-medium block">
+                          Diff Mode
+                          <span className="ml-1.5 text-[9px] px-1 py-0.5 bg-orange-500/20 text-orange-400 rounded font-medium">BETA</span>
+                        </span>
+                        <span className="text-[10px] text-slate-500">Token-efficient updates</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => onDiffModeChange(!diffModeEnabled)}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                        diffModeEnabled ? 'bg-orange-600' : 'bg-slate-700'
+                      }`}
+                      role="switch"
+                      aria-checked={diffModeEnabled}
+                    >
+                      <span className={`${diffModeEnabled ? 'translate-x-4' : 'translate-x-1'} inline-block h-3 w-3 transform rounded-full bg-white transition-transform`} />
                     </button>
                   </div>
                 )}

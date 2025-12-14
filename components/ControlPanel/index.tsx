@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useImperativeHandle, forwardRef, useRef, useEffect } from 'react';
 import { Layers, RotateCcw, AlertTriangle, X, MessageSquare, FileCode, History, Settings, ChevronDown, SlidersHorizontal, Upload } from 'lucide-react';
 import { FileSystem, ChatMessage, ChatAttachment, FileChange } from '../../types';
-import { cleanGeneratedCode, parseMultiFileResponse, GenerationMeta, stripPlanComment, safeParseAIResponse } from '../../utils/cleanCode';
+import { cleanGeneratedCode, parseMultiFileResponse, GenerationMeta, stripPlanComment, safeParseAIResponse, parseDiffModeResponse, safeMergeDiffChanges } from '../../utils/cleanCode';
 import { extractFilesFromTruncatedResponse } from '../../utils/extractPartialFiles';
 
 // Helper function to extract file list from response
@@ -132,6 +132,9 @@ interface ControlPanelProps {
   onOpenCodeMap?: () => void;
   autoAcceptChanges?: boolean;
   onAutoAcceptChangesChange?: (value: boolean) => void;
+  // Diff Mode (Beta)
+  diffModeEnabled?: boolean;
+  onDiffModeChange?: (value: boolean) => void;
   // Project props
   currentProject?: ProjectMeta | null;
   projects?: ProjectMeta[];
@@ -197,6 +200,8 @@ export const ControlPanel = forwardRef<ControlPanelRef, ControlPanelProps>(({
   onOpenCodeMap,
   autoAcceptChanges,
   onAutoAcceptChangesChange,
+  diffModeEnabled,
+  onDiffModeChange,
   // Project props
   currentProject,
   projects = [],
@@ -1484,7 +1489,44 @@ Write a clear markdown explanation including:
 
           promptParts.push(`${codeContext}\n\n### Current Files Summary\n\`\`\`json\n${JSON.stringify(fileSummaries, null, 2)}\n\`\`\``);
           promptParts.push(`USER REQUEST: ${prompt || 'Refine the app based on the attached images.'}`);
-          systemInstruction += `\n\nYou are UPDATING an existing project. Use EFFICIENT file updates to save tokens:
+
+          // DIFF MODE (BETA) - Token-efficient updates using unified diff format
+          if (diffModeEnabled) {
+            systemInstruction += `\n\n**DIFF MODE ENABLED** - Return ONLY changed lines in unified diff format for maximum token efficiency.
+
+**RESPONSE FORMAT**:
+{
+  "explanation": "What changed and why",
+  "changes": {
+    "src/App.tsx": {
+      "diff": "--- src/App.tsx\\n+++ src/App.tsx\\n@@ -10,6 +10,7 @@\\n import { Header } from './components/Header';\\n+import { Sidebar } from './components/Sidebar';\\n \\n export default function App() {"
+    },
+    "src/components/NewFile.tsx": {
+      "isNew": true,
+      "diff": "// Full content for new files\\nimport React from 'react';\\n..."
+    }
+  },
+  "deletedFiles": ["src/old/Unused.tsx"]
+}
+
+**DIFF RULES**:
+- For MODIFIED files: Return unified diff with 3 lines context (like git diff)
+- For NEW files: Set "isNew": true and put full content in "diff" field
+- For DELETED files: Add path to "deletedFiles" array
+- NEVER include unchanged files
+- Use \\n for line breaks in diff strings (JSON escaped)
+
+**UNIFIED DIFF FORMAT**:
+--- filename
++++ filename
+@@ -startLine,count +startLine,count @@
+ context line (unchanged)
+-removed line
++added line
+ context line (unchanged)`;
+          } else {
+            // Standard full-file mode
+            systemInstruction += `\n\nYou are UPDATING an existing project. Use EFFICIENT file updates to save tokens:
 
 **FILE UPDATE STRATEGY**:
 - ONLY include files that actually need changes in your response
@@ -1507,6 +1549,7 @@ Write a clear markdown explanation including:
 }
 
 **TOKEN OPTIMIZATION**: Only send the files that need modifications. The system will merge your changes with the existing codebase.`;
+          }
         } else {
           promptParts.push(`TASK: Create a React app from this design. ${prompt ? `Additional context: ${prompt}` : ''}`);
         }
@@ -1735,75 +1778,144 @@ Write a clear markdown explanation including:
         }
 
         try {
-          // Use robust parser with truncation repair
-          const parseResult = parseMultiFileResponse(fullText);
-          if (!parseResult) {
-            throw new Error('Could not parse response - no valid file content found');
-          }
-
-          const explanation = parseResult.explanation || 'App generated successfully.';
-          const newFiles = parseResult.files;
-          const deletedFiles = parseResult.deletedFiles || [];
-
-          // Warn if response was truncated but we recovered
-          if (parseResult.truncated) {
-            console.warn('[Generation] Response was truncated but partially recovered');
-            setStreamingStatus('⚠️ Response truncated - showing recovered files');
-          }
-
-          // Log the efficiency (token savings)
-          if (deletedFiles.length > 0 || (existingApp && Object.keys(newFiles).length < Object.keys(files).length)) {
-            console.log(`🚀 Efficient update: Only ${Object.keys(newFiles).length} files modified, ${deletedFiles.length} deleted`);
-          }
-
-          debugLog.response('generation', {
-            id: genRequestId,
-            model: currentModel,
-            duration: Date.now() - genStartTime,
-            response: JSON.stringify({
-              explanation,
-              fileCount: Object.keys(newFiles).length,
-              deletedCount: deletedFiles.length,
-              files: Object.keys(newFiles),
-              deletedFiles
-            }),
-            metadata: {
-              mode: 'generator',
-              totalChunks: chunkCount,
-              totalChars: fullText.length,
-              provider: providerName,
-              efficientUpdate: existingApp && Object.keys(newFiles).length < Object.keys(files).length
-            }
-          });
-
-          // Clean code in each file
-          for (const [path, content] of Object.entries(newFiles)) {
-            if (typeof content === 'string') {
-              newFiles[path] = cleanGeneratedCode(content);
-            }
-          }
-
-          // For new projects, ensure we have src/App.tsx
-          if (!existingApp && !newFiles['src/App.tsx']) {
-            throw new Error('No src/App.tsx in response');
-          }
-
-          // Merge files efficiently
+          let explanation: string;
           let mergedFiles: Record<string, string>;
-          if (existingApp) {
-            // Start with existing files and apply updates
-            mergedFiles = { ...files };
+          let deletedFiles: string[] = [];
+          let newFiles: Record<string, string>;
+          let wasTruncated = false;
+          let generationMeta: GenerationMeta | undefined;
+          let continuation: { prompt: string; remainingFiles: string[]; currentBatch: number; totalBatches: number; } | undefined;
 
-            // Apply new/modified files
-            Object.assign(mergedFiles, newFiles);
+          // DIFF MODE (BETA) - Parse and merge diff-based response
+          if (diffModeEnabled && existingApp) {
+            console.log('[DiffMode] Parsing diff-based response...');
+            const diffResult = parseDiffModeResponse(fullText);
 
-            // Remove deleted files
-            for (const deletedPath of deletedFiles) {
-              delete mergedFiles[deletedPath];
+            if (!diffResult) {
+              console.warn('[DiffMode] Failed to parse diff response, falling back to full mode');
+              // Fallback to standard parsing
+              const fallbackResult = parseMultiFileResponse(fullText);
+              if (!fallbackResult) {
+                throw new Error('Could not parse response - no valid file content found');
+              }
+              explanation = fallbackResult.explanation || 'App updated successfully.';
+              newFiles = fallbackResult.files;
+              deletedFiles = fallbackResult.deletedFiles || [];
+              mergedFiles = { ...files, ...newFiles };
+              for (const deletedPath of deletedFiles) {
+                delete mergedFiles[deletedPath];
+              }
+            } else {
+              // Successfully parsed diff mode response
+              explanation = diffResult.explanation || 'Changes applied successfully.';
+              deletedFiles = diffResult.deletedFiles || [];
+
+              // Use safe merge with detailed error reporting
+              const mergeResult = safeMergeDiffChanges(files, diffResult);
+
+              if (!mergeResult.success) {
+                console.warn('[DiffMode] Some diffs failed to apply:', mergeResult.errors);
+                setStreamingStatus(`⚠️ ${mergeResult.stats.failed} diff(s) failed to apply`);
+              }
+
+              mergedFiles = mergeResult.files;
+              newFiles = {}; // For diff mode, changes are in mergedFiles
+
+              // Log diff mode efficiency
+              console.log(`🔥 [DiffMode] Efficient update: ${mergeResult.stats.created} created, ${mergeResult.stats.updated} updated, ${mergeResult.stats.deleted} deleted`);
+
+              debugLog.response('generation', {
+                id: genRequestId,
+                model: currentModel,
+                duration: Date.now() - genStartTime,
+                response: JSON.stringify({
+                  explanation,
+                  mode: 'diff',
+                  stats: mergeResult.stats,
+                  errors: mergeResult.errors
+                }),
+                metadata: {
+                  mode: 'diff-mode',
+                  totalChunks: chunkCount,
+                  totalChars: fullText.length,
+                  provider: providerName,
+                  diffStats: mergeResult.stats
+                }
+              });
             }
           } else {
-            // New project - just use generated files
-            mergedFiles = newFiles;
+            // Standard full-file mode parsing
+            const parseResult = parseMultiFileResponse(fullText);
+            if (!parseResult) {
+              throw new Error('Could not parse response - no valid file content found');
+            }
+
+            explanation = parseResult.explanation || 'App generated successfully.';
+            newFiles = parseResult.files;
+            deletedFiles = parseResult.deletedFiles || [];
+            wasTruncated = parseResult.truncated || false;
+            generationMeta = parseResult.generationMeta;
+            continuation = parseResult.continuation;
+
+            // Warn if response was truncated but we recovered
+            if (wasTruncated) {
+              console.warn('[Generation] Response was truncated but partially recovered');
+              setStreamingStatus('⚠️ Response truncated - showing recovered files');
+            }
+
+            // Log the efficiency (token savings)
+            if (deletedFiles.length > 0 || (existingApp && Object.keys(newFiles).length < Object.keys(files).length)) {
+              console.log(`🚀 Efficient update: Only ${Object.keys(newFiles).length} files modified, ${deletedFiles.length} deleted`);
+            }
+
+            debugLog.response('generation', {
+              id: genRequestId,
+              model: currentModel,
+              duration: Date.now() - genStartTime,
+              response: JSON.stringify({
+                explanation,
+                fileCount: Object.keys(newFiles).length,
+                deletedCount: deletedFiles.length,
+                files: Object.keys(newFiles),
+                deletedFiles
+              }),
+              metadata: {
+                mode: 'generator',
+                totalChunks: chunkCount,
+                totalChars: fullText.length,
+                provider: providerName,
+                efficientUpdate: existingApp && Object.keys(newFiles).length < Object.keys(files).length
+              }
+            });
+
+            // Clean code in each file
+            for (const [path, content] of Object.entries(newFiles)) {
+              if (typeof content === 'string') {
+                newFiles[path] = cleanGeneratedCode(content);
+              }
+            }
+
+            // For new projects, ensure we have src/App.tsx
+            if (!existingApp && !newFiles['src/App.tsx']) {
+              throw new Error('No src/App.tsx in response');
+            }
+
+            // Merge files efficiently
+            if (existingApp) {
+              // Start with existing files and apply updates
+              mergedFiles = { ...files };
+
+              // Apply new/modified files
+              Object.assign(mergedFiles, newFiles);
+
+              // Remove deleted files
+              for (const deletedPath of deletedFiles) {
+                delete mergedFiles[deletedPath];
+              }
+            } else {
+              // New project - just use generated files
+              mergedFiles = newFiles;
+            }
           }
 
           const fileChanges = calculateFileChanges(files, mergedFiles);
@@ -1859,7 +1971,7 @@ Write a clear markdown explanation including:
           }
 
           // Check for smart continuation (generationMeta from AI response)
-          const genMeta = parseResult.generationMeta;
+          const genMeta = generationMeta;
           if (genMeta && !genMeta.isComplete && genMeta.remainingFiles.length > 0) {
             // Multi-batch generation detected - start continuation
             console.log('[Generation] Multi-batch generation detected:', {
@@ -1913,7 +2025,7 @@ Write a clear markdown explanation including:
             responseChunks: chunkCount,
             durationMs: Date.now() - genStartTime,
             success: true,
-            truncated: parseResult.truncated,
+            truncated: wasTruncated,
             filesGenerated: Object.keys(newFiles),
             explanation
           });
@@ -1932,7 +2044,7 @@ Write a clear markdown explanation including:
             model: currentModel,
             provider: providerName,
             generationTime: Date.now() - genStartTime,
-            continuation: parseResult.continuation,
+            continuation: continuation,
             tokenUsage: createTokenUsage(streamResponse?.usage, prompt, fullText, newFiles)
           };
 
@@ -2856,6 +2968,8 @@ Fix the error in src/App.tsx.`;
         onOpenAIHistory={() => setShowAIHistory(true)}
         autoAcceptChanges={autoAcceptChanges}
         onAutoAcceptChangesChange={onAutoAcceptChangesChange}
+        diffModeEnabled={diffModeEnabled}
+        onDiffModeChange={onDiffModeChange}
         shouldClose={openModal === 'projects' || openModal === 'techstack'}
         onClosed={() => handleModalClose('settings')}
         onOpened={() => handleModalOpen('settings')}
