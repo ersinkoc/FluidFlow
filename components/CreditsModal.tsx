@@ -283,11 +283,14 @@ export const CreditsModal: React.FC<CreditsModalProps> = ({ isOpen, onClose, sho
                             alt={currentProject.name}
                             className="w-full h-full object-cover"
                             onError={(e) => {
-                              // Fallback to emoji if image fails to load
+                              // BUG-002 FIX: Use safe DOM manipulation instead of innerHTML
                               const target = e.target as HTMLImageElement;
                               target.style.display = 'none';
                               if (target.parentElement) {
-                                target.parentElement.innerHTML = `<span class="text-3xl">📦</span>`;
+                                const fallback = document.createElement('span');
+                                fallback.className = 'text-3xl';
+                                fallback.textContent = '📦';
+                                target.parentElement.appendChild(fallback);
                               }
                             }}
                           />

@@ -21,19 +21,58 @@ const escapeHtml = (text: string): string => {
   return text.replace(/[&<>"']/g, char => htmlEntities[char]);
 };
 
-// BUG-009 fix: Sanitize URL to prevent javascript: protocol XSS
-// BUG-011 fix: Also block data:image/svg+xml which can contain embedded JavaScript
+// BUG-003/014/015 FIX: Comprehensive URL sanitization to prevent XSS
+// Decodes URL-encoded characters and blocks all dangerous protocols
 const sanitizeUrl = (url: string): string => {
-  const trimmed = url.trim().toLowerCase();
-  // Block dangerous protocols
-  if (trimmed.startsWith('javascript:') ||
-      trimmed.startsWith('vbscript:') ||
-      trimmed.startsWith('data:text/html') ||
-      trimmed.startsWith('data:image/svg+xml') ||  // SVG can contain <script> tags
-      trimmed.startsWith('data:application/')) {   // Block application/* data URIs
+  try {
+    // First, decode URL-encoded characters to catch encoded attacks like %6a%61%76%61%73%63%72%69%70%74:
+    let decoded = url;
+    try {
+      // Multiple decode passes to catch double-encoding attacks
+      let prev = '';
+      while (prev !== decoded) {
+        prev = decoded;
+        decoded = decodeURIComponent(decoded);
+      }
+    } catch {
+      // If decoding fails, use original (might be malformed)
+    }
+
+    const trimmed = decoded.trim().toLowerCase();
+
+    // Remove null bytes and control characters that could bypass checks
+    // eslint-disable-next-line no-control-regex -- Intentionally filtering control chars for security
+    const sanitized = trimmed.replace(/[\x00-\x1f\x7f]/g, '');
+
+    // Block dangerous protocols - comprehensive list
+    const dangerousProtocols = [
+      'javascript:',
+      'vbscript:',
+      'data:text/html',
+      'data:image/svg',      // SVG can contain <script> tags (catch svg+xml and svg;)
+      'data:application/',   // Block application/* data URIs
+      'data:text/xml',       // XML can contain scripts
+      'file:',               // Block local file access
+      'about:',              // Block about: URIs
+    ];
+
+    for (const protocol of dangerousProtocols) {
+      if (sanitized.startsWith(protocol)) {
+        return '#blocked-unsafe-url';
+      }
+    }
+
+    // Additional check: ensure URL doesn't have suspicious patterns after protocol
+    // This catches things like "java\x00script:" or "java\nscript:"
+    if (/^\s*j\s*a\s*v\s*a\s*s\s*c\s*r\s*i\s*p\s*t\s*:/i.test(decoded)) {
+      return '#blocked-unsafe-url';
+    }
+
+    return url;
+  } catch {
+    // If any error occurs, block the URL for safety
     return '#blocked-unsafe-url';
   }
-  return url;
 };
 
 // Simple markdown to HTML parser

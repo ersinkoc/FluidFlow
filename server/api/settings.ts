@@ -22,6 +22,86 @@ if (!existsSync(SETTINGS_DIR)) {
 
 // SET-001/SET-002 fix: Validation constants for settings
 const MAX_PROVIDERS = 50;
+
+// BUG-004 FIX: Mask sensitive API keys before sending to client
+// Shows first 4 and last 4 characters with masked middle
+function maskApiKey(key: string | undefined): string | undefined {
+  if (!key || key.length < 12) {
+    return key ? '****' : undefined;
+  }
+  const prefix = key.substring(0, 4);
+  const suffix = key.substring(key.length - 4);
+  return `${prefix}****${suffix}`;
+}
+
+// Create a safe version of provider config with masked API key
+function maskProviderConfig(provider: ProviderConfig): ProviderConfig {
+  return {
+    ...provider,
+    apiKey: maskApiKey(provider.apiKey)
+  };
+}
+
+// BUG-011 FIX: Validate baseUrl to prevent SSRF attacks
+function isValidBaseUrl(url: string | undefined): boolean {
+  if (!url) return true; // baseUrl is optional
+
+  try {
+    const parsed = new URL(url);
+
+    // Only allow HTTPS (or HTTP for localhost dev)
+    if (!['https:', 'http:'].includes(parsed.protocol)) {
+      return false;
+    }
+
+    // Block localhost and internal IPs (except for local AI providers)
+    const hostname = parsed.hostname.toLowerCase();
+
+    // Allow known AI provider domains
+    const allowedDomains = [
+      'api.openai.com',
+      'api.anthropic.com',
+      'generativelanguage.googleapis.com',
+      'openrouter.ai',
+      'api.openrouter.ai',
+      // Local AI providers (allowed for localhost)
+      'localhost',
+      '127.0.0.1',
+    ];
+
+    // Check if domain is in allowed list or is a subdomain of allowed domains
+    const isAllowed = allowedDomains.some(domain =>
+      hostname === domain || hostname.endsWith('.' + domain)
+    );
+
+    if (isAllowed) return true;
+
+    // Block internal/private IP ranges for non-localhost
+    const blockedPatterns = [
+      /^10\./,                           // 10.0.0.0/8
+      /^172\.(1[6-9]|2\d|3[01])\./,      // 172.16.0.0/12
+      /^192\.168\./,                     // 192.168.0.0/16
+      /^0\./,                            // 0.0.0.0/8
+      /^169\.254\./,                     // Link-local
+      /^\[?::1\]?$/,                     // IPv6 localhost
+      /^\[?fe80:/i,                      // IPv6 link-local
+      /\.local$/i,                       // mDNS local
+      /\.internal$/i,                    // Internal domains
+    ];
+
+    for (const pattern of blockedPatterns) {
+      if (pattern.test(hostname)) {
+        return false;
+      }
+    }
+
+    // Allow other HTTPS URLs (custom AI endpoints)
+    return parsed.protocol === 'https:';
+  } catch {
+    return false; // Invalid URL format
+  }
+}
+
 const MAX_SNIPPETS = 200;
 const MAX_SNIPPET_CODE_LENGTH = 100000; // 100KB per snippet
 const MAX_SNIPPET_NAME_LENGTH = 200;
@@ -229,11 +309,16 @@ async function saveSettings(settings: GlobalSettings): Promise<void> {
 
 // ============ SETTINGS API ============
 
-// Get all settings
+// Get all settings (BUG-004 FIX: mask API keys in response)
 router.get('/', async (req, res) => {
   try {
     const settings = await loadSettings();
-    res.json(settings);
+    // Mask API keys before sending to client
+    const safeSettings = {
+      ...settings,
+      aiProviders: settings.aiProviders.map(maskProviderConfig)
+    };
+    res.json(safeSettings);
   } catch (error) {
     console.error('Get settings error:', error);
     res.status(500).json({ error: 'Failed to get settings' });
@@ -272,6 +357,10 @@ router.put('/', async (req, res) => {
         if (typeof provider.name === 'string' && provider.name.length > MAX_PROVIDER_NAME_LENGTH) {
           return res.status(400).json({ error: `Provider name too long (max ${MAX_PROVIDER_NAME_LENGTH} chars)` });
         }
+        // BUG-011 FIX: Validate baseUrl to prevent SSRF
+        if (provider.baseUrl && !isValidBaseUrl(provider.baseUrl)) {
+          return res.status(400).json({ error: 'Invalid provider base URL' });
+        }
       }
     }
 
@@ -295,12 +384,12 @@ router.put('/', async (req, res) => {
 
 // ============ AI PROVIDERS ============
 
-// Get AI providers
+// Get AI providers (BUG-004 FIX: mask API keys in response)
 router.get('/ai-providers', async (req, res) => {
   try {
     const settings = await loadSettings();
     res.json({
-      providers: settings.aiProviders,
+      providers: settings.aiProviders.map(maskProviderConfig),
       activeId: settings.activeProviderId
     });
   } catch (error) {
@@ -329,6 +418,10 @@ router.put('/ai-providers', async (req, res) => {
         }
         if (typeof provider.name === 'string' && provider.name.length > MAX_PROVIDER_NAME_LENGTH) {
           return res.status(400).json({ error: `Provider name too long (max ${MAX_PROVIDER_NAME_LENGTH} chars)` });
+        }
+        // BUG-011 FIX: Validate baseUrl to prevent SSRF
+        if (provider.baseUrl && !isValidBaseUrl(provider.baseUrl)) {
+          return res.status(400).json({ error: 'Invalid provider base URL' });
         }
       }
     }

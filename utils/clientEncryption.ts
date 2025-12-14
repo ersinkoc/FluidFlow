@@ -15,8 +15,8 @@ const SALT_LENGTH = 16;
 const SECRET_KEY = 'fluidflow_encryption_secret';
 const ENCRYPTED_PREFIX = 'encrypted:';
 
-// Cache the derived key
-const _cachedKey: CryptoKey | null = null;
+// BUG-024 FIX: Removed unused _cachedKey variable
+// Cache the secret (key caching happens per-operation due to salt)
 let cachedSecret: string | null = null;
 
 /**

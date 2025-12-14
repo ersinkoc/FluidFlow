@@ -26,9 +26,10 @@ export function safeJsonStringify(obj: unknown, fallback: string = '{}'): string
     return fallback;
   }
 
-  // Handle BigInt directly at top level
+  // BUG-021 FIX: Handle BigInt directly at top level
+  // Return quoted string directly instead of double-stringifying
   if (typeof obj === 'bigint') {
-    return JSON.stringify(obj.toString());
+    return `"${obj.toString()}"`;
   }
 
   try {

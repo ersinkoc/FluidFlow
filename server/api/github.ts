@@ -204,16 +204,17 @@ router.post('/:id/push', rateLimitMiddleware, async (req, res) => {
       branch: currentBranch
     });
   } catch (error: unknown) {
+    // BUG-005 FIX: Log full error server-side, return sanitized message to client
     console.error('Push error:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     // Check for authentication error
     if (errorMessage.includes('Authentication') || errorMessage.includes('403')) {
       return res.status(401).json({
-        error: 'Authentication failed. Make sure you have configured git credentials or use a personal access token.',
-        details: errorMessage
+        error: 'Authentication failed. Make sure you have configured git credentials or use a personal access token.'
+        // Removed: details field that exposed internal error messages
       });
     }
-    res.status(500).json({ error: 'Failed to push', details: errorMessage });
+    res.status(500).json({ error: 'Failed to push to remote repository' });
   }
 });
 
@@ -241,9 +242,9 @@ router.post('/:id/pull', async (req, res) => {
       summary: result.summary
     });
   } catch (error: unknown) {
+    // BUG-005 FIX: Log full error server-side, return sanitized message to client
     console.error('Pull error:', error);
-    const details = error instanceof Error ? error.message : String(error);
-    res.status(500).json({ error: 'Failed to pull', details });
+    res.status(500).json({ error: 'Failed to pull from remote repository' });
   }
 });
 
@@ -268,9 +269,9 @@ router.post('/:id/fetch', async (req, res) => {
 
     res.json({ message: `Fetched from ${remote}` });
   } catch (error: unknown) {
+    // BUG-005 FIX: Log full error server-side, return sanitized message to client
     console.error('Fetch error:', error);
-    const details = error instanceof Error ? error.message : String(error);
-    res.status(500).json({ error: 'Failed to fetch', details });
+    res.status(500).json({ error: 'Failed to fetch from remote repository' });
   }
 });
 
@@ -366,9 +367,9 @@ router.post('/clone', rateLimitMiddleware, async (req, res) => {
       project: meta
     });
   } catch (error: unknown) {
+    // BUG-005 FIX: Log full error server-side, return sanitized message to client
     console.error('Clone error:', error);
-    const details = error instanceof Error ? error.message : String(error);
-    res.status(500).json({ error: 'Failed to clone repository', details });
+    res.status(500).json({ error: 'Failed to clone repository' });
   }
 });
 
@@ -469,14 +470,14 @@ router.post('/:id/create-repo', rateLimitMiddleware, async (req, res) => {
       }
     });
   } catch (error: unknown) {
+    // BUG-005 FIX: Log full error server-side, return sanitized message to client
     console.error('Create repo error:', error);
-    const details = error instanceof Error ? error.message : String(error);
-    res.status(500).json({ error: 'Failed to create repository', details });
+    res.status(500).json({ error: 'Failed to create GitHub repository' });
   }
 });
 
-// Verify GitHub token
-router.post('/verify-token', async (req, res) => {
+// Verify GitHub token (BUG-001 FIX: Add rate limiting to prevent credential stuffing)
+router.post('/verify-token', rateLimitMiddleware, async (req, res) => {
   try {
     const { token } = req.body;
 

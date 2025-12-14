@@ -254,7 +254,7 @@ function isFileComplete(content: string, filePath: string): boolean {
 }
 
 function checkJSXCompleteness(content: string): boolean {
-  const _lines = content.split('\n');
+  // BUG-023 FIX: Removed unused _lines variable
   let openBraces = 0;
   let openTags = 0;
   let inString = false;
