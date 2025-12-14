@@ -859,6 +859,32 @@ export function parseDiffModeResponse(response: string): DiffModeResponse | null
 }
 
 /**
+ * Unescapes JSON-escaped newlines and other characters in diff content.
+ * AI often returns diffs with \\n instead of actual newlines.
+ */
+function unescapeDiffContent(diff: string): string {
+  return diff
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\r/g, '\r')
+    .replace(/\\\\/g, '\\');
+}
+
+/**
+ * Checks if content looks like a unified diff format.
+ */
+function isUnifiedDiffFormat(content: string): boolean {
+  // Must have @@ hunk markers
+  if (!content.includes('@@')) return false;
+
+  // Should have --- and/or +++ file markers, or at least +/- lines
+  const hasFileMarkers = content.includes('---') || content.includes('+++');
+  const hasChangeLines = /^[+-][^+-]/m.test(content);
+
+  return hasFileMarkers || hasChangeLines;
+}
+
+/**
  * Applies a unified diff patch to the original content.
  * Returns the patched content or null if patch failed.
  */
@@ -866,26 +892,40 @@ export function applyUnifiedDiff(originalContent: string, diffPatch: string): st
   try {
     // Normalize line endings
     const normalizedOriginal = originalContent.replace(/\r\n/g, '\n');
-    const normalizedPatch = diffPatch.replace(/\r\n/g, '\n');
+
+    // Unescape JSON-escaped characters (AI often returns \\n instead of \n)
+    let normalizedPatch = unescapeDiffContent(diffPatch);
+    normalizedPatch = normalizedPatch.replace(/\r\n/g, '\n');
+
+    console.log('[applyUnifiedDiff] Checking diff format:', {
+      hasHunkMarkers: normalizedPatch.includes('@@'),
+      hasFileMarkers: normalizedPatch.includes('---') || normalizedPatch.includes('+++'),
+      firstLines: normalizedPatch.split('\n').slice(0, 5).join(' | ')
+    });
 
     // Check if this looks like a unified diff
-    const isUnifiedDiff = normalizedPatch.includes('@@') &&
-                          (normalizedPatch.includes('---') || normalizedPatch.includes('+++'));
-
-    if (!isUnifiedDiff) {
-      // Not a diff, might be full content - return as-is
+    if (!isUnifiedDiffFormat(normalizedPatch)) {
       console.log('[applyUnifiedDiff] Content is not unified diff format, returning as full content');
       return normalizedPatch;
     }
+
+    console.log('[applyUnifiedDiff] Applying unified diff patch...');
 
     // Apply the patch using the diff library
     const result = applyPatch(normalizedOriginal, normalizedPatch);
 
     if (result === false) {
-      console.warn('[applyUnifiedDiff] Patch application failed');
+      console.warn('[applyUnifiedDiff] Patch application failed - diff library returned false');
+      // Try with fuzzFactor for more lenient matching
+      const fuzzyResult = applyPatch(normalizedOriginal, normalizedPatch, { fuzzFactor: 3 });
+      if (fuzzyResult !== false) {
+        console.log('[applyUnifiedDiff] Patch applied with fuzz factor');
+        return fuzzyResult;
+      }
       return null;
     }
 
+    console.log('[applyUnifiedDiff] Patch applied successfully');
     return result;
   } catch (e) {
     console.error('[applyUnifiedDiff] Error applying patch:', e);
@@ -1020,30 +1060,68 @@ export function safeMergeDiffChanges(
       continue;
     }
 
-    const isNewFile = change.isNew || !currentFiles[filePath];
+    // Unescape the diff content first (AI often returns \\n instead of \n)
+    const unescapedDiff = change.diff
+      .replace(/\\n/g, '\n')
+      .replace(/\\t/g, '\t')
+      .replace(/\\r/g, '\r')
+      .replace(/\\\\/g, '\\');
 
-    if (isNewFile) {
-      const cleanedContent = cleanGeneratedCode(change.diff);
+    // Check if content is actually a unified diff format
+    const looksLikeDiff = isUnifiedDiffFormat(unescapedDiff);
+    const fileExists = !!currentFiles[filePath];
+
+    console.log(`[safeMergeDiffChanges] Processing ${filePath}:`, {
+      isNew: change.isNew,
+      fileExists,
+      looksLikeDiff,
+      diffPreview: unescapedDiff.substring(0, 100)
+    });
+
+    // Decision logic:
+    // 1. If file doesn't exist -> create new file (use content as-is)
+    // 2. If file exists AND content is diff format -> apply diff
+    // 3. If file exists AND content is NOT diff format AND isNew -> replace file
+    // 4. If file exists AND content is NOT diff format AND NOT isNew -> treat as full replacement
+
+    if (!fileExists) {
+      // New file - use content directly
+      const cleanedContent = cleanGeneratedCode(unescapedDiff);
       if (cleanedContent && cleanedContent.length >= 10) {
         result.files[filePath] = cleanedContent;
         result.stats.created++;
+        console.log(`[safeMergeDiffChanges] Created new file: ${filePath}`);
       } else {
         result.errors.push(`Invalid content for new file: ${filePath}`);
         result.stats.failed++;
       }
-    } else {
-      const patched = applyUnifiedDiff(currentFiles[filePath], change.diff);
+    } else if (looksLikeDiff) {
+      // Existing file with diff content - apply the diff
+      console.log(`[safeMergeDiffChanges] Applying diff to existing file: ${filePath}`);
+      const patched = applyUnifiedDiff(currentFiles[filePath], unescapedDiff);
       if (patched !== null) {
         const cleanedPatched = cleanGeneratedCode(patched);
         if (cleanedPatched && cleanedPatched.length >= 10) {
           result.files[filePath] = cleanedPatched;
           result.stats.updated++;
+          console.log(`[safeMergeDiffChanges] Successfully patched: ${filePath}`);
         } else {
           result.errors.push(`Invalid patched content for: ${filePath}`);
           result.stats.failed++;
         }
       } else {
         result.errors.push(`Diff apply failed for: ${filePath}`);
+        result.stats.failed++;
+      }
+    } else {
+      // Existing file with full content (not diff) - replace the file
+      console.log(`[safeMergeDiffChanges] Replacing file with full content: ${filePath}`);
+      const cleanedContent = cleanGeneratedCode(unescapedDiff);
+      if (cleanedContent && cleanedContent.length >= 10) {
+        result.files[filePath] = cleanedContent;
+        result.stats.updated++;
+      } else {
+        result.errors.push(`Invalid replacement content for: ${filePath}`);
         result.stats.failed++;
       }
     }
