@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
-  FolderOpen, Plus, Trash2, Copy, Clock, GitBranch, Cloud, CloudOff,
-  X, Search, MoreVertical, Check, AlertCircle, RefreshCw, FolderPlus, Loader2
+  FolderOpen, Plus, Trash2, Copy, Clock, GitBranch, CloudOff, RefreshCw,
+  Search, MoreVertical, Check, AlertCircle, FolderPlus, Loader2
 } from 'lucide-react';
 import type { ProjectMeta } from '@/services/projectApi';
+import { BaseModal, ConfirmModal } from './shared/BaseModal';
 
 interface ProjectManagerProps {
   isOpen: boolean;
@@ -120,58 +121,18 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     }
   }, [menuOpenId]);
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-2xl max-h-[80vh] flex flex-col bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-500/20 rounded-xl">
-              <FolderOpen className="w-5 h-5 text-blue-400" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-white">Projects</h2>
-              <p className="text-xs text-slate-400">
-                {projects.length} project{projects.length !== 1 ? 's' : ''}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* Server status */}
-            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs ${
-              isServerOnline
-                ? 'bg-emerald-500/10 text-emerald-400'
-                : 'bg-red-500/10 text-red-400'
-            }`}>
-              {isServerOnline ? (
-                <Cloud className="w-3.5 h-3.5" />
-              ) : (
-                <CloudOff className="w-3.5 h-3.5" />
-              )}
-              {isServerOnline ? 'Online' : 'Offline'}
-            </div>
-
-            {/* Refresh */}
-            <button
-              onClick={onRefresh}
-              disabled={isLoading}
-              className="p-2 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-            </button>
-
-            {/* Close */}
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
+    <>
+      <BaseModal
+        isOpen={isOpen}
+        onClose={onClose}
+        title="Projects"
+        subtitle={`${projects.length} project${projects.length !== 1 ? 's' : ''}`}
+        icon={<FolderOpen className="w-5 h-5 text-blue-400" />}
+        size="lg"
+        maxHeight="max-h-[80vh]"
+        zIndex="z-50"
+      >
 
         {/* Search and Create */}
         <div className="flex items-center gap-3 px-6 py-3 border-b border-white/5">
@@ -186,6 +147,16 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
               className="w-full pl-10 pr-4 py-2 bg-slate-800/50 border border-white/10 rounded-lg text-sm text-white placeholder-slate-500 outline-none focus:border-blue-500/50 transition-colors"
             />
           </div>
+
+          {/* Refresh Button */}
+          <button
+            onClick={onRefresh}
+            disabled={isLoading}
+            className="p-2 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-colors disabled:opacity-50"
+            title="Refresh projects"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
 
           {/* New Project Button */}
           <button
@@ -372,45 +343,22 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
           )}
         </div>
 
-        {/* Delete Confirmation Modal */}
-        {deleteConfirmId && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div className="bg-slate-900 border border-white/10 rounded-xl p-6 max-w-sm mx-4 animate-in zoom-in-95">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-red-500/20 rounded-lg">
-                  <AlertCircle className="w-5 h-5 text-red-400" />
-                </div>
-                <h3 className="text-lg font-semibold text-white">Delete Project?</h3>
-              </div>
-              <p className="text-sm text-slate-400 mb-6">
-                This will permanently delete the project and all its files.
-                This action cannot be undone.
-              </p>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => handleDelete(deleteConfirmId)}
-                  disabled={actionLoading === deleteConfirmId}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  {actionLoading === deleteConfirmId ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="w-4 h-4" />
-                  )}
-                  Delete
-                </button>
-                <button
-                  onClick={() => setDeleteConfirmId(null)}
-                  className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+      </BaseModal>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!deleteConfirmId}
+        onClose={() => setDeleteConfirmId(null)}
+        onConfirm={() => deleteConfirmId && handleDelete(deleteConfirmId)}
+        title="Delete Project?"
+        message="This will permanently delete the project and all its files. This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+        icon={<AlertCircle className="w-5 h-5 text-red-400" />}
+        isLoading={!!deleteConfirmId && actionLoading === deleteConfirmId}
+      />
+    </>
   );
 };
 

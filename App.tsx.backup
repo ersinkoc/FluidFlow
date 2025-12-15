@@ -1,0 +1,1119 @@
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { safeJsonParse } from './utils/safeJson';
+import {
+  AUTO_SAVE_INTERVAL_MS,
+  WIP_SAVE_DEBOUNCE_MS,
+  CREDITS_MODAL_DELAY_MS,
+  IGNORED_PATHS,
+} from '@/constants';
+import { getWIP, saveWIP, clearWIP, createWIPData } from '@/services/wipStorage';
+import { ControlPanel, ControlPanelRef } from './components/ControlPanel';
+import { PreviewPanel } from './components/PreviewPanel';
+import { CommandPalette } from './components/CommandPalette';
+import { SnippetsPanel } from './components/SnippetsPanel';
+import { TailwindPalette } from './components/TailwindPalette';
+import { ComponentTree } from './components/ComponentTree';
+import { DeployModal } from './components/DeployModal';
+import { ShareModal, loadProjectFromUrl } from './components/ShareModal';
+import { AISettingsModal } from './components/AISettingsModal';
+import { MegaSettingsModal } from './components/MegaSettingsModal';
+import { HistoryPanel } from './components/HistoryPanel';
+import { ProjectManager } from './components/ProjectManager';
+import { SyncConfirmationDialog } from './components/SyncConfirmationDialog';
+import { CreditsModal } from './components/CreditsModal';
+import { CodeMapModal } from './components/ControlPanel/CodeMapModal';
+import { DiffModal } from './components/DiffModal';
+// Keyboard shortcuts disabled due to browser conflicts
+// import { useKeyboardShortcuts, KeyboardShortcut } from './hooks/useKeyboardShortcuts';
+import { useVersionHistory } from './hooks/useVersionHistory';
+import { useProject } from './hooks/useProject';
+import { useModalManager } from './hooks/useModalManager';
+import { Undo2, Redo2, History, ChevronLeft, ChevronRight, Info } from 'lucide-react';
+import { FileSystem, TabType } from './types';
+import { InspectedElement, EditScope } from './components/PreviewPanel/ComponentInspector';
+import { gitApi, projectApi } from './services/projectApi';
+import { getContextManager } from './services/conversationContext';
+
+// Re-export types for backwards compatibility
+export type { FileSystem } from './types';
+
+// Files/folders to ignore in virtual file system display
+// IGNORED_PATHS imported from @/constants
+const isIgnoredPath = (filePath: string): boolean => {
+  return IGNORED_PATHS.some(pattern =>
+    filePath === pattern ||
+    filePath.startsWith(pattern) ||
+    filePath.startsWith('.git/') ||
+    filePath.includes('/.git/') ||
+    filePath.includes('/node_modules/')
+  );
+};
+
+export default function App() {
+  const defaultFiles: FileSystem = {
+    'package.json': JSON.stringify({
+      name: "fluidflow-app",
+      version: "1.0.0",
+      private: true,
+      type: "module",
+      scripts: {
+        dev: "vite",
+        build: "vite build",
+        preview: "vite preview"
+      },
+      dependencies: {
+        "react": "^18.3.0",
+        "react-dom": "^18.3.0",
+        "lucide-react": "^0.400.0"
+      },
+      devDependencies: {
+        "@vitejs/plugin-react": "^4.3.0",
+        "vite": "^5.4.0",
+        "typescript": "^5.5.0",
+        "@types/react": "^18.3.0",
+        "@types/react-dom": "^18.3.0",
+        "@types/node": "^20.0.0",
+        "tailwindcss": "^3.4.0",
+        "postcss": "^8.4.0",
+        "autoprefixer": "^10.4.0"
+      }
+    }, null, 2),
+    'vite.config.ts': `import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import path from 'path'
+
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+      'src': path.resolve(__dirname, './src')
+    }
+  }
+})`,
+    'tsconfig.json': JSON.stringify({
+      compilerOptions: {
+        target: "ES2020",
+        useDefineForClassFields: true,
+        lib: ["ES2020", "DOM", "DOM.Iterable"],
+        module: "ESNext",
+        skipLibCheck: true,
+        moduleResolution: "bundler",
+        allowImportingTsExtensions: true,
+        resolveJsonModule: true,
+        isolatedModules: true,
+        noEmit: true,
+        jsx: "react-jsx",
+        strict: true,
+        baseUrl: ".",
+        paths: {
+          "@/*": ["src/*"],
+          "src/*": ["src/*"]
+        }
+      },
+      include: ["src"]
+    }, null, 2),
+    'tailwind.config.js': `export default {
+  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
+  theme: { extend: {} },
+  plugins: []
+}`,
+    'postcss.config.js': `export default {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {}
+  }
+}`,
+    'index.html': `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FluidFlow App</title>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+</html>`,
+    'src/main.tsx': `import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App'
+import './index.css'
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+)`,
+    'src/index.css': `@tailwind base;
+@tailwind components;
+@tailwind utilities;`,
+    'src/App.tsx': `export default function App() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center">
+      <div className="text-center">
+        <h1 className="text-4xl font-bold text-white mb-4">Welcome to FluidFlow</h1>
+        <p className="text-slate-400">Upload a sketch to get started</p>
+      </div>
+    </div>
+  )
+}`
+  };
+
+  // Backend project management
+  const project = useProject();
+
+  // Local version history (undo/redo) - works independently of backend
+  const {
+    files, setFiles, undo, redo, canUndo, canRedo, reset: resetFiles,
+    history, currentIndex, goToIndex, saveSnapshot, historyLength,
+    exportHistory, restoreHistory
+  } = useVersionHistory(project.currentProject ? project.files : defaultFiles);
+
+  const [activeFile, setActiveFile] = useState<string>('src/App.tsx');
+  const activeFileRef = useRef(activeFile);
+  const [activeTab, setActiveTab] = useState<TabType>('preview');
+
+  // Keep activeFileRef updated to avoid stale closure in handleDiscardChanges
+  useEffect(() => {
+    activeFileRef.current = activeFile;
+  }, [activeFile]);
+
+  // Track if we've synced files from backend on initial load
+  const hasInitializedFromBackend = useRef(false);
+  const lastProjectIdRef = useRef<string | null>(null);
+  // Guard against rapid project switching race conditions
+  const isSwitchingProjectRef = useRef(false);
+
+  // CRITICAL: When project is restored from backend, check WIP first, then reset version history
+  // WIP (uncommitted changes) survives page refresh via IndexedDB
+  useEffect(() => {
+    const currentId = project.currentProject?.id ?? null;
+
+    // Reset flag when project changes (including switching between projects)
+    if (currentId !== lastProjectIdRef.current) {
+      hasInitializedFromBackend.current = false;
+      lastProjectIdRef.current = currentId;
+    }
+
+    // Only sync from backend if:
+    // 1. Project is initialized
+    // 2. We have a current project
+    // 3. We haven't already synced for this project
+    if (project.isInitialized && project.currentProject && !hasInitializedFromBackend.current) {
+      hasInitializedFromBackend.current = true;
+      // Capture project id before async function to satisfy TypeScript null check
+      const currentProjectId = project.currentProject.id;
+
+      // Check for WIP (uncommitted changes) in IndexedDB first
+      const restoreWithWIP = async () => {
+        try {
+          const wip = await getWIP(currentProjectId);
+
+          // Store last committed files for comparison
+          lastCommittedFilesRef.current = JSON.stringify(project.files);
+
+          if (wip && wip.files && Object.keys(wip.files).length > 0) {
+            // WIP exists - restore uncommitted changes
+            console.log('[App] Restoring WIP from IndexedDB:', Object.keys(wip.files).length, 'files');
+            resetFiles(wip.files);
+            setHasUncommittedChanges(true); // Mark as having uncommitted changes
+
+            // Restore UI state from WIP
+            if (wip.activeFile && wip.files[wip.activeFile]) {
+              setActiveFile(wip.activeFile);
+            }
+            if (wip.activeTab) {
+              setActiveTab(wip.activeTab as TabType);
+            }
+          } else {
+            // No WIP - use backend files (last committed state)
+            const backendFileCount = Object.keys(project.files).length;
+            if (backendFileCount > 0) {
+              console.log('[App] Initializing from backend (no WIP):', backendFileCount, 'files');
+              resetFiles(project.files);
+            }
+            setHasUncommittedChanges(false);
+          }
+        } catch (err) {
+          console.warn('[App] Failed to check WIP, falling back to backend:', err);
+          const backendFileCount = Object.keys(project.files).length;
+          if (backendFileCount > 0) {
+            resetFiles(project.files);
+          }
+          lastCommittedFilesRef.current = JSON.stringify(project.files);
+          setHasUncommittedChanges(false);
+        }
+      };
+
+      restoreWithWIP();
+    }
+    // Note: resetFiles is intentionally excluded - it's a stable hook function
+    // Including project.currentProject would cause infinite loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.isInitialized, project.currentProject?.id, project.files]);
+
+  // GIT-CENTRIC SYNC: Files only sync to backend on COMMIT
+  // No auto-sync - prevents race conditions and data loss
+  // WIP (Work In Progress) is saved to IndexedDB for page refresh survival
+
+  // Save WIP to IndexedDB when files change & track uncommitted changes
+  useEffect(() => {
+    if (!project.currentProject || !hasInitializedFromBackend.current) return;
+    // Capture project id before async function to satisfy TypeScript null check
+    const currentProjectId = project.currentProject.id;
+
+    const fileCount = Object.keys(files).length;
+    if (fileCount === 0) return;
+
+    // Check if files have changed from last committed state
+    const currentFilesJson = JSON.stringify(files);
+    const hasChanges = lastCommittedFilesRef.current !== '' &&
+                       currentFilesJson !== lastCommittedFilesRef.current;
+    setHasUncommittedChanges(hasChanges);
+
+    // Save WIP to IndexedDB (async, non-blocking) using wipStorage service
+    const doSaveWIP = async () => {
+      try {
+        const wipData = createWIPData(currentProjectId, files, activeFile, activeTab);
+        await saveWIP(wipData);
+        console.log('[App] WIP saved to IndexedDB');
+      } catch (err) {
+        console.warn('[App] Failed to save WIP:', err);
+      }
+    };
+
+    // Debounce WIP saves (uses WIP_SAVE_DEBOUNCE_MS from constants)
+    const timeout = setTimeout(doSaveWIP, WIP_SAVE_DEBOUNCE_MS);
+    return () => clearTimeout(timeout);
+    // Note: project.currentProject is accessed via ?. for id - full object would cause loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [files, activeFile, activeTab, project.currentProject?.id]);
+
+  // Auto-save context (version history, UI state) on beforeunload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (project.currentProject) {
+        const { history: historyToSave, currentIndex: indexToSave } = exportHistory();
+        // Use navigator.sendBeacon for reliable save on page unload
+        const data = JSON.stringify({
+          history: historyToSave,
+          currentIndex: indexToSave,
+          activeFile,
+          activeTab,
+        });
+        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3200/api';
+        navigator.sendBeacon(
+          `${apiBase}/projects/${project.currentProject.id}/context`,
+          new Blob([data], { type: 'application/json' })
+        );
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    // Note: project.currentProject access via ?. for id only
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.currentProject?.id, activeFile, activeTab, exportHistory]);
+
+  // Periodic auto-save of context (uses AUTO_SAVE_INTERVAL_MS from constants)
+  useEffect(() => {
+    if (!project.currentProject) return;
+
+    const interval = setInterval(async () => {
+      const { history: historyToSave, currentIndex: indexToSave } = exportHistory();
+      if (historyToSave.length > 1) { // Only save if there's actual history
+        await project.saveContext({
+          history: historyToSave,
+          currentIndex: indexToSave,
+          activeFile,
+          activeTab,
+        });
+      }
+    }, AUTO_SAVE_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+    // Note: project object is stable, only id changes matter
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.currentProject?.id, activeFile, activeTab, exportHistory, project.saveContext]);
+
+  // Load project from URL if present (for shared projects)
+  useEffect(() => {
+    const urlProject = loadProjectFromUrl();
+    if (urlProject && Object.keys(urlProject).length > 0) {
+      setFiles(urlProject);
+      // Select first src file
+      const firstSrc = Object.keys(urlProject).find(f => f.startsWith('src/'));
+      if (firstSrc) setActiveFile(firstSrc);
+    }
+    // Note: setFiles is a stable setter from useState, runs once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Check if first visit and show credits
+  useEffect(() => {
+    const hasVisited = localStorage.getItem('fluidflow-visited');
+    if (!hasVisited) {
+      // Mark as visited
+      localStorage.setItem('fluidflow-visited', 'true');
+      // Show credits modal after a short delay (uses CREDITS_MODAL_DELAY_MS from constants)
+      setTimeout(() => {
+        modals.open('credits');
+      }, CREDITS_MODAL_DELAY_MS);
+    }
+  }, []);
+
+  const [suggestions, setSuggestions] = useState<string[] | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [resetKey, setResetKey] = useState(0);
+  const [selectedModel, setSelectedModel] = useState('models/gemini-2.5-flash');
+  const selectedModelRef = useRef(selectedModel);
+
+  // Keep ref updated to avoid stale closure in handleModelChange
+  useEffect(() => {
+    selectedModelRef.current = selectedModel;
+  }, [selectedModel]);
+
+  // Handle model/provider change - also clears conversation context
+  // Uses ref to avoid recreating callback when model changes (prevents unnecessary re-renders)
+  const handleModelChange = useCallback((newModel: string) => {
+    if (newModel !== selectedModelRef.current) {
+      setSelectedModel(newModel);
+      // Clear the main chat context when model changes
+      const contextManager = getContextManager();
+      contextManager.clearContext('main-chat');
+      console.log('[App] Model changed, context cleared:', newModel);
+    }
+  }, []);
+
+  // Track uncommitted changes (WIP)
+  const [hasUncommittedChanges, setHasUncommittedChanges] = useState(false);
+  const lastCommittedFilesRef = useRef<string>('');
+
+  // Calculate local changes for display in GitPanel
+  const localChanges = useMemo(() => {
+    if (!hasUncommittedChanges || !lastCommittedFilesRef.current) return [];
+
+    try {
+      const committedFiles = safeJsonParse(lastCommittedFilesRef.current, {} as FileSystem);
+      const changes: { path: string; status: 'added' | 'modified' | 'deleted' }[] = [];
+
+      // Check for added or modified files
+      Object.keys(files).forEach(path => {
+        if (isIgnoredPath(path)) return;
+        if (!committedFiles[path]) {
+          changes.push({ path, status: 'added' });
+        } else if (committedFiles[path] !== files[path]) {
+          changes.push({ path, status: 'modified' });
+        }
+      });
+
+      // Check for deleted files
+      Object.keys(committedFiles).forEach(path => {
+        if (isIgnoredPath(path)) return;
+        if (!files[path]) {
+          changes.push({ path, status: 'deleted' });
+        }
+      });
+
+      return changes;
+    } catch {
+      return [];
+    }
+  }, [files, hasUncommittedChanges]);
+
+  // Centralized modal state management
+  const modals = useModalManager();
+  const [megaSettingsInitialCategory, _setMegaSettingsInitialCategory] = useState<'ai-providers' | 'context-manager' | 'tech-stack' | 'projects' | 'editor' | 'appearance' | 'debug' | 'shortcuts' | 'advanced'>('ai-providers');
+
+  // ControlPanel ref for inspect edit handler
+  const controlPanelRef = useRef<ControlPanelRef>(null);
+
+  // Handler for inspect edit from PreviewPanel
+  const handleInspectEdit = useCallback(async (prompt: string, element: InspectedElement, scope: EditScope) => {
+    if (controlPanelRef.current) {
+      await controlPanelRef.current.handleInspectEdit(prompt, element, scope);
+    }
+  }, []);
+
+  // Diff Review State
+  const [pendingReview, setPendingReview] = useState<{
+     label: string;
+     newFiles: FileSystem;
+  } | null>(null);
+  const [autoAcceptChanges, setAutoAcceptChanges] = useState(false); // false = show DiffModal, true = auto-apply (checkpoint saved either way)
+
+  // Diff Mode (Beta) - Token-efficient updates using unified diff format
+  const [diffModeEnabled, setDiffModeEnabled] = useState(() => {
+    return localStorage.getItem('diffModeEnabled') === 'true';
+  });
+
+  // Persist diffModeEnabled to localStorage
+  useEffect(() => {
+    localStorage.setItem('diffModeEnabled', String(diffModeEnabled));
+  }, [diffModeEnabled]);
+
+  // Auto-checkpoint: save files to backend after each AI generation
+  const saveCheckpoint = useCallback(async (filesToSave: FileSystem, label: string) => {
+    if (!project.currentProject) {
+      console.log('[Checkpoint] No current project, skipping checkpoint');
+      return;
+    }
+
+    const fileCount = Object.keys(filesToSave).length;
+    if (fileCount === 0) {
+      console.log('[Checkpoint] No files to save, skipping checkpoint');
+      return;
+    }
+
+    try {
+      console.log(`[Checkpoint] Saving ${fileCount} files (${label})...`);
+      await projectApi.update(project.currentProject.id, { files: filesToSave, force: true });
+      console.log(`[Checkpoint] Saved successfully`);
+    } catch (err) {
+      console.error('[Checkpoint] Failed to save:', err);
+    }
+  }, [project.currentProject]);
+
+  const reviewChange = (label: string, newFiles: FileSystem) => {
+     console.log(`[ReviewChange] Called with label: "${label}", autoAccept: ${autoAcceptChanges}, files: ${Object.keys(newFiles).length}`);
+
+     if (autoAcceptChanges) {
+        // Auto-accept: apply changes directly without showing modal
+        console.log('[ReviewChange] Auto-accept mode - applying changes with checkpoint');
+        // Pass label to setFiles - this creates a history entry (checkpoint) automatically!
+        setFiles(newFiles, label);
+
+        // If the active file was deleted in the new state, reset it
+        if (!newFiles[activeFile]) {
+           const firstSrc = Object.keys(newFiles).find(f => f.startsWith('src/'));
+           setActiveFile(firstSrc || 'package.json');
+        }
+
+        // Also save to backend (if project exists)
+        saveCheckpoint(newFiles, label);
+     } else {
+        // Show review modal - checkpoint will be saved when user confirms
+        console.log('[ReviewChange] Manual mode - showing DiffModal');
+        setPendingReview({ label, newFiles });
+     }
+  };
+
+  const confirmChange = () => {
+     if (pendingReview) {
+        console.log(`[ConfirmChange] User confirmed changes: "${pendingReview.label}", files: ${Object.keys(pendingReview.newFiles).length}`);
+        // Pass label to setFiles - this creates a history entry (checkpoint) automatically!
+        setFiles(pendingReview.newFiles, pendingReview.label);
+
+        // If the active file was deleted in the new state, reset it
+        if (!pendingReview.newFiles[activeFile]) {
+             const firstSrc = Object.keys(pendingReview.newFiles).find(f => f.startsWith('src/'));
+             setActiveFile(firstSrc || 'package.json');
+        }
+
+        // Also save to backend (if project exists)
+        saveCheckpoint(pendingReview.newFiles, pendingReview.label);
+
+        setPendingReview(null);
+     }
+  };
+
+  const resetApp = () => {
+    resetFiles(defaultFiles);
+    setActiveFile('src/App.tsx');
+    setSuggestions(null);
+    setIsGenerating(false);
+    setResetKey(prev => prev + 1);
+  };
+
+  // Command Palette actions
+  const handleCommandAction = useCallback((action: string) => {
+    switch (action) {
+      case 'toggle-preview':
+        setActiveTab((prev: TabType) => prev === 'preview' ? 'code' : 'preview');
+        break;
+      case 'reset':
+        resetApp();
+        break;
+      case 'snippets':
+        modals.open('snippetsPanel');
+        break;
+      case 'tailwind':
+        modals.open('tailwindPalette');
+        break;
+      case 'component-tree':
+        modals.open('componentTree');
+        break;
+      case 'deploy':
+        modals.open('deploy');
+        break;
+      case 'share':
+        modals.open('share');
+        break;
+      case 'ai-settings':
+        modals.open('aiSettings');
+        break;
+      case 'settings':
+        modals.open('megaSettings');
+        break;
+      case 'undo':
+        if (canUndo) undo();
+        break;
+      case 'redo':
+        if (canRedo) redo();
+        break;
+      case 'history':
+        modals.open('history');
+        break;
+      case 'projects':
+        modals.open('projectManager');
+        break;
+      case 'git':
+        setActiveTab('git');
+        break;
+      case 'save-project':
+        project.syncFiles();
+        break;
+      // Other actions handled by child components
+    }
+    // Note: resetApp is a stable function, modals methods are stable from useCallback
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canUndo, canRedo, undo, redo, project, modals]);
+
+  // Keyboard shortcuts - DISABLED due to browser conflicts
+  // Commenting out the useMemo to avoid unnecessary computation since shortcuts aren't used
+  // const shortcuts: KeyboardShortcut[] = useMemo(() => [...], [deps]);
+  // useKeyboardShortcuts(shortcuts);
+
+  // Discard all uncommitted changes and restore from last commit
+  // Uses activeFileRef to avoid stale closure issues during async operation
+  const handleDiscardChanges = useCallback(async () => {
+    if (!project.currentProject) return;
+
+    try {
+      // Get last committed state
+      if (lastCommittedFilesRef.current) {
+        const committedFiles = safeJsonParse(lastCommittedFilesRef.current, {} as FileSystem);
+
+        // Restore files to last committed state
+        resetFiles(committedFiles);
+
+        // Clear WIP from IndexedDB
+        await clearWIP(project.currentProject.id);
+
+        // Reset uncommitted changes flag
+        setHasUncommittedChanges(false);
+
+        // Reset active file if it was deleted (use ref to get current value)
+        if (!committedFiles[activeFileRef.current]) {
+          const firstSrc = Object.keys(committedFiles).find(f => f.startsWith('src/'));
+          setActiveFile(firstSrc || 'package.json');
+        }
+
+        console.log('[App] Discarded changes, restored from last commit');
+      }
+    } catch (err) {
+      console.error('[App] Failed to discard changes:', err);
+    }
+  }, [project.currentProject, resetFiles]);
+
+  // Revert to a specific commit
+  const handleRevertToCommit = useCallback(async (commitHash: string): Promise<boolean> => {
+    if (!project.currentProject) return false;
+
+    try {
+      // 1. Checkout to the commit on backend
+      await gitApi.checkout(project.currentProject.id, commitHash);
+
+      // 2. Reload files from backend (they've been reverted on disk)
+      const result = await projectApi.get(project.currentProject.id);
+      if (result.files) {
+        resetFiles(result.files);
+
+        // Update last committed files ref
+        lastCommittedFilesRef.current = JSON.stringify(result.files);
+      }
+
+      // 3. Clear WIP
+      await clearWIP(project.currentProject.id);
+      setHasUncommittedChanges(false);
+
+      // 4. Refresh git status
+      await project.refreshGitStatus();
+
+      // 5. Reset active file if needed
+      if (result.files && !result.files[activeFile]) {
+        const firstSrc = Object.keys(result.files).find(f => f.startsWith('src/'));
+        setActiveFile(firstSrc || 'package.json');
+      }
+
+      console.log('[App] Reverted to commit:', commitHash);
+      return true;
+    } catch (err) {
+      console.error('[App] Failed to revert to commit:', err);
+      return false;
+    }
+    // Note: project properties are accessed individually, full object would cause loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.currentProject, activeFile, resetFiles, project.refreshGitStatus]);
+
+  return (
+    <div className="fixed inset-0 flex flex-col bg-[#020617] text-white overflow-hidden selection:bg-blue-500/30 selection:text-blue-50">
+       {/* Background Ambient Effects */}
+       <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-blue-600/10 rounded-full blur-[120px] pointer-events-none" />
+       <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none" />
+       <div className="absolute top-[40%] left-[40%] w-[30%] h-[30%] bg-purple-600/5 rounded-full blur-[100px] pointer-events-none" />
+
+       <main className="flex flex-col md:flex-row flex-1 min-h-0 w-full p-4 gap-4 z-10 overflow-hidden">
+          <ControlPanel
+            ref={controlPanelRef}
+            key={resetKey}
+            resetApp={resetApp}
+            files={files}
+            setFiles={setFiles}
+            activeFile={activeFile}
+            setActiveFile={setActiveFile}
+            setSuggestions={setSuggestions}
+            isGenerating={isGenerating}
+            setIsGenerating={setIsGenerating}
+            reviewChange={reviewChange}
+            selectedModel={selectedModel}
+            onModelChange={handleModelChange}
+            onOpenAISettings={() => modals.open('aiSettings')}
+            onOpenMegaSettings={() => modals.open('megaSettings')}
+            onOpenCodeMap={() => modals.open('codeMap')}
+            autoAcceptChanges={autoAcceptChanges}
+            onAutoAcceptChangesChange={setAutoAcceptChanges}
+            diffModeEnabled={diffModeEnabled}
+            onDiffModeChange={setDiffModeEnabled}
+            // Project props
+            currentProject={project.currentProject}
+            projects={project.projects}
+            isServerOnline={project.isServerOnline}
+            isSyncing={project.isSyncing}
+            lastSyncedAt={project.lastSyncedAt}
+            isLoadingProjects={project.isLoadingProjects}
+            // Git status props
+            gitStatus={project.gitStatus}
+            hasUncommittedChanges={hasUncommittedChanges}
+            onOpenGitTab={() => setActiveTab('git')}
+            // History Timeline checkpoint
+            onSaveCheckpoint={saveSnapshot}
+            onCreateProject={async (name, description) => {
+              return await project.createProject(name, description, files);
+            }}
+            onOpenProject={async (id) => {
+              // Guard against rapid project switching race conditions
+              if (isSwitchingProjectRef.current) {
+                console.log('[App] Project switch already in progress, ignoring');
+                return false;
+              }
+              isSwitchingProjectRef.current = true;
+
+              try {
+                // 1. Save current project's full context before switching
+                if (project.currentProject) {
+                  const { history: historyToSave, currentIndex: indexToSave } = exportHistory();
+                  await project.saveContext({
+                    history: historyToSave,
+                    currentIndex: indexToSave,
+                    activeFile,
+                    activeTab,
+                  });
+                }
+
+                // 2. Open new project - this returns files directly!
+                const result = await project.openProject(id);
+
+              if (result.success) {
+                // 3. Check for WIP (uncommitted changes) in IndexedDB
+                const wip = await getWIP(id);
+                let currentFiles = result.files;
+                let restoredFromWIP = false;
+
+                if (wip && wip.files && Object.keys(wip.files).length > 0) {
+                  // WIP exists - use WIP files (uncommitted changes)
+                  console.log('[App] Restoring WIP from IndexedDB:', Object.keys(wip.files).length, 'files');
+                  currentFiles = wip.files;
+                  resetFiles(wip.files);
+                  restoredFromWIP = true;
+
+                  // Restore WIP UI state
+                  if (wip.activeFile && wip.files[wip.activeFile]) {
+                    setActiveFile(wip.activeFile);
+                  }
+                  if (wip.activeTab) {
+                    setActiveTab(wip.activeTab as TabType);
+                  }
+                } else if (result.context?.history && result.context.history.length > 0) {
+                  // No WIP, restore from saved history
+                  restoreHistory(result.context.history, result.context.currentIndex);
+                  const currentHistoryEntry = result.context.history[result.context.currentIndex];
+                  if (currentHistoryEntry?.files) {
+                    currentFiles = currentHistoryEntry.files;
+                  }
+                } else {
+                  // No WIP, no history - use backend files
+                  resetFiles(result.files);
+                }
+
+                // 4. Restore UI context (if not restored from WIP)
+                if (!restoredFromWIP) {
+                  if (result.context?.activeFile && currentFiles[result.context.activeFile]) {
+                    setActiveFile(result.context.activeFile);
+                  } else {
+                    const firstSrc = Object.keys(currentFiles).find(f => f.startsWith('src/'));
+                    setActiveFile(firstSrc || 'package.json');
+                  }
+
+                  if (result.context?.activeTab) {
+                    setActiveTab(result.context.activeTab as TabType);
+                  }
+                }
+
+                // 5. Reset other transient state
+                setSuggestions(null);
+                setPendingReview(null);
+
+                console.log('[App] Switched to project with', Object.keys(currentFiles).length, 'files', restoredFromWIP ? '(from WIP)' : '(from backend)');
+              }
+              return result.success;
+              } finally {
+                isSwitchingProjectRef.current = false;
+              }
+            }}
+            onDeleteProject={project.deleteProject}
+            onDuplicateProject={project.duplicateProject}
+            onRefreshProjects={project.refreshProjects}
+            onCloseProject={project.closeProject}
+          />
+          <PreviewPanel
+            files={files}
+            setFiles={setFiles}
+            activeFile={activeFile}
+            setActiveFile={setActiveFile}
+            suggestions={suggestions}
+            setSuggestions={setSuggestions}
+            isGenerating={isGenerating}
+            reviewChange={reviewChange}
+            selectedModel={selectedModel}
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            onInspectEdit={handleInspectEdit}
+            // Git props
+            projectId={project.currentProject?.id}
+            gitStatus={project.gitStatus}
+            onInitGit={async (force?: boolean) => {
+              // Pass current working files to initGit
+              const success = await project.initGit(force, files);
+              if (success && project.currentProject) {
+                // Clear WIP after successful git init (first commit is made)
+                await clearWIP(project.currentProject.id);
+                // Update last committed state
+                lastCommittedFilesRef.current = JSON.stringify(files);
+                setHasUncommittedChanges(false);
+                console.log('[App] WIP cleared after git init');
+              }
+              return success;
+            }}
+            onCommit={async (message: string) => {
+              // Pass current working files to commit (not stale state.files)
+              const success = await project.commit(message, files);
+              if (success && project.currentProject) {
+                // Clear WIP after successful commit
+                await clearWIP(project.currentProject.id);
+                // Update last committed state
+                lastCommittedFilesRef.current = JSON.stringify(files);
+                setHasUncommittedChanges(false);
+                console.log('[App] WIP cleared after commit');
+              }
+              return success;
+            }}
+            onRefreshGitStatus={project.refreshGitStatus}
+            // Local changes (WIP)
+            hasUncommittedChanges={hasUncommittedChanges}
+            localChanges={localChanges}
+            onDiscardChanges={handleDiscardChanges}
+            onRevertToCommit={handleRevertToCommit}
+            onSendErrorToChat={(error) => controlPanelRef.current?.sendErrorToChat(error)}
+          />
+       </main>
+
+       {/* Diff Modal */}
+       {pendingReview && (
+          <DiffModal
+             originalFiles={files}
+             newFiles={pendingReview.newFiles}
+             label={pendingReview.label}
+             onConfirm={confirmChange}
+             onCancel={() => setPendingReview(null)}
+          />
+       )}
+
+       {/* Sync Confirmation Dialog */}
+       {project.pendingSyncConfirmation && (
+          <SyncConfirmationDialog
+             confirmation={project.pendingSyncConfirmation}
+             onConfirm={project.confirmPendingSync}
+             onCancel={project.cancelPendingSync}
+             isLoading={project.isSyncing}
+          />
+       )}
+
+       {/* Command Palette */}
+       <CommandPalette
+         isOpen={modals.state.commandPalette}
+         onClose={() => modals.close('commandPalette')}
+         files={files}
+         activeFile={activeFile}
+         onFileSelect={(file: string) => {
+           setActiveFile(file);
+           setActiveTab('code');
+         }}
+         onAction={handleCommandAction}
+       />
+
+       {/* Snippets Panel */}
+       <SnippetsPanel
+         isOpen={modals.state.snippetsPanel}
+         onClose={() => modals.close('snippetsPanel')}
+         onInsert={(code: string) => {
+           // Insert code at the end of the active file
+           if (activeFile && files[activeFile]) {
+             const newContent = files[activeFile] + '\n\n' + code;
+             setFiles({ ...files, [activeFile]: newContent });
+             setActiveTab('code');
+           }
+         }}
+       />
+
+       {/* Tailwind Palette */}
+       <TailwindPalette
+         isOpen={modals.state.tailwindPalette}
+         onClose={() => modals.close('tailwindPalette')}
+         onInsert={(className: string) => {
+           navigator.clipboard.writeText(className);
+         }}
+       />
+
+       {/* Component Tree */}
+       <ComponentTree
+         isOpen={modals.state.componentTree}
+         onClose={() => modals.close('componentTree')}
+         files={files}
+         onFileSelect={(file: string) => {
+           setActiveFile(file);
+           setActiveTab('code');
+         }}
+       />
+
+       {/* Deploy Modal */}
+       <DeployModal
+         isOpen={modals.state.deploy}
+         onClose={() => modals.close('deploy')}
+         files={files}
+       />
+
+       {/* Share Modal */}
+       <ShareModal
+         isOpen={modals.state.share}
+         onClose={() => modals.close('share')}
+         files={files}
+       />
+
+       {/* AI Settings Modal */}
+       <AISettingsModal
+         isOpen={modals.state.aiSettings}
+         onClose={() => modals.close('aiSettings')}
+         onProviderChange={(providerId, modelId) => handleModelChange(modelId)}
+       />
+
+       {/* Mega Settings Modal */}
+       <MegaSettingsModal
+         isOpen={modals.state.megaSettings}
+         onClose={() => modals.close('megaSettings')}
+         initialCategory={megaSettingsInitialCategory}
+         onProviderChange={(providerId, modelId) => handleModelChange(modelId)}
+       />
+
+       {/* Floating History Toolbar */}
+       <div className={`fixed bottom-6 z-50 flex items-center gap-1 bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-xl p-1 shadow-2xl transition-all duration-300 ${modals.state.history ? 'right-[21rem]' : 'right-6'}`}>
+         {/* Undo */}
+         <button
+           onClick={undo}
+           disabled={!canUndo}
+           className={`p-2 rounded-lg transition-all ${
+             canUndo
+               ? 'hover:bg-white/10 text-white'
+               : 'text-slate-600 cursor-not-allowed'
+           }`}
+           title="Undo (Ctrl+Z)"
+         >
+           <Undo2 className="w-4 h-4" />
+         </button>
+
+         {/* Position Indicator */}
+         <button
+           onClick={() => modals.toggle('history')}
+           className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors group"
+           title="History Timeline (Ctrl+Shift+H)"
+         >
+           <ChevronLeft
+             className={`w-3.5 h-3.5 text-slate-500 group-hover:text-blue-400 transition-colors ${!canUndo ? 'opacity-30' : ''}`}
+           />
+           <span className="text-xs font-mono text-slate-400 group-hover:text-white transition-colors min-w-[3rem] text-center">
+             {currentIndex + 1} / {historyLength}
+           </span>
+           <ChevronRight
+             className={`w-3.5 h-3.5 text-slate-500 group-hover:text-blue-400 transition-colors ${!canRedo ? 'opacity-30' : ''}`}
+           />
+         </button>
+
+         {/* Redo */}
+         <button
+           onClick={redo}
+           disabled={!canRedo}
+           className={`p-2 rounded-lg transition-all ${
+             canRedo
+               ? 'hover:bg-white/10 text-white'
+               : 'text-slate-600 cursor-not-allowed'
+           }`}
+           title="Redo (Ctrl+Y)"
+         >
+           <Redo2 className="w-4 h-4" />
+         </button>
+
+         <div className="w-px h-5 bg-white/10" />
+
+         {/* History Panel Toggle */}
+         <button
+           onClick={() => modals.toggle('history')}
+           className={`p-2 rounded-lg transition-all ${
+             modals.state.history
+               ? 'bg-blue-500/20 text-blue-400'
+               : 'hover:bg-white/10 text-slate-400 hover:text-white'
+           }`}
+           title="History Timeline (Ctrl+Shift+H)"
+         >
+           <History className="w-4 h-4" />
+         </button>
+
+         <div className="w-px h-5 bg-white/10" />
+
+         {/* Credits */}
+         <button
+           onClick={() => modals.open('credits')}
+           className="p-2 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-all"
+           title="About FluidFlow"
+         >
+           <Info className="w-4 h-4" />
+         </button>
+       </div>
+
+       {/* History Panel */}
+       <HistoryPanel
+         isOpen={modals.state.history}
+         onClose={() => modals.close('history')}
+         history={history}
+         currentIndex={currentIndex}
+         onGoToIndex={goToIndex}
+         onSaveSnapshot={saveSnapshot}
+       />
+
+       {/* Project Manager */}
+       <ProjectManager
+         isOpen={modals.state.projectManager}
+         onClose={() => modals.close('projectManager')}
+         projects={project.projects}
+         currentProjectId={project.currentProject?.id}
+         isLoading={project.isLoadingProjects}
+         isServerOnline={project.isServerOnline}
+         onCreateProject={async (name, description) => {
+           const newProject = await project.createProject(name, description, files);
+           if (newProject) {
+             modals.close('projectManager');
+           }
+         }}
+         onOpenProject={async (id) => {
+           // Guard against rapid project switching race conditions
+           if (isSwitchingProjectRef.current) {
+             console.log('[App] Project switch already in progress, ignoring');
+             return;
+           }
+           isSwitchingProjectRef.current = true;
+
+           try {
+             // 1. Save current project's full context before switching
+             if (project.currentProject) {
+               const { history: historyToSave, currentIndex: indexToSave } = exportHistory();
+               await project.saveContext({
+                 history: historyToSave,
+                 currentIndex: indexToSave,
+                 activeFile,
+                 activeTab,
+               });
+             }
+
+             // 2. Open new project
+             const result = await project.openProject(id);
+
+             if (result.success) {
+               // 3. Check if we have saved history to restore
+               let currentFiles = result.files;
+               if (result.context?.history && result.context.history.length > 0) {
+                 // Restore full version history from backend
+                 restoreHistory(result.context.history, result.context.currentIndex);
+                 // Get files from the current history entry
+                 const currentHistoryEntry = result.context.history[result.context.currentIndex];
+                 if (currentHistoryEntry?.files) {
+                   currentFiles = currentHistoryEntry.files;
+                 }
+               } else {
+                 // No saved history, reset to initial state
+                 resetFiles(result.files);
+               }
+
+               // 4. Restore UI context
+               if (result.context?.activeFile && currentFiles[result.context.activeFile]) {
+                 setActiveFile(result.context.activeFile);
+               } else {
+                 const firstSrc = Object.keys(currentFiles).find(f => f.startsWith('src/'));
+                 setActiveFile(firstSrc || 'package.json');
+               }
+
+               if (result.context?.activeTab) {
+                 setActiveTab(result.context.activeTab as TabType);
+               }
+
+               // 5. Reset transient state
+               setSuggestions(null);
+               setPendingReview(null);
+               modals.close('projectManager');
+             }
+           } finally {
+             isSwitchingProjectRef.current = false;
+           }
+         }}
+         onDeleteProject={async (id: string) => { await project.deleteProject(id); }}
+         onDuplicateProject={async (id: string) => { await project.duplicateProject(id); }}
+         onRefresh={project.refreshProjects}
+       />
+
+       {/* Credits Modal */}
+       <CreditsModal
+         isOpen={modals.state.credits}
+         onClose={() => modals.close('credits')}
+         showOnFirstLaunch={true}
+       />
+
+       {/* CodeMap Modal */}
+       <CodeMapModal
+         isOpen={modals.state.codeMap}
+         onClose={() => modals.close('codeMap')}
+         files={files}
+       />
+
+    </div>
+  );
+}

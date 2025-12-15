@@ -80,6 +80,8 @@ export interface AppContextValue {
   setSelectedModel: (model: string) => void;
   autoAcceptChanges: boolean;
   setAutoAcceptChanges: (accept: boolean) => void;
+  diffModeEnabled: boolean;
+  setDiffModeEnabled: (enabled: boolean) => void;
 
   // Diff/Review
   pendingReview: { label: string; newFiles: FileSystem } | null;
@@ -210,6 +212,14 @@ export function AppProvider({ children, defaultFiles }: AppProviderProps) {
   const [suggestions, setSuggestions] = useState<string[] | null>(null);
   const [selectedModel, setSelectedModel] = useState('models/gemini-2.5-flash');
   const [autoAcceptChanges, setAutoAcceptChanges] = useState(false);
+  const [diffModeEnabled, setDiffModeEnabled] = useState(() => {
+    return localStorage.getItem('diffModeEnabled') === 'true';
+  });
+
+  // Persist diffModeEnabled to localStorage
+  useEffect(() => {
+    localStorage.setItem('diffModeEnabled', String(diffModeEnabled));
+  }, [diffModeEnabled]);
 
   // Track uncommitted changes (WIP)
   const [hasUncommittedChanges, setHasUncommittedChanges] = useState(false);
@@ -577,6 +587,8 @@ export function AppProvider({ children, defaultFiles }: AppProviderProps) {
     setSelectedModel,
     autoAcceptChanges,
     setAutoAcceptChanges,
+    diffModeEnabled,
+    setDiffModeEnabled,
 
     // Diff/Review
     pendingReview,
@@ -597,7 +609,7 @@ export function AppProvider({ children, defaultFiles }: AppProviderProps) {
     resetFiles, exportHistory, restoreHistory,
     project, createProject, openProject, initGit, commit, discardChanges, revertToCommit,
     hasUncommittedChanges, localChanges,
-    activeTab, isGenerating, suggestions, selectedModel, autoAcceptChanges,
+    activeTab, isGenerating, suggestions, selectedModel, autoAcceptChanges, diffModeEnabled,
     pendingReview, reviewChange, confirmChange, cancelReview, resetApp
   ]);
 

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, Rocket, Copy, Check, ExternalLink, Terminal, Github } from 'lucide-react';
+import { Rocket, Copy, Check, ExternalLink, Terminal, Github } from 'lucide-react';
 import { FileSystem } from '../types';
+import { BaseModal } from './shared/BaseModal';
 
 interface DeployModalProps {
   isOpen: boolean;
@@ -69,33 +70,23 @@ netlify login
 npm run build
 netlify deploy --prod --dir=dist`;
 
-  if (!isOpen) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
-      onClick={onClose}
+    <BaseModal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Deploy Your App"
+      icon={<Rocket className="w-5 h-5 text-purple-400" />}
+      iconBg="bg-purple-500/20"
+      size="md"
+      zIndex="z-[150]"
+      footer={
+        <p className="text-[10px] text-slate-600 text-center w-full">
+          First, export your project as ZIP or push to GitHub, then follow the deployment steps above.
+        </p>
+      }
     >
-      <div
-        className="w-full max-w-2xl bg-slate-900 border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
-          <div className="flex items-center gap-3">
-            <Rocket className="w-5 h-5 text-purple-400" />
-            <h2 className="text-lg font-semibold text-white">Deploy Your App</h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex border-b border-white/5">
+      {/* Tabs */}
+      <div className="flex border-b border-white/5">
           {[
             { id: 'vercel', label: 'Vercel', icon: '▲' },
             { id: 'netlify', label: 'Netlify', icon: '◆' },
@@ -242,13 +233,6 @@ netlify deploy --prod --dir=dist`;
           )}
         </div>
 
-        {/* Footer */}
-        <div className="px-4 py-3 border-t border-white/5 bg-slate-950/50">
-          <p className="text-[10px] text-slate-600 text-center">
-            First, export your project as ZIP or push to GitHub, then follow the deployment steps above.
-          </p>
-        </div>
-      </div>
-    </div>
+    </BaseModal>
   );
 };

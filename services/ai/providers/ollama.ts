@@ -1,5 +1,6 @@
 import { AIProvider, ProviderConfig, GenerationRequest, GenerationResponse, StreamChunk, ModelOption } from '../types';
 import { fetchWithTimeout, TIMEOUT_TEST_CONNECTION, TIMEOUT_GENERATE, TIMEOUT_LIST_MODELS } from '../utils/fetchWithTimeout';
+import { throwIfNotOk } from '../utils/errorHandling';
 
 // Ollama API request interface
 interface OllamaGenerateRequest {
@@ -92,10 +93,8 @@ export class OllamaProvider implements AIProvider {
       timeout: TIMEOUT_GENERATE,
     });
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(error || `HTTP ${response.status}`);
-    }
+    // Use centralized error handling
+    await throwIfNotOk(response, 'ollama');
 
     const data = await response.json();
 
@@ -160,10 +159,8 @@ export class OllamaProvider implements AIProvider {
       timeout: TIMEOUT_GENERATE,
     });
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(error || `HTTP ${response.status}`);
-    }
+    // Use centralized error handling
+    await throwIfNotOk(response, 'ollama');
 
     const reader = response.body?.getReader();
     if (!reader) {

@@ -1,6 +1,7 @@
 import { AIProvider, ProviderConfig, GenerationRequest, GenerationResponse, StreamChunk } from '../types';
 import { fetchWithTimeout, TIMEOUT_TEST_CONNECTION, TIMEOUT_GENERATE } from '../utils/fetchWithTimeout';
 import { prepareJsonRequest } from '../utils/jsonOutput';
+import { throwIfNotOk } from '../utils/errorHandling';
 
 // OpenAI-compatible API interfaces
 interface ChatMessage {
@@ -95,19 +96,8 @@ export class ZAIProvider implements AIProvider {
       timeout: TIMEOUT_GENERATE,
     });
 
-    if (!response.ok) {
-      // BUG-FIX: Read response text once to avoid "body already read" errors
-      const errorText = await response.text();
-      let errorMessage = `HTTP ${response.status}`;
-      try {
-        const error = JSON.parse(errorText);
-        errorMessage = error.error?.message || errorMessage;
-      } catch {
-        // Response wasn't valid JSON, use status code
-        if (errorText) errorMessage += `: ${errorText.slice(0, 100)}`;
-      }
-      throw new Error(errorMessage);
-    }
+    // Use centralized error handling
+    await throwIfNotOk(response, 'zai');
 
     const data = await response.json();
 
@@ -175,19 +165,8 @@ export class ZAIProvider implements AIProvider {
       timeout: TIMEOUT_GENERATE,
     });
 
-    if (!response.ok) {
-      // BUG-FIX: Read response text once to avoid "body already read" errors
-      const errorText = await response.text();
-      let errorMessage = `HTTP ${response.status}`;
-      try {
-        const error = JSON.parse(errorText);
-        errorMessage = error.error?.message || errorMessage;
-      } catch {
-        // Response wasn't valid JSON, use status code
-        if (errorText) errorMessage += `: ${errorText.slice(0, 100)}`;
-      }
-      throw new Error(errorMessage);
-    }
+    // Use centralized error handling
+    await throwIfNotOk(response, 'zai');
 
     const reader = response.body?.getReader();
     if (!reader) {

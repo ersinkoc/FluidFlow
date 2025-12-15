@@ -1,6 +1,7 @@
 import { AIProvider, ProviderConfig, GenerationRequest, GenerationResponse, StreamChunk } from '../types';
 import { fetchWithTimeout, TIMEOUT_TEST_CONNECTION, TIMEOUT_GENERATE } from '../utils/fetchWithTimeout';
 import { prepareJsonRequest } from '../utils/jsonOutput';
+import { throwIfNotOk } from '../utils/errorHandling';
 
 // Anthropic API content types for multimodal messages
 type AnthropicContentPart =
@@ -51,19 +52,8 @@ export class AnthropicProvider implements AIProvider {
         }),
         timeout: TIMEOUT_TEST_CONNECTION,
       });
-      if (!response.ok) {
-        // BUG-FIX: Read response text once to avoid "body already read" errors
-        const errorText = await response.text();
-        let errorMessage = `HTTP ${response.status}`;
-        try {
-          const error = JSON.parse(errorText);
-          errorMessage = error.error?.message || errorMessage;
-        } catch {
-          // Response wasn't valid JSON, use status code
-          if (errorText) errorMessage += `: ${errorText.slice(0, 100)}`;
-        }
-        throw new Error(errorMessage);
-      }
+      // Use centralized error handling
+      await throwIfNotOk(response, 'anthropic');
       return { success: true };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Connection failed' };
@@ -151,19 +141,8 @@ export class AnthropicProvider implements AIProvider {
       timeout: TIMEOUT_GENERATE,
     });
 
-    if (!response.ok) {
-      // BUG-FIX: Read response text once to avoid "body already read" errors
-      const errorText = await response.text();
-      let errorMessage = `HTTP ${response.status}`;
-      try {
-        const error = JSON.parse(errorText);
-        errorMessage = error.error?.message || errorMessage;
-      } catch {
-        // Response wasn't valid JSON, use status code
-        if (errorText) errorMessage += `: ${errorText.slice(0, 100)}`;
-      }
-      throw new Error(errorMessage);
-    }
+    // Use centralized error handling
+    await throwIfNotOk(response, 'anthropic');
 
     const data = await response.json();
     const textContent = data.content?.find((c: { type: string; text?: string }) => c.type === 'text');
@@ -263,19 +242,8 @@ export class AnthropicProvider implements AIProvider {
       timeout: TIMEOUT_GENERATE,
     });
 
-    if (!response.ok) {
-      // BUG-FIX: Read response text once to avoid "body already read" errors
-      const errorText = await response.text();
-      let errorMessage = `HTTP ${response.status}`;
-      try {
-        const error = JSON.parse(errorText);
-        errorMessage = error.error?.message || errorMessage;
-      } catch {
-        // Response wasn't valid JSON, use status code
-        if (errorText) errorMessage += `: ${errorText.slice(0, 100)}`;
-      }
-      throw new Error(errorMessage);
-    }
+    // Use centralized error handling
+    await throwIfNotOk(response, 'anthropic');
 
     const reader = response.body?.getReader();
     if (!reader) {

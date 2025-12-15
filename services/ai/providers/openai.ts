@@ -1,6 +1,7 @@
 import { AIProvider, ProviderConfig, GenerationRequest, GenerationResponse, StreamChunk, ModelOption } from '../types';
 import { fetchWithTimeout, TIMEOUT_TEST_CONNECTION, TIMEOUT_GENERATE, TIMEOUT_LIST_MODELS } from '../utils/fetchWithTimeout';
 import { prepareJsonRequest } from '../utils/jsonOutput';
+import { throwIfNotOk } from '../utils/errorHandling';
 
 // OpenAI-compatible API content types for multimodal messages
 type ContentPart =
@@ -134,19 +135,8 @@ export class OpenAIProvider implements AIProvider {
       timeout: TIMEOUT_GENERATE,
     });
 
-    if (!response.ok) {
-      // BUG-FIX: Read response text once to avoid "body already read" errors
-      const errorText = await response.text();
-      let errorMessage = `HTTP ${response.status}`;
-      try {
-        const error = JSON.parse(errorText);
-        errorMessage = error.error?.message || errorMessage;
-      } catch {
-        // Response wasn't valid JSON, use status code
-        if (errorText) errorMessage += `: ${errorText.slice(0, 100)}`;
-      }
-      throw new Error(errorMessage);
-    }
+    // Use centralized error handling
+    await throwIfNotOk(response, 'openai');
 
     const data = await response.json();
 
@@ -242,19 +232,8 @@ export class OpenAIProvider implements AIProvider {
       timeout: TIMEOUT_GENERATE,
     });
 
-    if (!response.ok) {
-      // BUG-FIX: Read response text once to avoid "body already read" errors
-      const errorText = await response.text();
-      let errorMessage = `HTTP ${response.status}`;
-      try {
-        const error = JSON.parse(errorText);
-        errorMessage = error.error?.message || errorMessage;
-      } catch {
-        // Response wasn't valid JSON, use status code
-        if (errorText) errorMessage += `: ${errorText.slice(0, 100)}`;
-      }
-      throw new Error(errorMessage);
-    }
+    // Use centralized error handling
+    await throwIfNotOk(response, 'openai');
 
     const reader = response.body?.getReader();
     if (!reader) {

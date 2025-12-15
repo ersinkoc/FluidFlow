@@ -1,6 +1,13 @@
 // Conversation Context Manager
 // Manages separate contexts for different features (prompt improver, git, db studio, etc.)
 
+import {
+  DEFAULT_MAX_TOKENS,
+  COMPACTION_THRESHOLD_TOKENS,
+  STREAMING_SAVE_DEBOUNCE_MS,
+  STORAGE_KEYS,
+} from '@/constants';
+
 export interface ContextMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -28,10 +35,10 @@ export interface ContextManagerConfig {
 }
 
 const DEFAULT_CONFIG: ContextManagerConfig = {
-  maxTokensPerContext: 8000,    // ~8k tokens before compaction
-  compactToTokens: 2000,        // Compact to ~2k tokens
+  maxTokensPerContext: DEFAULT_MAX_TOKENS,    // ~8k tokens before compaction
+  compactToTokens: COMPACTION_THRESHOLD_TOKENS, // Compact to ~2k tokens
   persistToStorage: true,
-  storageKey: 'fluidflow_contexts'
+  storageKey: STORAGE_KEYS.CONTEXTS
 };
 
 // AI-008 fix: Improved token estimation using word-based heuristics
@@ -71,7 +78,7 @@ class ConversationContextManager {
   private config: ContextManagerConfig;
   // AI-006 fix: Debounce streaming saves to prevent data loss
   private streamingSaveTimeout: ReturnType<typeof setTimeout> | null = null;
-  private static STREAMING_SAVE_DEBOUNCE_MS = 2000; // Save every 2s during streaming
+  // Uses STREAMING_SAVE_DEBOUNCE_MS from @/constants
 
   constructor(config: Partial<ContextManagerConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -208,7 +215,7 @@ class ConversationContextManager {
       this.streamingSaveTimeout = setTimeout(() => {
         this.saveToStorage();
         this.streamingSaveTimeout = null;
-      }, ConversationContextManager.STREAMING_SAVE_DEBOUNCE_MS);
+      }, STREAMING_SAVE_DEBOUNCE_MS);
     }
   }
 

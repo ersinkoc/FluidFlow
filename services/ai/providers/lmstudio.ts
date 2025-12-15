@@ -1,5 +1,6 @@
 import { AIProvider, ProviderConfig, GenerationRequest, GenerationResponse, StreamChunk, ModelOption } from '../types';
 import { fetchWithTimeout, TIMEOUT_TEST_CONNECTION, TIMEOUT_GENERATE, TIMEOUT_LIST_MODELS } from '../utils/fetchWithTimeout';
+import { throwIfNotOk } from '../utils/errorHandling';
 
 // OpenAI-compatible API content types for multimodal messages
 type ContentPart =
@@ -108,10 +109,8 @@ export class LMStudioProvider implements AIProvider {
       timeout: TIMEOUT_GENERATE,
     });
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(error || `HTTP ${response.status}`);
-    }
+    // Use centralized error handling
+    await throwIfNotOk(response, 'lmstudio');
 
     const data = await response.json();
 
@@ -186,10 +185,8 @@ export class LMStudioProvider implements AIProvider {
       timeout: TIMEOUT_GENERATE,
     });
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(error || `HTTP ${response.status}`);
-    }
+    // Use centralized error handling
+    await throwIfNotOk(response, 'lmstudio');
 
     const reader = response.body?.getReader();
     if (!reader) {
