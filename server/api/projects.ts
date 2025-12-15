@@ -55,6 +55,9 @@ const getContextPath = (id: string) => path.join(getProjectPath(id), 'context.js
 // This queue-based approach chains promises to ensure sequential execution
 const projectLockQueues = new Map<string, { promise: Promise<void>; timestamp: number }>();
 
+// BUG-036 FIX: Maximum number of concurrent lock queues to prevent memory exhaustion
+const MAX_LOCK_QUEUES = 100;
+
 // Periodic cleanup of stale lock queues (queues not accessed for 5 minutes)
 const LOCK_TIMEOUT_MS = 5 * 60 * 1000;
 setInterval(() => {
@@ -68,8 +71,14 @@ setInterval(() => {
 }, 60 * 1000); // Check every minute
 
 async function withProjectLock<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
-  // Get the current queue for this project (or resolved promise if none)
+  // BUG-036 FIX: Check queue size before adding new entries
+  // If this is a new project and we're at capacity, reject the request
   const existingEntry = projectLockQueues.get(projectId);
+  if (!existingEntry && projectLockQueues.size >= MAX_LOCK_QUEUES) {
+    throw new Error('Server is busy. Too many concurrent project operations. Please try again later.');
+  }
+
+  // Get the current queue for this project (or resolved promise if none)
   const previousLock = existingEntry?.promise || Promise.resolve();
 
   // Create our lock promise

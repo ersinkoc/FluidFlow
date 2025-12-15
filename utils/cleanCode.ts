@@ -8,10 +8,10 @@ const IGNORED_PATHS = ['.git', 'node_modules', '.next', '.nuxt', 'dist', 'build'
  */
 export function isIgnoredFilePath(filePath: string): boolean {
   const normalizedPath = filePath.replace(/\\/g, '/');
+  // BUG-040 FIX: Removed redundant check - includes('/' + ignored) already covers includes('/' + ignored + '/')
   return IGNORED_PATHS.some(ignored =>
     normalizedPath === ignored ||
     normalizedPath.startsWith(ignored + '/') ||
-    normalizedPath.includes('/' + ignored + '/') ||
     normalizedPath.includes('/' + ignored)
   );
 }
