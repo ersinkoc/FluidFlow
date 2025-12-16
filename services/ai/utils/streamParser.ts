@@ -6,6 +6,7 @@
  */
 
 import { StreamChunk } from '../types';
+import { estimateTokenCount } from '../capabilities';
 
 /**
  * Supported AI provider formats for SSE parsing
@@ -98,10 +99,12 @@ export function extractTextFromSSE(data: unknown, format: SSEProviderFormat): SS
     }
 
     case 'ollama': {
-      // Ollama format: { message: { content: "text" }, done: boolean }
+      // Ollama /api/generate format: { response: "text", done: boolean }
+      // Also supports /api/chat format: { message: { content: "text" }, done: boolean }
+      const response = parsed.response as string | undefined;
       const message = parsed.message as { content?: string } | undefined;
       return {
-        text: message?.content || '',
+        text: response || message?.content || '',
         done: parsed.done === true,
         rawData: data,
       };
@@ -297,13 +300,6 @@ export async function processSSEStream(
 }
 
 /**
- * Estimate token count from text (approximately 4 characters per token)
- */
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
-
-/**
  * Create estimated usage from request and response text
  */
 export function createEstimatedUsage(
@@ -311,8 +307,11 @@ export function createEstimatedUsage(
   responseText: string
 ): { inputTokens: number; outputTokens: number; isEstimated: true } {
   return {
-    inputTokens: estimateTokens(requestText),
-    outputTokens: estimateTokens(responseText),
+    inputTokens: estimateTokenCount(requestText),
+    outputTokens: estimateTokenCount(responseText),
     isEstimated: true,
   };
 }
+
+// Re-export for backwards compatibility
+export { estimateTokenCount as estimateTokens } from '../capabilities';

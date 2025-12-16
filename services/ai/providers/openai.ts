@@ -2,6 +2,7 @@ import { AIProvider, ProviderConfig, GenerationRequest, GenerationResponse, Stre
 import { fetchWithTimeout, TIMEOUT_TEST_CONNECTION, TIMEOUT_GENERATE, TIMEOUT_LIST_MODELS } from '../utils/fetchWithTimeout';
 import { prepareJsonRequest } from '../utils/jsonOutput';
 import { throwIfNotOk } from '../utils/errorHandling';
+import { processSSEStream, createEstimatedUsage } from '../utils/streamParser';
 
 // OpenAI-compatible API content types for multimodal messages
 type ContentPart =
@@ -235,104 +236,19 @@ export class OpenAIProvider implements AIProvider {
     // Use centralized error handling
     await throwIfNotOk(response, 'openai');
 
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error('No response body');
-    }
+    // Use unified SSE stream parser
+    const { fullText, usage } = await processSSEStream(response, {
+      format: 'openai',
+      onChunk,
+    });
 
-    const decoder = new TextDecoder();
-    let fullText = '';
-    let buffer = ''; // Buffer for incomplete SSE lines
-    let usage: { inputTokens?: number; outputTokens?: number } | undefined;
-
-    try {
-      while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          // Append new data to buffer
-          buffer += decoder.decode(value, { stream: true });
-
-          // Split by newlines but keep processing incomplete lines
-          const lines = buffer.split('\n');
-
-          // Keep the last line in buffer if it doesn't end with newline (incomplete)
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith('data:')) continue;
-
-            const data = trimmed.slice(5).trim(); // Remove 'data:' prefix
-            if (data === '[DONE]') continue;
-            if (!data) continue;
-
-            try {
-              const parsed = JSON.parse(data);
-              const text = parsed.choices?.[0]?.delta?.content || '';
-              if (text) {
-                fullText += text;
-                onChunk({ text, done: false });
-              }
-              // Capture usage from final chunk (when stream_options.include_usage is true)
-              if (parsed.usage) {
-                usage = {
-                  inputTokens: parsed.usage.prompt_tokens,
-                  outputTokens: parsed.usage.completion_tokens,
-                };
-              }
-            } catch (_e) {
-              // Log but don't fail on parse errors - might be partial data
-              console.debug('[OpenAI Stream] Parse error, skipping chunk:', data.slice(0, 100));
-            }
-          }
-        }
-
-        // Process any remaining data in buffer
-        if (buffer.trim()) {
-          const trimmed = buffer.trim();
-          if (trimmed.startsWith('data:')) {
-            const data = trimmed.slice(5).trim();
-            if (data && data !== '[DONE]') {
-              try {
-                const parsed = JSON.parse(data);
-                const text = parsed.choices?.[0]?.delta?.content || '';
-                if (text) {
-                  fullText += text;
-                  onChunk({ text, done: false });
-                }
-                // Also check for usage in final buffer
-                if (parsed.usage) {
-                  usage = {
-                    inputTokens: parsed.usage.prompt_tokens,
-                    outputTokens: parsed.usage.completion_tokens,
-                  };
-                }
-              } catch {
-                // Ignore final buffer parse errors
-              }
-            }
-          }
-        }
-    } finally {
-      // Release the reader lock to prevent memory leaks
-      reader.releaseLock();
-    }
-
-    onChunk({ text: '', done: true });
-
-    // If no usage from API, estimate tokens (4 chars ≈ 1 token)
-    let isEstimated = false;
+    // If no usage from API, estimate tokens
     if (!usage) {
-      const inputText = JSON.stringify(messages);
-      usage = {
-        inputTokens: Math.ceil(inputText.length / 4),
-        outputTokens: Math.ceil(fullText.length / 4),
-      };
-      isEstimated = true;
+      const estimated = createEstimatedUsage(JSON.stringify(messages), fullText);
+      return { text: fullText, usage: estimated };
     }
 
-    return { text: fullText, usage: { ...usage, isEstimated } };
+    return { text: fullText, usage };
   }
 
   async listModels(): Promise<ModelOption[]> {

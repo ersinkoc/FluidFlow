@@ -6,11 +6,12 @@
  */
 
 import { useCallback } from 'react';
-import { FileSystem, ChatMessage, FileChange } from '../types';
+import { FileSystem, ChatMessage } from '../types';
 import { parseMultiFileResponse, GenerationMeta } from '../utils/cleanCode';
 import { getProviderManager } from '../services/ai';
 import { FILE_GENERATION_SCHEMA, supportsAdditionalProperties } from '../services/ai/utils/schemas';
 import { FilePlan, ContinuationState, TruncatedContent } from './useGenerationState';
+import { calculateFileChanges, createTokenUsage } from '../utils/generationUtils';
 
 // Types for the hook
 export interface ContinuationGenerationOptions {
@@ -40,67 +41,6 @@ export interface UseContinuationGenerationReturn {
     truncatedContent: TruncatedContent,
     reviewChange: (label: string, newFiles: FileSystem) => void
   ) => Promise<void>;
-}
-
-/**
- * Calculate file changes between old and new file systems
- */
-function calculateFileChanges(oldFiles: FileSystem, newFiles: FileSystem): FileChange[] {
-  const changes: FileChange[] = [];
-  const allPaths = new Set([...Object.keys(oldFiles), ...Object.keys(newFiles)]);
-
-  for (const path of allPaths) {
-    const oldContent = oldFiles[path];
-    const newContent = newFiles[path];
-
-    if (!oldContent && newContent) {
-      // Added
-      changes.push({
-        path,
-        type: 'added',
-        additions: newContent.split('\n').length,
-        deletions: 0,
-      });
-    } else if (oldContent && !newContent) {
-      // Deleted
-      changes.push({
-        path,
-        type: 'deleted',
-        additions: 0,
-        deletions: oldContent.split('\n').length,
-      });
-    } else if (oldContent !== newContent) {
-      // Modified
-      const oldLines = oldContent?.split('\n').length || 0;
-      const newLines = newContent?.split('\n').length || 0;
-      changes.push({
-        path,
-        type: 'modified',
-        additions: Math.max(0, newLines - oldLines),
-        deletions: Math.max(0, oldLines - newLines),
-      });
-    }
-  }
-
-  return changes;
-}
-
-/**
- * Create token usage object
- */
-function createTokenUsage(
-  apiUsage?: { inputTokens?: number; outputTokens?: number },
-  _prompt?: string,
-  response?: string,
-  _files?: Record<string, string>
-): { inputTokens: number; outputTokens: number; totalTokens: number } {
-  const inputTokens = apiUsage?.inputTokens || 0;
-  const outputTokens = apiUsage?.outputTokens || Math.ceil((response?.length || 0) / 4);
-  return {
-    inputTokens,
-    outputTokens,
-    totalTokens: inputTokens + outputTokens,
-  };
 }
 
 export function useContinuationGeneration(

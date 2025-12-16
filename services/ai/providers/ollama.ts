@@ -1,6 +1,7 @@
 import { AIProvider, ProviderConfig, GenerationRequest, GenerationResponse, StreamChunk, ModelOption } from '../types';
 import { fetchWithTimeout, TIMEOUT_TEST_CONNECTION, TIMEOUT_GENERATE, TIMEOUT_LIST_MODELS } from '../utils/fetchWithTimeout';
 import { throwIfNotOk } from '../utils/errorHandling';
+import { processSSEStream } from '../utils/streamParser';
 
 // Ollama API request interface
 interface OllamaGenerateRequest {
@@ -162,66 +163,11 @@ export class OllamaProvider implements AIProvider {
     // Use centralized error handling
     await throwIfNotOk(response, 'ollama');
 
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error('No response body');
-    }
-
-    const decoder = new TextDecoder();
-    let fullText = '';
-    let buffer = ''; // Buffer for incomplete lines
-
-    try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          // Append new data to buffer
-          buffer += decoder.decode(value, { stream: true });
-
-          // Process complete lines (ending with \n)
-          const lines = buffer.split('\n');
-          // Keep the last potentially incomplete line in the buffer
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            const trimmedLine = line.trim();
-            if (!trimmedLine) continue;
-
-            try {
-              const parsed = JSON.parse(trimmedLine);
-              if (parsed.response) {
-                fullText += parsed.response;
-                onChunk({ text: parsed.response, done: false });
-              }
-              if (parsed.done) {
-                onChunk({ text: '', done: true });
-              }
-            } catch {
-              // Skip invalid JSON - may be partial data
-            }
-          }
-        }
-
-        // Process any remaining data in buffer
-        if (buffer.trim()) {
-          try {
-            const parsed = JSON.parse(buffer.trim());
-            if (parsed.response) {
-              fullText += parsed.response;
-              onChunk({ text: parsed.response, done: false });
-            }
-            if (parsed.done) {
-              onChunk({ text: '', done: true });
-            }
-          } catch {
-            // Skip invalid JSON
-          }
-        }
-    } finally {
-      // Release the reader lock to prevent memory leaks
-      reader.releaseLock();
-    }
+    // Use unified SSE stream parser (handles Ollama's newline-delimited JSON)
+    const { fullText } = await processSSEStream(response, {
+      format: 'ollama',
+      onChunk,
+    });
 
     return { text: fullText };
   }

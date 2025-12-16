@@ -1,8 +1,9 @@
-import React, { useState, useCallback, useImperativeHandle, forwardRef, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { Layers, RotateCcw, Settings, ChevronDown, SlidersHorizontal, Upload } from 'lucide-react';
 import { FileSystem, ChatMessage, ChatAttachment, FileChange } from '../../types';
-import { cleanGeneratedCode, parseMultiFileResponse } from '../../utils/cleanCode';
-import { estimateTokenCount, calculateFileChanges } from './utils';
+import { estimateTokenCount } from './utils';
+import { restoreFromHistoryEntries, getEntriesUpToTimestamp } from './utils/restoreHistory';
+import { executeConsultantMode } from './utils/consultantMode';
 import { debugLog } from '../../hooks/useDebugStore';
 import { useTechStack } from '../../hooks/useTechStack';
 import { useGenerationState } from '../../hooks/useGenerationState';
@@ -10,14 +11,12 @@ import { useContinuationGeneration } from '../../hooks/useContinuationGeneration
 import { useInspectEdit, InspectContext } from '../../hooks/useInspectEdit';
 import { useCodeGeneration } from '../../hooks/useCodeGeneration';
 import { getProviderManager, GenerationRequest } from '../../services/ai';
-import { SUGGESTIONS_SCHEMA } from '../../services/ai/utils/schemas';
 import { InspectedElement, EditScope } from '../PreviewPanel/ComponentInspector';
 import { useAIHistory } from '../../hooks/useAIHistory';
 import { AIHistoryModal } from '../AIHistoryModal';
 import { TechStackModal } from './TechStackModal';
 import { PromptEngineerModal } from './PromptEngineerModal';
 import { BatchGenerationModal } from './BatchGenerationModal';
-import { getContextManager, CONTEXT_IDS } from '../../services/conversationContext';
 import { ContextIndicator } from '../ContextIndicator';
 import { getFluidFlowConfig } from '../../services/fluidflowConfig';
 
@@ -29,8 +28,10 @@ import { SettingsPanel } from './SettingsPanel';
 import { ModeToggle } from './ModeToggle';
 import { ProjectPanel } from './ProjectPanel';
 import { ResetConfirmModal } from './ResetConfirmModal';
-import { CONSULTANT_SYSTEM_INSTRUCTION } from './prompts';
 import type { ProjectMeta } from '@/services/projectApi';
+
+// Local hooks
+import { useContextSync, useControlPanelModals } from './hooks';
 
 
 // Ref interface for external access
@@ -128,20 +129,9 @@ export const ControlPanel = forwardRef<ControlPanelRef, ControlPanelProps>(({
   const [isConsultantMode, setIsConsultantMode] = useState(false);
   const [isEducationMode, setIsEducationMode] = useState(false);
   const [, forceUpdate] = useState({});
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [showAIHistory, setShowAIHistory] = useState(false);
-  const [showCodebaseSync, setShowCodebaseSync] = useState(false);
 
-  // Modal exclusivity state
-  const [openModal, setOpenModal] = useState<'settings' | 'projects' | 'techstack' | 'promptengineer' | 'batchgen' | null>(null);
-
-  // Batch generation modal state
-  const [batchGenModal, setBatchGenModal] = useState<{
-    isOpen: boolean;
-    prompt: string;
-    systemInstruction: string;
-    targetFiles: string[];
-  } | null>(null);
+  // Modal state management (extracted to hook)
+  const modals = useControlPanelModals();
 
   // Generation state (streaming, file plan, truncation, continuation)
   const genState = useGenerationState();
@@ -161,7 +151,7 @@ export const ControlPanel = forwardRef<ControlPanelRef, ControlPanelProps>(({
   // Continuation generation hook (handles multi-batch, retries, missing files)
   const {
     handleContinueGeneration,
-    requestMissingFiles,
+    requestMissingFiles: _requestMissingFiles,
     handleTruncationRetry: hookTruncationRetry
   } = useContinuationGeneration({
     files,
@@ -208,83 +198,11 @@ export const ControlPanel = forwardRef<ControlPanelRef, ControlPanelProps>(({
     addAIHistoryEntry: aiHistory.addEntry,
   });
 
-  // Context management
-  const contextManager = getContextManager();
-  const sessionIdRef = useRef<string>(`${CONTEXT_IDS.MAIN_CHAT}-${currentProject?.id || 'default'}`);
-  // Track which messages have been synced to context manager (prevents duplicates on batch updates)
-  const syncedMessageIdsRef = useRef<Set<string>>(new Set());
-
-  // Update session ID when project changes
-  useEffect(() => {
-    sessionIdRef.current = `${CONTEXT_IDS.MAIN_CHAT}-${currentProject?.id || 'default'}`;
-    // Clear synced message IDs when project changes (different projects have different contexts)
-    syncedMessageIdsRef.current.clear();
-    console.log(`[ContextSync] Project changed, new session: ${sessionIdRef.current}`);
-  }, [currentProject?.id]);
-
-  // Modal exclusivity handlers
-  const handleModalOpen = (modalType: 'settings' | 'projects') => {
-    setOpenModal(modalType);
-  };
-
-  const handleModalClose = (modalType: 'settings' | 'projects' | 'techstack' | 'promptengineer') => {
-    setOpenModal(prev => prev === modalType ? null : prev);
-  };
-
-  // Sync messages with context manager
-  // BUG FIX: Sync ALL new messages, not just the last one
-  // React 18 batches state updates, so multiple messages can be added before this runs
-  useEffect(() => {
-    if (messages.length === 0) return;
-
-    // Find all messages that haven't been synced yet
-    const unsynced = messages.filter(msg => !syncedMessageIdsRef.current.has(msg.id));
-    if (unsynced.length === 0) return;
-
-    console.log(`[ContextSync] Found ${unsynced.length} unsync'd message(s) to add`);
-
-    for (const msg of unsynced) {
-      // For user messages: use llmContent (full codebase) or prompt
-      // For assistant messages: use explanation/error + file content for accurate token counting
-      let content: string;
-      let actualTokens: number | undefined;
-
-      if (msg.role === 'user') {
-        content = msg.llmContent || msg.prompt || '';
-        // Use actual token count if available (e.g., from codebase sync)
-        if (msg.tokenUsage?.totalTokens) {
-          actualTokens = msg.tokenUsage.totalTokens;
-        }
-      } else {
-        // For assistant messages, include file content in token estimation
-        const textContent = msg.explanation || msg.error || '';
-        const filesContent = msg.files
-          ? Object.entries(msg.files).map(([path, code]) => `// ${path}\n${code}`).join('\n\n')
-          : '';
-        content = textContent + (filesContent ? '\n\n' + filesContent : '');
-
-        // Use actual token count from API if available
-        if (msg.tokenUsage?.totalTokens) {
-          actualTokens = msg.tokenUsage.totalTokens;
-        }
-      }
-
-      console.log(`[ContextSync] Adding ${msg.role} message (id: ${msg.id.slice(0, 8)}...) to session "${sessionIdRef.current}", content length: ${content.length}, tokens: ${actualTokens || 'estimated'}`);
-
-      contextManager.addMessage(
-        sessionIdRef.current,
-        msg.role,
-        content,
-        { messageId: msg.id },
-        actualTokens
-      );
-
-      // Mark as synced
-      syncedMessageIdsRef.current.add(msg.id);
-    }
-    // Note: contextManager is a singleton, messages array is iterated but we only trigger on length change
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages.length]);
+  // Context management (extracted to hook)
+  const { sessionId, contextManager } = useContextSync({
+    projectId: currentProject?.id,
+    messages,
+  });
 
   const existingApp = files['src/App.tsx'];
 
@@ -293,7 +211,7 @@ export const ControlPanel = forwardRef<ControlPanelRef, ControlPanelProps>(({
     const manager = getProviderManager();
     const config = getFluidFlowConfig();
 
-    await contextManager.compactContext(sessionIdRef.current, async (text) => {
+    await contextManager.compactContext(sessionId, async (text) => {
       const request: GenerationRequest = {
         prompt: `Summarize this conversation concisely, preserving key decisions, code changes, and context:\n\n${text}`,
         systemInstruction: 'You are a conversation summarizer. Create a brief but complete summary that captures the essential context, decisions made, and any code or technical details discussed.',
@@ -302,9 +220,9 @@ export const ControlPanel = forwardRef<ControlPanelRef, ControlPanelProps>(({
       const response = await manager.generate(request);
 
       // Log compaction
-      const context = contextManager.getContext(sessionIdRef.current);
+      const context = contextManager.getContext(sessionId);
       config.addCompactionLog({
-        contextId: sessionIdRef.current,
+        contextId: sessionId,
         beforeTokens: context.estimatedTokens * 2,
         afterTokens: context.estimatedTokens,
         messagesSummarized: messages.length - 2,
@@ -313,9 +231,8 @@ export const ControlPanel = forwardRef<ControlPanelRef, ControlPanelProps>(({
 
       return response.text || '';
     });
-    // Note: contextManager is a singleton that doesn't change
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages.length]);
+  }, [sessionId, messages.length]);
 
   // Handle provider changes from settings
   const handleProviderChange = useCallback((providerId: string, modelId: string) => {
@@ -361,87 +278,26 @@ export const ControlPanel = forwardRef<ControlPanelRef, ControlPanelProps>(({
     setIsGenerating(true);
     setSuggestions(null);
 
-    // Get attachments
-    const sketchAtt = attachments.find(a => a.type === 'sketch');
-    const brandAtt = attachments.find(a => a.type === 'brand');
-
     try {
-      const manager = getProviderManager();
-      const activeProvider = manager.getActiveConfig();
-      const currentModel = activeProvider?.defaultModel || selectedModel;
-      const providerName = activeProvider?.name || 'AI';
-
       if (inspectContext) {
         // INSPECT EDIT MODE - Delegated to useInspectEdit hook
         await handleInspectEditRequest(prompt, inspectContext);
         return;
 
       } else if (isConsultantMode) {
-        // Consultant mode - return suggestions
-        const systemInstruction = CONSULTANT_SYSTEM_INSTRUCTION;
-
-        const images: { data: string; mimeType: string }[] = [];
-        if (sketchAtt) {
-          const base64Data = sketchAtt.preview.split(',')[1];
-          images.push({ data: base64Data, mimeType: sketchAtt.file.type });
-        }
-
-        const request: GenerationRequest = {
-          prompt: prompt ? `Analyze this design. Context: ${prompt}` : 'Analyze this design for UX gaps.',
-          systemInstruction,
-          images,
-          responseFormat: 'json',
-          responseSchema: SUGGESTIONS_SCHEMA
-        };
-
-        const requestId = debugLog.request('generation', {
-          model: currentModel,
-          prompt: request.prompt,
-          systemInstruction,
-          attachments: attachments.map(a => ({ type: a.type, size: a.file.size })),
-          metadata: { mode: 'consultant', provider: providerName }
+        // Consultant mode - delegated to utility
+        const result = await executeConsultantMode({
+          prompt,
+          attachments,
+          files,
+          selectedModel,
         });
-        const startTime = Date.now();
-
-        const response = await manager.generate(request, currentModel);
-        const text = response.text || '[]';
-        const duration = Date.now() - startTime;
-
-        debugLog.response('generation', {
-          id: requestId,
-          model: currentModel,
-          duration,
-          response: text,
-          metadata: { mode: 'consultant', provider: providerName }
-        });
-        try {
-          const suggestionsData = JSON.parse(text);
-          setSuggestions(Array.isArray(suggestionsData) ? suggestionsData : ['Could not parse suggestions.']);
-
-          // Add assistant message with token usage
-          const assistantMessage: ChatMessage = {
-            id: crypto.randomUUID(),
-            role: 'assistant',
-            timestamp: Date.now(),
-            explanation: `## UX Analysis Complete\n\nI found **${Array.isArray(suggestionsData) ? suggestionsData.length : 0} suggestions** to improve your design. Check the suggestions panel on the right.`,
-            snapshotFiles: { ...files },
-            model: currentModel,
-            provider: providerName,
-            generationTime: duration,
-            tokenUsage: response.usage ? {
-              inputTokens: response.usage.inputTokens || 0,
-              outputTokens: response.usage.outputTokens || 0,
-              totalTokens: (response.usage.inputTokens || 0) + (response.usage.outputTokens || 0)
-            } : undefined
-          };
-          setMessages(prev => [...prev, assistantMessage]);
-        } catch {
-          setSuggestions(['Error parsing consultant suggestions.']);
-        }
+        setSuggestions(result.suggestions);
+        setMessages(prev => [...prev, result.message]);
       } else {
         // Generate/Update app mode - Delegated to useCodeGeneration hook
-        const conversationHistory = contextManager.getMessagesForAI(sessionIdRef.current);
-        console.log(`[handleSend] Session: ${sessionIdRef.current}, History messages: ${conversationHistory.length}`);
+        const conversationHistory = contextManager.getMessagesForAI(sessionId);
+        console.log(`[handleSend] Session: ${sessionId}, History messages: ${conversationHistory.length}`);
         if (conversationHistory.length > 0) {
           const totalHistoryChars = conversationHistory.reduce((sum, m) => sum + m.content.length, 0);
           console.log(`[handleSend] History total chars: ${totalHistoryChars}, estimated tokens: ~${Math.ceil(totalHistoryChars / 4)}`);
@@ -553,14 +409,14 @@ Fix the error in src/App.tsx.`;
   }), [handleInspectEdit, sendErrorToChat]);
 
   const handleResetClick = () => {
-    setShowResetConfirm(true);
+    modals.openResetConfirm();
   };
 
   const handleConfirmReset = () => {
     setMessages([]);
-    contextManager.clearContext(sessionIdRef.current);
+    contextManager.clearContext(sessionId);
     resetApp();
-    setShowResetConfirm(false);
+    modals.closeResetConfirm();
   };
 
   return (
@@ -644,7 +500,7 @@ Fix the error in src/App.tsx.`;
       {/* Context Indicator */}
       <div className="px-4 py-2 border-b border-white/5 flex-shrink-0">
         <ContextIndicator
-          contextId={sessionIdRef.current}
+          contextId={sessionId}
           showLabel={true}
           onCompact={handleCompaction}
           className="w-full"
@@ -664,12 +520,7 @@ Fix the error in src/App.tsx.`;
         truncatedContent={truncatedContent}
         onTruncationRetry={handleTruncationRetry}
         onBatchGeneration={(incompleteFiles, prompt, systemInstruction) => {
-          setBatchGenModal({
-            isOpen: true,
-            prompt,
-            systemInstruction,
-            targetFiles: incompleteFiles
-          });
+          modals.openBatchGen(prompt, systemInstruction, incompleteFiles);
         }}
         onSetExternalPrompt={setExternalPrompt}
         continuationState={continuationState}
@@ -712,85 +563,15 @@ Fix the error in src/App.tsx.`;
           }
         }}
         onRestoreFromHistory={() => {
-          // Restore the most recent successful entry directly
           const lastEntry = aiHistory.history.find(h => h.success);
           if (!lastEntry) return;
 
-          try {
-            // Find all history entries up to and including this one (by timestamp)
-            const entriesToRestore = aiHistory.history
-              .filter(h => h.timestamp <= lastEntry.timestamp && h.success)
-              .sort((a, b) => a.timestamp - b.timestamp); // Oldest first
+          const entries = getEntriesUpToTimestamp(aiHistory.history, lastEntry.timestamp);
+          const result = restoreFromHistoryEntries(entries);
 
-            // Reconstruct ALL chat messages from history
-            const restoredMessages: ChatMessage[] = [];
-            let previousFiles: FileSystem = {};
-
-            for (const historyEntry of entriesToRestore) {
-              // Parse files from this entry
-              const parsed = parseMultiFileResponse(historyEntry.rawResponse);
-              if (!parsed?.files) continue;
-
-              // Clean the generated code
-              const cleanedFiles: FileSystem = {};
-              for (const [path, content] of Object.entries(parsed.files)) {
-                cleanedFiles[path] = cleanGeneratedCode(content);
-              }
-
-              // Calculate file changes with support for deleted files
-              let mergedFiles: Record<string, string>;
-              if (Object.keys(previousFiles).length > 0) {
-                // Start with previous files and apply updates
-                mergedFiles = { ...previousFiles };
-
-                // Apply new/modified files
-                Object.assign(mergedFiles, cleanedFiles);
-
-                // Remove deleted files (if any)
-                const deletedFiles = parsed.deletedFiles || [];
-                for (const deletedPath of deletedFiles) {
-                  delete mergedFiles[deletedPath];
-                }
-              } else {
-                // First entry - just use generated files
-                mergedFiles = cleanedFiles;
-              }
-
-              const fileChanges = calculateFileChanges(previousFiles, mergedFiles);
-
-              // User message
-              restoredMessages.push({
-                id: crypto.randomUUID(),
-                role: 'user',
-                timestamp: historyEntry.timestamp - 1000,
-                prompt: historyEntry.prompt,
-                attachments: historyEntry.hasSketch || historyEntry.hasBrand ? [
-                  ...(historyEntry.hasSketch ? [{ type: 'sketch' as const, preview: '', file: new File([], 'sketch.png') }] : []),
-                  ...(historyEntry.hasBrand ? [{ type: 'brand' as const, preview: '', file: new File([], 'brand.png') }] : [])
-                ] : undefined
-              });
-
-              // Assistant message with file changes
-              restoredMessages.push({
-                id: crypto.randomUUID(),
-                role: 'assistant',
-                timestamp: historyEntry.timestamp,
-                files: cleanedFiles,
-                explanation: parsed.explanation || historyEntry.explanation || '',
-                fileChanges,
-                snapshotFiles: cleanedFiles
-              });
-
-              // Track files for next iteration
-              previousFiles = mergedFiles;
-            }
-
-            if (Object.keys(previousFiles).length > 0) {
-              setMessages(restoredMessages);
-              setFiles(previousFiles);
-            }
-          } catch (error) {
-            console.error('[ControlPanel] Failed to restore from history:', error);
+          if (result.success) {
+            setMessages(result.messages);
+            setFiles(result.files);
           }
         }}
       />
@@ -806,7 +587,7 @@ Fix the error in src/App.tsx.`;
         {/* Sync Codebase Button */}
         {Object.keys(files).length > 0 && (
           <button
-            onClick={() => setShowCodebaseSync(true)}
+            onClick={modals.openCodebaseSync}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 rounded-lg border border-blue-500/20 transition-all"
             title="Sync current codebase to AI context"
           >
@@ -823,7 +604,7 @@ Fix the error in src/App.tsx.`;
         hasExistingApp={!!existingApp}
         placeholder={isConsultantMode ? "Describe what to analyze..." : undefined}
         files={files}
-        onOpenPromptEngineer={() => setOpenModal('promptengineer')}
+        onOpenPromptEngineer={modals.openPromptEngineer}
         externalPrompt={externalPrompt}
       />
 
@@ -842,16 +623,16 @@ Fix the error in src/App.tsx.`;
         onOpenAISettings={onOpenAISettings}
         onOpenMegaSettings={onOpenMegaSettings}
         onOpenCodeMap={onOpenCodeMap}
-        onOpenTechStack={() => setOpenModal('techstack')}
+        onOpenTechStack={modals.openTechStack}
         aiHistoryCount={aiHistory.history.length}
-        onOpenAIHistory={() => setShowAIHistory(true)}
+        onOpenAIHistory={modals.openAIHistory}
         autoAcceptChanges={autoAcceptChanges}
         onAutoAcceptChangesChange={onAutoAcceptChangesChange}
         diffModeEnabled={diffModeEnabled}
         onDiffModeChange={onDiffModeChange}
-        shouldClose={openModal === 'projects' || openModal === 'techstack'}
-        onClosed={() => handleModalClose('settings')}
-        onOpened={() => handleModalOpen('settings')}
+        shouldClose={modals.shouldCloseSettings}
+        onClosed={modals.closeSettings}
+        onOpened={modals.openSettings}
       />
 
       {/* Project Panel */}
@@ -882,16 +663,16 @@ Fix the error in src/App.tsx.`;
             const newProject = await onCreateProject?.(name, description);
             return newProject || null;
           }}
-          shouldClose={openModal === 'settings'}
-          onClosed={() => handleModalClose('projects')}
-          onOpened={() => handleModalOpen('projects')}
+          shouldClose={modals.shouldCloseProjects}
+          onClosed={modals.closeProjects}
+          onOpened={modals.openProjects}
         />
       )}
 
       {/* Reset Confirmation Modal */}
       <ResetConfirmModal
-        isOpen={showResetConfirm}
-        onClose={() => setShowResetConfirm(false)}
+        isOpen={modals.showResetConfirm}
+        onClose={modals.closeResetConfirm}
         onConfirm={handleConfirmReset}
         currentProjectName={currentProject?.name}
         hasUncommittedChanges={hasUncommittedChanges}
@@ -900,120 +681,46 @@ Fix the error in src/App.tsx.`;
 
       {/* AI History Modal */}
       <AIHistoryModal
-        isOpen={showAIHistory}
-        onClose={() => setShowAIHistory(false)}
+        isOpen={modals.showAIHistory}
+        onClose={modals.closeAIHistory}
         history={aiHistory.history}
         onClearHistory={aiHistory.clearHistory}
         onDeleteEntry={aiHistory.deleteEntry}
         onExportHistory={aiHistory.exportHistory}
         onRestoreEntry={async (entry) => {
-          try {
-            // Find all history entries up to and including this one (by timestamp)
-            const entriesToRestore = aiHistory.history
-              .filter(h => h.timestamp <= entry.timestamp && h.success)
-              .sort((a, b) => a.timestamp - b.timestamp); // Oldest first
+          const entries = getEntriesUpToTimestamp(aiHistory.history, entry.timestamp);
+          const result = restoreFromHistoryEntries(entries);
 
-            // Reconstruct ALL chat messages from history
-            const restoredMessages: ChatMessage[] = [];
-            let previousFiles: FileSystem = {};
-
-            for (const historyEntry of entriesToRestore) {
-              // Parse files from this entry
-              const parsed = parseMultiFileResponse(historyEntry.rawResponse);
-              if (!parsed?.files) continue;
-
-              // Clean the generated code
-              const cleanedFiles: FileSystem = {};
-              for (const [path, content] of Object.entries(parsed.files)) {
-                cleanedFiles[path] = cleanGeneratedCode(content);
-              }
-
-              // Calculate file changes with support for deleted files
-              let mergedFiles: Record<string, string>;
-              if (Object.keys(previousFiles).length > 0) {
-                // Start with previous files and apply updates
-                mergedFiles = { ...previousFiles };
-
-                // Apply new/modified files
-                Object.assign(mergedFiles, cleanedFiles);
-
-                // Remove deleted files (if any)
-                const deletedFiles = parsed.deletedFiles || [];
-                for (const deletedPath of deletedFiles) {
-                  delete mergedFiles[deletedPath];
-                }
-              } else {
-                // First entry - just use generated files
-                mergedFiles = cleanedFiles;
-              }
-
-              const fileChanges = calculateFileChanges(previousFiles, mergedFiles);
-
-              // User message
-              restoredMessages.push({
-                id: crypto.randomUUID(),
-                role: 'user',
-                timestamp: historyEntry.timestamp - 1000,
-                prompt: historyEntry.prompt,
-                attachments: historyEntry.hasSketch || historyEntry.hasBrand ? [
-                  ...(historyEntry.hasSketch ? [{ type: 'sketch' as const, preview: '', file: new File([], 'sketch.png') }] : []),
-                  ...(historyEntry.hasBrand ? [{ type: 'brand' as const, preview: '', file: new File([], 'brand.png') }] : [])
-                ] : undefined
-              });
-
-              // Assistant message with file changes
-              restoredMessages.push({
-                id: crypto.randomUUID(),
-                role: 'assistant',
-                timestamp: historyEntry.timestamp,
-                files: cleanedFiles,
-                explanation: parsed.explanation || historyEntry.explanation || '',
-                fileChanges,
-                snapshotFiles: cleanedFiles
-              });
-
-              // Track files for next iteration
-              previousFiles = mergedFiles;
-            }
-
-            if (Object.keys(previousFiles).length === 0) {
-              console.error('[ControlPanel] No files found in history entries');
-              return false;
-            }
-
-            // Restore messages and files directly (no diff modal)
-            setMessages(restoredMessages);
-            setFiles(previousFiles);
-
+          if (result.success) {
+            setMessages(result.messages);
+            setFiles(result.files);
             return true;
-          } catch (error) {
-            console.error('[ControlPanel] Failed to restore from history:', error);
-            return false;
           }
+          return false;
         }}
       />
 
       {/* Tech Stack Modal */}
       <TechStackModal
-        isOpen={openModal === 'techstack'}
-        onClose={() => handleModalClose('techstack')}
+        isOpen={modals.isTechStackOpen}
+        onClose={modals.closeTechStack}
       />
 
       {/* Prompt Engineer Modal */}
       <PromptEngineerModal
-        isOpen={openModal === 'promptengineer'}
-        onClose={() => handleModalClose('promptengineer')}
+        isOpen={modals.isPromptEngineerOpen}
+        onClose={modals.closePromptEngineer}
         onPromptGenerated={handlePromptGenerated}
       />
 
       {/* Batch Generation Modal */}
-      {batchGenModal && (
+      {modals.batchGenModal && (
         <BatchGenerationModal
-          isOpen={batchGenModal.isOpen}
-          onClose={() => setBatchGenModal(null)}
-          prompt={batchGenModal.prompt}
-          systemInstruction={batchGenModal.systemInstruction}
-          targetFiles={batchGenModal.targetFiles}
+          isOpen={modals.batchGenModal.isOpen}
+          onClose={modals.closeBatchGen}
+          prompt={modals.batchGenModal.prompt}
+          systemInstruction={modals.batchGenModal.systemInstruction}
+          targetFiles={modals.batchGenModal.targetFiles}
           onComplete={(generatedFiles: FileSystem) => {
             // Apply the generated files to the current project
             const fileChanges: FileChange[] = Object.entries(generatedFiles).map(([path, content]) => ({
@@ -1041,15 +748,15 @@ Fix the error in src/App.tsx.`;
 
             // Show in diff modal (or auto-apply if auto-accept is on)
             reviewChange('Batch Generated Files', { ...files, ...generatedFiles });
-            setBatchGenModal(null);
+            modals.closeBatchGen();
           }}
         />
       )}
 
       {/* Codebase Sync Modal */}
       <CodebaseSyncModal
-        isOpen={showCodebaseSync}
-        onClose={() => setShowCodebaseSync(false)}
+        isOpen={modals.showCodebaseSync}
+        onClose={modals.closeCodebaseSync}
         files={files}
         onSync={async (payload) => {
           const { displayMessage, llmMessage, fileCount, tokenEstimate, batchIndex, totalBatches } = payload;

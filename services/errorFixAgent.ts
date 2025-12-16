@@ -11,6 +11,7 @@ import { parseMultiFileResponse } from '../utils/cleanCode';
 import { localFixEngine } from './localFixEngine';
 import { errorAnalyzer, ParsedError } from './errorAnalyzer';
 import { FILE_GENERATION_SCHEMA, supportsAdditionalProperties } from './ai/utils/schemas';
+import { ERROR_FIX_SYSTEM_PROMPT } from '../components/ControlPanel/prompts';
 
 // Agent states
 export type AgentState =
@@ -64,37 +65,6 @@ interface ErrorContext {
     resultingError?: string;
   }>;
 }
-
-// System prompt for error fixing - MUST return proper JSON format
-const ERROR_FIX_SYSTEM_PROMPT = `You are an expert React/TypeScript error fixer. Fix the error immediately.
-
-## ABSOLUTE RULES - FOLLOW EXACTLY:
-1. NEVER ask questions - fix the error directly
-2. NEVER say "I need more information" - use the provided code
-3. ALWAYS respond with JSON only - no explanatory text before or after
-4. ALWAYS use relative imports (./component, ../utils) - NEVER use "src/..." paths
-
-## FOR IMPORT ERRORS (bare specifier):
-When error says: 'The specifier "src/X" was a bare specifier'
-- The problem is in the file that has: import X from 'src/X'
-- Fix it by changing to: import X from './X' (relative path)
-- The importing file is provided in the prompt - fix THAT file
-
-## RESPONSE FORMAT - MANDATORY JSON:
-\`\`\`json
-{
-  "files": {
-    "FILEPATH": "COMPLETE_FILE_CONTENT"
-  },
-  "explanation": "What was fixed"
-}
-\`\`\`
-
-CRITICAL:
-- Return ONLY the JSON object above - nothing else
-- files: complete file content with \\n for newlines
-- No markdown, no questions, no extra text
-- If multiple files need fixing, include all in "files" object`;
 
 class ErrorFixAgent {
   private state: AgentState = 'idle';

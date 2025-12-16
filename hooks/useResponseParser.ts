@@ -84,7 +84,7 @@ export function useResponseParser(options: UseResponseParserOptions): UseRespons
       }
 
       const explanation = parseResult.explanation || 'App generated successfully.';
-      let newFiles = parseResult.files;
+      const newFiles = parseResult.files;
       const deletedFiles = parseResult.deletedFiles || [];
       const wasTruncated = parseResult.truncated || false;
       const generationMeta = parseResult.generationMeta;

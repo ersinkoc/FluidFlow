@@ -4,90 +4,11 @@
  * Helper functions extracted from ControlPanel for better organization and testability.
  */
 
-import { FileSystem, FileChange } from '../../types';
 import { stripPlanComment } from '../../utils/cleanCode';
+import { estimateTokenCount } from '../../services/ai/capabilities';
 
-/**
- * Estimate token count from text
- * Uses ~4 characters per token approximation for mixed content (code + text)
- */
-export function estimateTokenCount(text: string): number {
-  if (!text) return 0;
-  return Math.ceil(text.length / 4);
-}
-
-/**
- * Token usage result structure
- */
-export interface TokenUsage {
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-  isEstimated: boolean;
-}
-
-/**
- * Create token usage from API response or estimate from content
- */
-export function createTokenUsage(
-  usage?: { inputTokens?: number; outputTokens?: number; isEstimated?: boolean },
-  promptText?: string,
-  responseText?: string,
-  files?: Record<string, string>
-): TokenUsage {
-  // If API provided usage, use it
-  if (usage?.inputTokens || usage?.outputTokens) {
-    return {
-      inputTokens: usage.inputTokens || 0,
-      outputTokens: usage.outputTokens || 0,
-      totalTokens: (usage.inputTokens || 0) + (usage.outputTokens || 0),
-      isEstimated: usage.isEstimated ?? false
-    };
-  }
-
-  // Otherwise estimate from content
-  const inputTokens = promptText ? estimateTokenCount(promptText) : 0;
-  const filesContent = files ? Object.values(files).join('\n') : '';
-  const outputTokens = estimateTokenCount((responseText || '') + filesContent);
-
-  return {
-    inputTokens,
-    outputTokens,
-    totalTokens: inputTokens + outputTokens,
-    isEstimated: true
-  };
-}
-
-/**
- * Calculate file changes between two file systems
- */
-export function calculateFileChanges(oldFiles: FileSystem, newFiles: FileSystem): FileChange[] {
-  const changes: FileChange[] = [];
-  const allKeys = new Set([...Object.keys(oldFiles), ...Object.keys(newFiles)]);
-
-  allKeys.forEach(path => {
-    const oldContent = oldFiles[path] || '';
-    const newContent = newFiles[path] || '';
-
-    if (oldContent !== newContent) {
-      const oldLines = oldContent ? oldContent.split('\n').length : 0;
-      const newLines = newContent ? newContent.split('\n').length : 0;
-
-      let type: 'added' | 'modified' | 'deleted' = 'modified';
-      if (!oldContent) type = 'added';
-      else if (!newContent) type = 'deleted';
-
-      changes.push({
-        path,
-        type,
-        additions: type === 'deleted' ? 0 : Math.max(0, newLines - oldLines + (type === 'added' ? newLines : 0)),
-        deletions: type === 'added' ? 0 : Math.max(0, oldLines - newLines + (type === 'deleted' ? oldLines : 0))
-      });
-    }
-  });
-
-  return changes;
-}
+// Re-export for backwards compatibility
+export { estimateTokenCount };
 
 /**
  * Extract file list from AI response

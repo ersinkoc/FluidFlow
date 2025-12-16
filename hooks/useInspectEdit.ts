@@ -6,7 +6,7 @@
  */
 
 import { useCallback } from 'react';
-import { FileSystem, ChatMessage, FileChange } from '../types';
+import { FileSystem, ChatMessage } from '../types';
 import { safeParseAIResponse } from '../utils/cleanCode';
 import { generateContextForPrompt, generateCodeMap } from '../utils/codemap';
 import { debugLog } from './useDebugStore';
@@ -14,6 +14,7 @@ import { getProviderManager } from '../services/ai';
 import { FILE_GENERATION_SCHEMA, supportsAdditionalProperties } from '../services/ai/utils/schemas';
 import { InspectedElement, EditScope } from '../components/PreviewPanel/ComponentInspector';
 import { buildInspectEditInstruction } from '../components/ControlPanel/prompts';
+import { calculateFileChanges, createTokenUsage } from '../utils/generationUtils';
 
 export interface InspectContext {
   element: InspectedElement;
@@ -35,64 +36,6 @@ export interface UseInspectEditReturn {
     prompt: string,
     inspectContext: InspectContext
   ) => Promise<boolean>;
-}
-
-/**
- * Calculate file changes between old and new file systems
- */
-function calculateFileChanges(oldFiles: FileSystem, newFiles: FileSystem): FileChange[] {
-  const changes: FileChange[] = [];
-  const allPaths = new Set([...Object.keys(oldFiles), ...Object.keys(newFiles)]);
-
-  for (const path of allPaths) {
-    const oldContent = oldFiles[path];
-    const newContent = newFiles[path];
-
-    if (!oldContent && newContent) {
-      changes.push({
-        path,
-        type: 'added',
-        additions: newContent.split('\n').length,
-        deletions: 0,
-      });
-    } else if (oldContent && !newContent) {
-      changes.push({
-        path,
-        type: 'deleted',
-        additions: 0,
-        deletions: oldContent.split('\n').length,
-      });
-    } else if (oldContent !== newContent) {
-      const oldLines = oldContent?.split('\n').length || 0;
-      const newLines = newContent?.split('\n').length || 0;
-      changes.push({
-        path,
-        type: 'modified',
-        additions: Math.max(0, newLines - oldLines),
-        deletions: Math.max(0, oldLines - newLines),
-      });
-    }
-  }
-
-  return changes;
-}
-
-/**
- * Create token usage object
- */
-function createTokenUsage(
-  apiUsage?: { inputTokens?: number; outputTokens?: number },
-  _prompt?: string,
-  response?: string,
-  _files?: Record<string, string>
-): { inputTokens: number; outputTokens: number; totalTokens: number } {
-  const inputTokens = apiUsage?.inputTokens || 0;
-  const outputTokens = apiUsage?.outputTokens || Math.ceil((response?.length || 0) / 4);
-  return {
-    inputTokens,
-    outputTokens,
-    totalTokens: inputTokens + outputTokens,
-  };
 }
 
 export function useInspectEdit(options: UseInspectEditOptions): UseInspectEditReturn {

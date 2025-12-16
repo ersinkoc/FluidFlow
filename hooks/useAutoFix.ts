@@ -11,6 +11,7 @@ import { FileSystem, LogEntry } from '../types';
 import { cleanGeneratedCode, isValidCode } from '../utils/cleanCode';
 import { debugLog } from './useDebugStore';
 import { attemptAutoFix, classifyError, canAutoFix, wasRecentlyFixed } from '../services/autoFixService';
+import { parseStackTrace, buildAutoFixPrompt } from '../utils/errorContext';
 
 interface UseAutoFixOptions {
   files: FileSystem;
@@ -95,156 +96,16 @@ export function useAutoFix({
     };
   }, []);
 
-  // Helper: Extract local imports from code
-  const extractLocalImports = useCallback((code: string): string[] => {
-    const imports: string[] = [];
-    const importRegex = /import\s+(?:(?:\{[^}]*\}|[^{}\s,]+|\*\s+as\s+\w+)(?:\s*,\s*)?)+\s+from\s+['"]\.\.?\/([^'"]+)['"]/g;
-    let match;
-    while ((match = importRegex.exec(code)) !== null) {
-      const importPath = match[1];
-      const possiblePaths = [
-        `src/${importPath}.tsx`,
-        `src/${importPath}.ts`,
-        `src/${importPath}/index.tsx`,
-        `src/${importPath}/index.ts`,
-        `${importPath}.tsx`,
-        `${importPath}.ts`,
-      ];
-      for (const p of possiblePaths) {
-        if (files[p]) {
-          imports.push(p);
-          break;
-        }
-      }
-    }
-    return [...new Set(imports)];
-  }, [files]);
-
-  // Helper: Parse stack trace to identify error location
-  const parseStackTrace = useCallback((errorMessage: string): { file?: string; line?: number; column?: number } => {
-    console.log('[AutoFix] Parsing error message:', errorMessage.slice(0, 200));
-
-    // Pattern: Transpilation failed for src/components/Features.tsx
-    const transpileMatch = errorMessage.match(/(?:Transpilation failed for|failed for)\s+(src\/[\w./]+\.tsx?)[\s:]/i);
-    if (transpileMatch) {
-      const lineMatch = errorMessage.match(/\((\d+):(\d+)\)/);
-      const result = {
-        file: transpileMatch[1],
-        line: lineMatch ? parseInt(lineMatch[1], 10) : undefined,
-        column: lineMatch ? parseInt(lineMatch[2], 10) : undefined
-      };
-      console.log('[AutoFix] Found transpile error, target file:', result);
-      return result;
-    }
-
-    // Pattern: at Component (filename.tsx:123:45)
-    const stackMatch = errorMessage.match(/at\s+(?:\w+\s+\()?([\w./]+\.tsx?):(\d+):(\d+)/);
-    if (stackMatch) {
-      const result = {
-        file: stackMatch[1],
-        line: parseInt(stackMatch[2], 10),
-        column: parseInt(stackMatch[3], 10)
-      };
-      console.log('[AutoFix] Found stack trace, target file:', result);
-      return result;
-    }
-
-    // Pattern: Error in src/App.tsx:123
-    const simpleMatch = errorMessage.match(/(?:Error in|at)\s+(src\/[\w./]+\.tsx?):?(\d+)?/i);
-    if (simpleMatch) {
-      const result = {
-        file: simpleMatch[1],
-        line: simpleMatch[2] ? parseInt(simpleMatch[2], 10) : undefined
-      };
-      console.log('[AutoFix] Found simple error pattern, target file:', result);
-      return result;
-    }
-
-    // Pattern: /src/components/File.tsx: Unexpected token
-    const pathMatch = errorMessage.match(/\/(src\/[\w./]+\.tsx?):/);
-    if (pathMatch) {
-      const lineMatch = errorMessage.match(/\((\d+):(\d+)\)/);
-      const result = {
-        file: pathMatch[1],
-        line: lineMatch ? parseInt(lineMatch[1], 10) : undefined,
-        column: lineMatch ? parseInt(lineMatch[2], 10) : undefined
-      };
-      console.log('[AutoFix] Found path match, target file:', result);
-      return result;
-    }
-
-    console.log('[AutoFix] No file pattern matched, will use default src/App.tsx');
-    return {};
-  }, []);
-
-  // Helper: Get relevant files based on error context
-  const getRelatedFiles = useCallback((errorMessage: string, mainCode: string): Record<string, string> => {
-    const related: Record<string, string> = {};
-
-    // Get local imports from App.tsx
-    const localImports = extractLocalImports(mainCode);
-    for (const importPath of localImports.slice(0, 5)) {
-      if (files[importPath]) {
-        related[importPath] = files[importPath];
-      }
-    }
-
-    // Check for component name in error
-    const componentMatch = errorMessage.match(/(?:Element type|'|")(\w+)(?:'|")|(?:cannot read|undefined)\s+(?:property\s+)?['"]?(\w+)['"]?/i);
-    if (componentMatch) {
-      const componentName = componentMatch[1] || componentMatch[2];
-      for (const [path, content] of Object.entries(files)) {
-        if (path.toLowerCase().includes(componentName.toLowerCase()) ||
-            content.includes(`export const ${componentName}`) ||
-            content.includes(`export function ${componentName}`) ||
-            content.includes(`export default ${componentName}`)) {
-          if (!related[path] && Object.keys(related).length < 6) {
-            related[path] = content;
-          }
-        }
-      }
-    }
-
-    // Include types file if exists
-    if (files['src/types.ts'] && !related['src/types.ts']) {
-      related['src/types.ts'] = files['src/types.ts'];
-    }
-
-    // Parse stack trace for specific file
-    const stackInfo = parseStackTrace(errorMessage);
-    if (stackInfo.file && files[stackInfo.file] && !related[stackInfo.file]) {
-      related[stackInfo.file] = files[stackInfo.file];
-    }
-
-    return related;
-  }, [files, extractLocalImports, parseStackTrace]);
-
-  // Helper: Get recent console logs for context
-  const getRecentLogsContext = useCallback((): string => {
-    const recentLogs = logs.slice(-10);
-    if (recentLogs.length === 0) return '';
-
-    const logContext = recentLogs
-      .filter(l => l.type === 'error' || l.type === 'warn')
-      .map(l => `[${l.type.toUpperCase()}] ${l.message}`)
-      .join('\n');
-
-    return logContext ? `## Recent Console Logs\n\`\`\`\n${logContext}\n\`\`\`\n` : '';
-  }, [logs]);
-
   // Main auto-fix function
   const autoFixError = useCallback(async (errorMessage: string) => {
     console.log('[AutoFix] autoFixError called:', errorMessage.slice(0, 100));
-    console.log('[AutoFix] State:', { hasAppCode: !!appCode, isAutoFixing, isGenerating, lastFixedError: lastFixedErrorRef.current?.slice(0, 50) });
 
     if (!appCode || isAutoFixing || isGenerating) {
-      console.log('[AutoFix] Early return - appCode:', !!appCode, 'isAutoFixing:', isAutoFixing, 'isGenerating:', isGenerating);
       return;
     }
 
     // Skip if we just fixed this error
     if (lastFixedErrorRef.current === errorMessage) {
-      console.log('[AutoFix] Early return - already fixed this error');
       return;
     }
 
@@ -269,104 +130,25 @@ export function useAutoFix({
       }
 
       const modelToUse = activeConfig.defaultModel;
-      console.log('[AutoFix] Using provider:', activeConfig.type, 'model:', modelToUse);
-
-      // Build comprehensive context
       setAutoFixToast('📦 Building context...');
-      const techStackContext = generateSystemInstruction();
-      const errorClassification = classifyError(errorMessage);
-      const relatedFiles = getRelatedFiles(errorMessage, appCode);
-      const recentLogsContext = getRecentLogsContext();
-      const stackInfo = parseStackTrace(errorMessage);
 
+      // Determine target file
+      const stackInfo = parseStackTrace(errorMessage);
       const targetFile = stackInfo.file || 'src/App.tsx';
       const targetFileContent = files[targetFile] || appCode || '';
-
-      console.log('[AutoFix] Error classification:', errorClassification);
-      console.log('[AutoFix] Target file:', targetFile);
-      console.log('[AutoFix] Related files:', Object.keys(relatedFiles));
 
       if (!targetFileContent) {
         throw new Error(`Target file not found: ${targetFile}`);
       }
 
-      // Build related files section
-      let relatedFilesSection = '';
-      const relatedEntries = Object.entries(relatedFiles).filter(([path]) => path !== targetFile);
-      if (relatedEntries.length > 0) {
-        relatedFilesSection = '\n## Related Files (may contain relevant code)\n';
-        for (const [path, content] of relatedEntries) {
-          const truncated = content.length > 2000 ? content.slice(0, 2000) + '\n// ... truncated' : content;
-          relatedFilesSection += `### ${path}\n\`\`\`tsx\n${truncated}\n\`\`\`\n`;
-        }
-      }
-
-      // Error-specific hints
-      const categoryHints: Record<string, string> = {
-        'import': `- Check if the import source exists and is correct
-- For motion animations, use 'motion/react' (not 'framer-motion')
-- For React Router v7, imports are from 'react-router' (not 'react-router-dom')
-- Verify named vs default exports match`,
-        'syntax': `- Check for missing brackets, parentheses, or semicolons
-- Verify JSX syntax is valid
-- Ensure template literals are properly closed`,
-        'type': `- Check type definitions in types.ts if available
-- Ensure props match expected types
-- Verify generic type parameters`,
-        'runtime': `- Check for null/undefined access
-- Verify async operations are properly awaited
-- Ensure state is initialized before use`,
-        'react': `- Verify hook rules (only call in component body)
-- Check key props for list items
-- Ensure proper event handler binding`
-      };
-
-      const categoryHint = categoryHints[errorClassification.category] || '';
-
-      const systemPrompt = `You are an expert React/TypeScript developer. Fix the following runtime error.
-
-${techStackContext}
-
-## Error Information
-- **Error Message**: ${errorMessage}
-- **Error Category**: ${errorClassification.category}
-- **Priority**: ${errorClassification.priority}/5
-- **Target File**: ${targetFile}${stackInfo.line ? ` (line ${stackInfo.line})` : ''}
-
-${recentLogsContext}
-
-## Available Files in Project
-${Object.keys(files).join(', ')}
-
-${relatedFilesSection}
-
-## File to Fix (${targetFile})
-\`\`\`tsx
-${targetFileContent}
-\`\`\`
-
-## Fix Guidelines
-1. ONLY fix the specific error - do not refactor unrelated code
-2. Maintain the existing code style and patterns
-3. Ensure all imports are correct (check the tech stack above for correct package names)
-4. If a component is undefined, check if it should be imported or defined
-5. For missing exports, check related files above for correct export names
-6. Pay attention to special characters in strings (like apostrophes)
-
-${categoryHint ? `## Category-Specific Hints\n${categoryHint}` : ''}
-
-## Required Output Format
-Return ONLY the complete fixed ${targetFile} code.
-- No explanations or comments about the fix
-- No markdown code blocks or backticks
-- Just valid TypeScript/TSX code that can directly replace the file`;
-
-      console.log('[AutoFix] Sending prompt to AI:', {
-        model: modelToUse,
+      // Build prompt using utility
+      const systemPrompt = buildAutoFixPrompt({
+        errorMessage,
         targetFile,
-        errorCategory: errorClassification.category,
-        relatedFilesCount: relatedEntries.length,
-        promptLength: systemPrompt.length
+        targetFileContent,
+        files,
+        techStackContext: generateSystemInstruction(),
+        logs,
       });
 
       const shortModelName = modelToUse.split('/').pop()?.replace('models-', '') || modelToUse;
@@ -380,12 +162,7 @@ Return ONLY the complete fixed ${targetFile} code.
       setAutoFixToast('⚙️ Processing fix...');
 
       const fixedCode = cleanGeneratedCode(response.text || '');
-
-      console.log('[AutoFix] Response received:', {
-        responseLength: response.text?.length || 0,
-        fixedCodeLength: fixedCode.length,
-        isValid: !!(fixedCode && isValidCode(fixedCode))
-      });
+      const errorClassification = classifyError(errorMessage);
 
       debugLog.response('auto-fix', {
         id: requestId,
@@ -395,7 +172,6 @@ Return ONLY the complete fixed ${targetFile} code.
         metadata: {
           success: !!(fixedCode && isValidCode(fixedCode)),
           category: errorClassification.category,
-          relatedFilesCount: Object.keys(relatedFiles).length
         }
       });
 
@@ -428,7 +204,7 @@ Return ONLY the complete fixed ${targetFile} code.
     } finally {
       setIsAutoFixing(false);
     }
-  }, [appCode, files, setFiles, setLogs, isAutoFixing, isGenerating, selectedModel, generateSystemInstruction, getRelatedFiles, getRecentLogsContext, parseStackTrace]);
+  }, [appCode, files, setFiles, setLogs, logs, isAutoFixing, isGenerating, selectedModel, generateSystemInstruction]);
 
   // Confirmation handlers
   const handleConfirmAutoFix = useCallback(() => {
@@ -554,7 +330,7 @@ Return ONLY the complete fixed ${targetFile} code.
     } else {
       console.log('[AutoFix] Not showing AI dialog - error not fixable or low priority');
     }
-  }, [autoFixEnabled, isAutoFixing, pendingAutoFix, appCode, setFiles, parseStackTrace]);
+  }, [autoFixEnabled, isAutoFixing, pendingAutoFix, appCode, setFiles]);
 
   return {
     // State

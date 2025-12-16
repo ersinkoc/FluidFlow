@@ -2,6 +2,7 @@ import { AIProvider, ProviderConfig, GenerationRequest, GenerationResponse, Stre
 import { fetchWithTimeout, TIMEOUT_TEST_CONNECTION, TIMEOUT_GENERATE } from '../utils/fetchWithTimeout';
 import { prepareJsonRequest } from '../utils/jsonOutput';
 import { throwIfNotOk } from '../utils/errorHandling';
+import { processSSEStream } from '../utils/streamParser';
 
 // OpenAI-compatible API interfaces
 interface ChatMessage {
@@ -168,122 +169,25 @@ export class ZAIProvider implements AIProvider {
     // Use centralized error handling
     await throwIfNotOk(response, 'zai');
 
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error('No response body');
-    }
+    // Use unified SSE stream parser (OpenAI-compatible format)
+    const { fullText, usage } = await processSSEStream(response, {
+      format: 'openai',
+      onChunk,
+    });
 
-    const decoder = new TextDecoder();
-    let fullText = '';
-    let inputTokens = 0;
-    let outputTokens = 0;
-    let buffer = ''; // Buffer for incomplete chunks
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        buffer += chunk;
-
-        // Process complete lines from buffer
-        const lines = buffer.split('\n');
-        // Keep the last (potentially incomplete) line in buffer
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          const trimmedLine = line.trim();
-          if (!trimmedLine) continue;
-
-          if (trimmedLine.startsWith('data: ')) {
-            const data = trimmedLine.slice(6);
-            if (data === '[DONE]') {
-              continue;
-            }
-
-            try {
-              const parsed = JSON.parse(data);
-
-              // Log finish reason to debug truncation
-              if (parsed.choices?.[0]?.finish_reason) {
-                console.log('[ZAI] Stream finish reason:', parsed.choices[0].finish_reason);
-              }
-
-              const content = parsed.choices?.[0]?.delta?.content || '';
-              if (content) {
-                fullText += content;
-                onChunk({ text: content, done: false });
-              }
-
-              // Extract usage info if available
-              if (parsed.usage) {
-                inputTokens = parsed.usage.prompt_tokens || inputTokens;
-                outputTokens = parsed.usage.completion_tokens || outputTokens;
-                console.log('[ZAI] Token usage:', { inputTokens, outputTokens });
-              }
-            } catch (_e) {
-              // JSON parse failed - might be incomplete, will retry with more data
-              // Only log if it looks like actual data (not empty or whitespace)
-              if (data.trim().length > 10) {
-                console.debug('[ZAI] Incomplete chunk, buffering:', data.slice(0, 50) + '...');
-              }
-            }
-          }
-        }
-      }
-
-      // Process any remaining data in buffer
-      if (buffer.trim()) {
-        const trimmedLine = buffer.trim();
-        if (trimmedLine.startsWith('data: ')) {
-          const data = trimmedLine.slice(6);
-          if (data !== '[DONE]') {
-            try {
-              const parsed = JSON.parse(data);
-              const content = parsed.choices?.[0]?.delta?.content || '';
-              if (content) {
-                fullText += content;
-                onChunk({ text: content, done: false });
-              }
-              if (parsed.usage) {
-                inputTokens = parsed.usage.prompt_tokens || inputTokens;
-                outputTokens = parsed.usage.completion_tokens || outputTokens;
-              }
-            } catch (_e) {
-              console.debug('[ZAI] Final buffer parse failed:', data.slice(0, 50));
-            }
-          }
-        }
-      }
-    } finally {
-      reader.releaseLock();
-    }
-
-    // Check if response appears to be incomplete
-    // Using explicit parentheses for clarity on operator precedence
+    // Check if response appears to be incomplete (ZAI truncation detection)
     const trimmed = fullText.trim();
     const isIncomplete =
       (trimmed.endsWith('```') && !trimmed.includes('```tsx') && !trimmed.includes('```jsx')) ||
       (trimmed.endsWith('"') && !trimmed.endsWith('"}') && !trimmed.endsWith('"}\n')) ||
       (trimmed.includes('className=\\') && !trimmed.endsWith('}')) ||
-      // Check for incomplete JSON
       (trimmed.includes('{') && !trimmed.endsWith('}')) ||
-      // Check for unclosed JSON object (missing closing brace)
       (trimmed.startsWith('{') && trimmed.split('{').length > trimmed.split('}').length);
 
     if (isIncomplete) {
       console.warn('[ZAI] Response appears to be truncated');
     }
 
-    onChunk({ text: '', done: true });
-
-    return {
-      text: fullText,
-      usage: {
-        inputTokens,
-        outputTokens
-      }
-    };
+    return { text: fullText, usage };
   }
 }

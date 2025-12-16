@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   Monitor, Smartphone, Tablet, RefreshCw, Eye, Code2, Copy, Check, Download, Database,
   ShieldCheck, FileText, Wrench, Package, Loader2,
@@ -7,15 +7,15 @@ import {
 } from 'lucide-react';
 import { getProviderManager } from '../../services/ai';
 import { buildIframeHtml } from '../../utils/sandboxHtml';
-
-import { FileSystem, LogEntry, NetworkRequest, TabType, TerminalTab, PreviewDevice } from '../../types';
-
+import { FileSystem, LogEntry, TabType, PreviewDevice } from '../../types';
 import { cleanGeneratedCode } from '../../utils/cleanCode';
-import { FILE_GENERATION_SCHEMA, supportsAdditionalProperties } from '../../services/ai/utils/schemas';
 import { useTechStack } from '../../hooks/useTechStack';
 import { useAutoFix } from '../../hooks/useAutoFix';
 import { usePreviewAI } from '../../hooks/usePreviewAI';
 import { useExport } from '../../hooks/useExport';
+
+// Local hooks
+import { useIframeMessaging, useInspectMode } from './hooks';
 
 // Sub-components
 import { CodeEditor } from './CodeEditor';
@@ -82,11 +82,11 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
   const [isCopied, setIsCopied] = useState(false);
   const [previewDevice, setPreviewDevice] = useState<PreviewDevice>('desktop');
 
-  // Console
+  // Console logs state (shared between useAutoFix and useIframeMessaging)
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [networkLogs, setNetworkLogs] = useState<NetworkRequest[]>([]);
-  const [isConsoleOpen, setIsConsoleOpen] = useState(false);
-  const [activeTerminalTab, setActiveTerminalTab] = useState<TerminalTab>('console');
+
+  // Inspect editing state (shared between useIframeMessaging and useInspectMode)
+  const [isInspectEditing, setIsInspectEditing] = useState(false);
 
   // Split View
   const [isSplitView, setIsSplitView] = useState(false);
@@ -145,6 +145,48 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
     generateSystemInstruction,
   });
 
+  // Iframe messaging hook (console, network, inspect events, URL)
+  const {
+    networkLogs,
+    setNetworkLogs,
+    isConsoleOpen,
+    setIsConsoleOpen,
+    activeTerminalTab,
+    setActiveTerminalTab,
+    hoveredElement,
+    inspectedElement,
+    clearInspectedElement,
+    currentUrl,
+    canGoBack,
+    canGoForward,
+    navigateToUrl,
+    goBack,
+    goForward,
+    iframeRef,
+  } = useIframeMessaging({
+    isInspectEditing,
+    onProcessError: processError,
+    logs,
+    setLogs,
+  });
+
+  // Inspect mode hook
+  const {
+    isInspectMode,
+    toggleInspectMode,
+    exitInspectMode,
+    handleInspectEdit: inspectModeHandleEdit,
+  } = useInspectMode({
+    files,
+    appCode,
+    selectedModel,
+    reviewChange,
+    onExternalInspectEdit: onInspectEdit,
+    onClearInspectedElement: clearInspectedElement,
+    isInspectEditing,
+    setIsInspectEditing,
+  });
+
   // Preview AI hook (accessibility, responsiveness, database)
   const {
     accessibilityReport,
@@ -186,81 +228,6 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
     appCode,
   });
 
-  // Inspect Mode
-  const [isInspectMode, setIsInspectMode] = useState(false);
-  const [hoveredElement, setHoveredElement] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
-  const [inspectedElement, setInspectedElement] = useState<InspectedElement | null>(null);
-  const [isInspectEditing, setIsInspectEditing] = useState(false);
-
-  // URL Bar state
-  const [currentUrl, setCurrentUrl] = useState('/');
-  const [canGoBack, setCanGoBack] = useState(false);
-  const [canGoForward, setCanGoForward] = useState(false);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-
-  // Console Message Listener
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (!event.data) return;
-
-      if (event.data.type === 'CONSOLE_LOG') {
-        const logId = crypto.randomUUID();
-        const logEntry = {
-          id: logId,
-          type: event.data.logType,
-          message: event.data.message,
-          timestamp: new Date(event.data.timestamp).toLocaleTimeString([], { hour12: false })
-        };
-
-        setLogs(prev => [...prev, logEntry]);
-
-        if (event.data.logType === 'error') {
-          setIsConsoleOpen(true);
-          setActiveTerminalTab('console');
-          // Process error through auto-fix hook
-          processError(event.data.message, event.data.stack);
-        }
-      } else if (event.data.type === 'NETWORK_REQUEST') {
-        setNetworkLogs(prev => [...prev, {
-          id: crypto.randomUUID(),
-          method: event.data.req.method,
-          url: event.data.req.url,
-          status: event.data.req.status,
-          duration: event.data.req.duration,
-          timestamp: new Date(event.data.timestamp).toLocaleTimeString([], { hour12: false })
-        }]);
-      } else if (event.data.type === 'INSPECT_HOVER') {
-        // Element hovered in inspect mode - ignore if editing
-        if (!isInspectEditing) {
-          setHoveredElement(event.data.rect);
-        }
-      } else if (event.data.type === 'INSPECT_SELECT') {
-        // Element selected in inspect mode - ignore if already editing
-        if (!isInspectEditing) {
-          setInspectedElement(event.data.element);
-          setHoveredElement(null);
-        }
-      } else if (event.data.type === 'INSPECT_LEAVE') {
-        // Mouse left element
-        if (!isInspectEditing) {
-          setHoveredElement(null);
-        }
-      } else if (event.data.type === 'INSPECT_SCROLL') {
-        // Update selected element rect on scroll (functional update handles null case)
-        if (!isInspectEditing) {
-          setInspectedElement(prev => prev ? { ...prev, rect: event.data.rect } : null);
-        }
-      } else if (event.data.type === 'URL_CHANGE') {
-        // URL changed in sandbox
-        setCurrentUrl(event.data.url || '/');
-        setCanGoBack(event.data.canGoBack || false);
-        setCanGoForward(event.data.canGoForward || false);
-      }
-    };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [isInspectEditing, processError]);
-
   // Build iframe content
   useEffect(() => {
     if (appCode) {
@@ -269,87 +236,11 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
     }
   }, [appCode, files, isInspectMode]);
 
-  // Toggle inspect mode in iframe
-  const toggleInspectMode = () => {
-    const newMode = !isInspectMode;
-    setIsInspectMode(newMode);
-    setInspectedElement(null);
-    setHoveredElement(null);
+  // Handle inspect mode toggle with iframe refresh
+  const handleToggleInspectMode = () => {
+    toggleInspectMode();
     // Force iframe refresh to apply new event listeners
     setKey(prev => prev + 1);
-  };
-
-  // Handle targeted component edit
-  const handleInspectEdit = async (prompt: string, element: InspectedElement, scope: EditScope) => {
-    if (!appCode) return;
-    setIsInspectEditing(true);
-
-    // If external handler provided (with chat history support), use it
-    if (onInspectEdit) {
-      try {
-        await onInspectEdit(prompt, element, scope);
-        setInspectedElement(null);
-        setIsInspectMode(false);
-      } catch (error) {
-        console.error('Inspect edit failed:', error);
-      } finally {
-        setIsInspectEditing(false);
-      }
-      return;
-    }
-
-    // Fallback to local implementation using provider manager
-    try {
-      const manager = getProviderManager();
-      const activeConfig = manager.getActiveConfig();
-      const currentModel = activeConfig?.defaultModel || selectedModel;
-
-      const elementContext = `
-Target Element:
-- Tag: <${element.tagName.toLowerCase()}>
-- Component: ${element.componentName || 'Unknown'}
-- Classes: ${element.className || 'none'}
-- ID: ${element.id || 'none'}
-- Text content: "${element.textContent?.slice(0, 100) || ''}"
-${element.parentComponents ? `- Parent components: ${element.parentComponents.join(' > ')}` : ''}
-`;
-
-      const systemInstruction = `You are an expert React developer. The user has selected a specific element/component in their app and wants to modify it.
-
-Based on the element information provided, identify which file and component needs to be modified, then make the requested changes.
-
-**RESPONSE FORMAT**: Return a JSON object with:
-1. "explanation": Brief markdown explaining what you changed
-2. "files": Object with file paths as keys and updated code as values
-
-Only return files that need changes. Maintain all existing functionality.`;
-
-      const response = await manager.generate({
-        prompt: `${elementContext}\n\nUser Request: ${prompt}\n\nCurrent files:\n${JSON.stringify(files, null, 2)}`,
-        systemInstruction,
-        responseFormat: 'json',
-        // FILE_GENERATION_SCHEMA has dynamic keys, only Gemini supports it natively
-        responseSchema: activeConfig?.type && supportsAdditionalProperties(activeConfig.type)
-          ? FILE_GENERATION_SCHEMA
-          : undefined,
-        debugCategory: 'quick-edit'
-      }, currentModel);
-
-      const text = response.text || '{}';
-      const result = JSON.parse(cleanGeneratedCode(text));
-
-      if (result.files && Object.keys(result.files).length > 0) {
-        const newFiles = { ...files, ...result.files };
-        reviewChange(`Edit: ${element.componentName || element.tagName}`, newFiles);
-      }
-
-      setInspectedElement(null);
-      setIsInspectMode(false);
-    } catch (error) {
-      console.error('Inspect edit failed:', error);
-    } finally {
-      setIsInspectEditing(false);
-    }
   };
 
   // Fix error from console
@@ -376,28 +267,6 @@ Only return files that need changes. Maintain all existing functionality.`;
   // Helper functions
   const reloadPreview = () => {
     setKey(prev => prev + 1);
-    setCurrentUrl('/');
-    setCanGoBack(false);
-    setCanGoForward(false);
-  };
-
-  // URL Bar navigation functions
-  const navigateToUrl = (url: string) => {
-    if (iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.postMessage({ type: 'NAVIGATE', url }, '*');
-    }
-  };
-
-  const goBack = () => {
-    if (iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.postMessage({ type: 'GO_BACK' }, '*');
-    }
-  };
-
-  const goForward = () => {
-    if (iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.postMessage({ type: 'GO_FORWARD' }, '*');
-    }
   };
 
   const copyToClipboard = () => {
@@ -488,7 +357,7 @@ Only return files that need changes. Maintain all existing functionality.`;
               {appCode && !isGenerating && (
                 <>
                   <button
-                    onClick={toggleInspectMode}
+                    onClick={handleToggleInspectMode}
                     className={`p-2 rounded-lg border transition-all ${
                       isInspectMode
                         ? 'bg-purple-500/10 text-purple-300 border-purple-500/20'
@@ -699,8 +568,8 @@ Only return files that need changes. Maintain all existing functionality.`;
             hoveredElement={hoveredElement}
             inspectedElement={inspectedElement}
             isInspectEditing={isInspectEditing}
-            onCloseInspector={() => { setInspectedElement(null); setIsInspectMode(false); }}
-            onInspectEdit={handleInspectEdit}
+            onCloseInspector={exitInspectMode}
+            onInspectEdit={inspectModeHandleEdit}
             iframeRef={iframeRef}
             currentUrl={currentUrl}
             canGoBack={canGoBack}

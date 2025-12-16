@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X,
@@ -24,47 +24,10 @@ import {
   Wrench
 } from 'lucide-react';
 import { ChatAttachment, FileSystem } from '../../types';
-import { promptLibrary, quickPrompts, PromptItem } from '../../data/promptLibrary';
+import { promptLibrary, quickPrompts, PromptItem, PromptLevel } from '../../data/promptLibrary';
 import { PromptImproverModal } from './PromptImproverModal';
-
-// Web Speech API types
-interface SpeechRecognitionEvent extends Event {
-  resultIndex: number;
-  results: SpeechRecognitionResultList;
-}
-
-interface SpeechRecognitionResultList {
-  length: number;
-  [index: number]: SpeechRecognitionResult;
-}
-
-interface SpeechRecognitionResult {
-  isFinal: boolean;
-  length: number;
-  [index: number]: SpeechRecognitionAlternative;
-}
-
-interface SpeechRecognitionAlternative {
-  transcript: string;
-  confidence: number;
-}
-
-interface SpeechRecognition extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onstart: (() => void) | null;
-  onresult: ((event: SpeechRecognitionEvent) => void) | null;
-  onerror: ((event: Event) => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-}
-
-interface WindowWithSpeechRecognition extends Window {
-  SpeechRecognition?: new () => SpeechRecognition;
-  webkitSpeechRecognition?: new () => SpeechRecognition;
-}
+import { PromptLevelModal, QuickLevelToggle, usePromptLevel } from './PromptLevelModal';
+import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 
 interface ExpandedPromptModalProps {
   isOpen: boolean;
@@ -115,17 +78,27 @@ export const ExpandedPromptModal: React.FC<ExpandedPromptModalProps> = ({
   const [showFileSelector, setShowFileSelector] = useState(false);
   const [showPromptLibrary, setShowPromptLibrary] = useState(true);
   const [showImproverModal, setShowImproverModal] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
 
   // Prompt library state
   const [activeCategory, setActiveCategory] = useState<string>(promptLibrary[0]?.id || '');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedLibraryPrompt, setSelectedLibraryPrompt] = useState<PromptItem | null>(null);
+  const [showLevelModal, setShowLevelModal] = useState(false);
+  const [defaultLevel, setDefaultLevel] = usePromptLevel();
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
   const attachTypeRef = useRef<'sketch' | 'brand'>('sketch');
+
+  // Speech recognition hook
+  const handleSpeechTranscript = useCallback((text: string) => {
+    setPrompt(prev => prev + (prev ? ' ' : '') + text);
+  }, []);
+  const { isListening, toggleListening, error: speechError } = useSpeechRecognition(handleSpeechTranscript);
+
+  // Combine local and speech errors
+  const error = localError || speechError;
 
   // Focus textarea when modal opens
   useEffect(() => {
@@ -174,14 +147,14 @@ export const ExpandedPromptModal: React.FC<ExpandedPromptModalProps> = ({
     const hasPrompt = prompt.trim().length > 0;
 
     if (!hasExistingApp && !hasSketch && !hasPrompt) {
-      setError('Please upload a sketch or enter a prompt');
-      setTimeout(() => setError(null), 3000);
+      setLocalError('Please upload a sketch or enter a prompt');
+      setTimeout(() => setLocalError(null), 3000);
       return;
     }
 
     if (hasExistingApp && !hasPrompt && attachments.length === 0) {
-      setError('Please enter a prompt or attach an image');
-      setTimeout(() => setError(null), 3000);
+      setLocalError('Please enter a prompt or attach an image');
+      setTimeout(() => setLocalError(null), 3000);
       return;
     }
 
@@ -209,44 +182,6 @@ export const ExpandedPromptModal: React.FC<ExpandedPromptModalProps> = ({
     }
   };
 
-  // Speech Recognition
-  const toggleListening = () => {
-    if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
-    } else {
-      const windowWithSpeech = window as WindowWithSpeechRecognition;
-      const SpeechRecognitionAPI = windowWithSpeech.SpeechRecognition || windowWithSpeech.webkitSpeechRecognition;
-      if (!SpeechRecognitionAPI) {
-        setError('Voice not supported');
-        setTimeout(() => setError(null), 3000);
-        return;
-      }
-
-      const recognition = new SpeechRecognitionAPI();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-
-      recognition.onstart = () => setIsListening(true);
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
-        let finalTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          }
-        }
-        if (finalTranscript) {
-          setPrompt(prev => prev + (prev ? ' ' : '') + finalTranscript);
-        }
-      };
-      recognition.onerror = () => setIsListening(false);
-      recognition.onend = () => setIsListening(false);
-
-      recognitionRef.current = recognition;
-      recognition.start();
-    }
-  };
-
   const openFileDialog = (type: 'sketch' | 'brand') => {
     attachTypeRef.current = type;
     fileInputRef.current?.click();
@@ -258,8 +193,8 @@ export const ExpandedPromptModal: React.FC<ExpandedPromptModalProps> = ({
 
     const validTypes = ['image/png', 'image/jpeg', 'image/webp'];
     if (!validTypes.includes(file.type)) {
-      setError('Invalid file type');
-      setTimeout(() => setError(null), 3000);
+      setLocalError('Invalid file type');
+      setTimeout(() => setLocalError(null), 3000);
       return;
     }
 
@@ -300,15 +235,29 @@ export const ExpandedPromptModal: React.FC<ExpandedPromptModalProps> = ({
     ? promptLibrary.flatMap(cat =>
         cat.prompts.filter(p =>
           p.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          p.prompt.toLowerCase().includes(searchQuery.toLowerCase())
+          p.detailed.toLowerCase().includes(searchQuery.toLowerCase())
         ).map(p => ({ ...p, category: cat.name }))
       )
     : activePrompts;
 
-  const handleSelectPrompt = (selectedPrompt: string) => {
-    setPrompt(prev => prev ? `${prev}\n${selectedPrompt}` : selectedPrompt);
-    setShowPromptLibrary(false);
+  // Handle prompt click from library - show level modal
+  const handlePromptClick = (promptItem: PromptItem) => {
+    setSelectedLibraryPrompt(promptItem);
+    setShowLevelModal(true);
+  };
+
+  // Handle level selection from modal
+  const handleLevelSelect = (promptText: string, _level: PromptLevel) => {
+    setPrompt(prev => prev ? `${prev}\n${promptText}` : promptText);
+    setShowLevelModal(false);
     setSearchQuery('');
+    textareaRef.current?.focus();
+  };
+
+  // Quick select using default level (for quick prompts in footer)
+  const handleQuickSelect = (promptItem: PromptItem) => {
+    const promptText = promptItem[defaultLevel];
+    setPrompt(prev => prev ? `${prev}\n${promptText}` : promptText);
     textareaRef.current?.focus();
   };
 
@@ -628,12 +577,15 @@ export const ExpandedPromptModal: React.FC<ExpandedPromptModalProps> = ({
                     <BookOpen className="w-4 h-4 text-purple-400" />
                     <span className="font-medium text-sm">Prompt Library</span>
                   </div>
-                  <button
-                    onClick={() => setShowPromptLibrary(false)}
-                    className="p-1.5 hover:bg-white/10 rounded text-slate-400 hover:text-white transition-colors"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <QuickLevelToggle value={defaultLevel} onChange={setDefaultLevel} size="sm" />
+                    <button
+                      onClick={() => setShowPromptLibrary(false)}
+                      className="p-1.5 hover:bg-white/10 rounded text-slate-400 hover:text-white transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Search */}
@@ -686,7 +638,7 @@ export const ExpandedPromptModal: React.FC<ExpandedPromptModalProps> = ({
                       {filteredPrompts.map((promptItem: PromptItem & { category?: string }) => (
                         <button
                           key={promptItem.id}
-                          onClick={() => handleSelectPrompt(promptItem.prompt)}
+                          onClick={() => handlePromptClick(promptItem)}
                           className="w-full group flex items-start gap-2 p-2.5 rounded-lg bg-slate-800/30 hover:bg-slate-800/60 border border-white/5 hover:border-purple-500/30 transition-all text-left"
                         >
                           <div className="flex-1 min-w-0">
@@ -700,7 +652,7 @@ export const ExpandedPromptModal: React.FC<ExpandedPromptModalProps> = ({
                                 </span>
                               )}
                             </div>
-                            <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">{promptItem.prompt}</p>
+                            <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">{promptItem[defaultLevel]}</p>
                           </div>
                           <ChevronRight className="w-3.5 h-3.5 text-slate-600 group-hover:text-purple-400 transition-colors flex-shrink-0 mt-0.5" />
                         </button>
@@ -711,12 +663,12 @@ export const ExpandedPromptModal: React.FC<ExpandedPromptModalProps> = ({
 
                 {/* Quick Prompts Footer */}
                 <div className="px-3 py-2 border-t border-white/5 bg-slate-950/50">
-                  <p className="text-[10px] text-slate-600 mb-1.5">Quick Actions</p>
+                  <p className="text-[10px] text-slate-600 mb-1.5">Quick Actions (uses default level)</p>
                   <div className="flex flex-wrap gap-1.5">
                     {quickPrompts.slice(0, 4).map(qp => (
                       <button
                         key={qp.id}
-                        onClick={() => handleSelectPrompt(qp.prompt)}
+                        onClick={() => handleQuickSelect(qp)}
                         className="px-2 py-1 text-[10px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded border border-white/5 hover:border-purple-500/30 transition-all"
                       >
                         {qp.label}
@@ -750,6 +702,16 @@ export const ExpandedPromptModal: React.FC<ExpandedPromptModalProps> = ({
           setPrompt(improvedPrompt);
           setShowImproverModal(false);
         }}
+      />
+
+      {/* Prompt Level Selection Modal */}
+      <PromptLevelModal
+        isOpen={showLevelModal}
+        onClose={() => setShowLevelModal(false)}
+        prompt={selectedLibraryPrompt}
+        onSelect={handleLevelSelect}
+        defaultLevel={defaultLevel}
+        onSetDefaultLevel={setDefaultLevel}
       />
     </>
   );

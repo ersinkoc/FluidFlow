@@ -52,14 +52,24 @@ GEMINI_API_KEY=your_key      # At least one provider key required
 ```
 server/           # Express API endpoints
   api/            # projects.ts, git.ts, github.ts, settings.ts, runner.ts
+  middleware/     # security.ts (request validation)
+  utils/          # encryption.ts, validation.ts, safeJson.ts
 services/
-  ai/             # Multi-provider abstraction (gemini, openai, anthropic, etc.)
+  ai/             # Multi-provider abstraction
+    providers/    # gemini.ts, openai.ts, anthropic.ts, zai.ts, ollama.ts, lmstudio.ts
+    utils/        # streamParser.ts, errorHandling.ts, retry.ts, schemas.ts
   conversationContext.ts  # Token tracking and AI compaction
+  wipStorage.ts   # IndexedDB persistence for uncommitted changes
   projectApi.ts   # Backend API client
+contexts/
+  AppContext.tsx  # Centralized state management (files, projects, git, UI)
 components/
   ControlPanel/   # Left sidebar (chat, settings, project management)
   PreviewPanel/   # Right panel (editor, console, preview, git)
-hooks/            # useProject, useVersionHistory, useDebugStore
+  GitPanel/       # Git operations UI
+  ContextIndicator/  # Token usage display
+  MegaSettingsModal/ # Settings panels
+hooks/            # useProject, useVersionHistory, useCodeGeneration, useAutoFix, etc.
 utils/            # cleanCode, validation, safeJson, codemap
 types/            # TypeScript definitions
 tests/            # Unit, integration, security tests
@@ -89,11 +99,12 @@ User Input → ControlPanel.handleSend() → AI Provider (streaming)
 - Token estimation: ~4 characters = 1 token
 - Auto-compaction: AI summarizes old messages when approaching model limits
 
-**State Management**: Centralized in `App.tsx`:
+**State Management**: Centralized in `contexts/AppContext.tsx` (used by `App.tsx`):
 - `files` - Virtual file system
 - `currentProject` - Project metadata
 - `gitStatus` - Repository state
-- `conversationHistory` - AI context with token tracking
+- `pendingReview` - DiffModal state for change review
+- History/undo-redo via `useVersionHistory` hook
 
 **Preview System**:
 - Iframe-based with Babel transpilation in browser
@@ -137,11 +148,13 @@ These files require understanding multiple parts of the codebase:
 
 | File | Purpose |
 |------|---------|
-| `App.tsx` | Main orchestrator, state management, DiffModal integration |
+| `contexts/AppContext.tsx` | Centralized state: files, projects, git, UI, history |
+| `App.tsx` | Main orchestrator, modal management, DiffModal |
 | `services/ai/index.ts` | ProviderManager, provider factory, config persistence |
 | `services/conversationContext.ts` | Token tracking, context compaction logic |
+| `services/wipStorage.ts` | IndexedDB persistence for WIP changes |
 | `utils/cleanCode.ts` | AI response parsing, code extraction |
 | `utils/validation.ts` | Security: XSS prevention, path traversal checks |
-| `server/api/projects.ts` | Project CRUD, file management, git operations |
+| `server/api/projects.ts` | Project CRUD, file management |
 | `hooks/useProject.ts` | Project state, git integration, GitHub push |
 | `components/ControlPanel/index.tsx` | AI call orchestration, message handling |

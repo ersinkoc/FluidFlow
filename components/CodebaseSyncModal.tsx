@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { X, Upload, FileCode, AlertTriangle, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import type { FileSystem } from '@/types';
 import { generateCodeMap, generateContextForPrompt } from '../utils/codemap';
+import { estimateTokenCount } from '../services/ai/capabilities';
 
 interface SyncPayload {
   displayMessage: string;  // Short summary for chat UI
@@ -17,11 +18,6 @@ interface CodebaseSyncModalProps {
   onClose: () => void;
   files: FileSystem;
   onSync: (payload: SyncPayload) => Promise<void>;
-}
-
-// Estimate tokens (roughly 4 chars = 1 token)
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
 }
 
 // Format file size
@@ -50,7 +46,7 @@ export const CodebaseSyncModal: React.FC<CodebaseSyncModalProps> = ({
     const stats = Object.entries(files).map(([path, content]) => ({
       path,
       chars: content.length,
-      tokens: estimateTokens(content),
+      tokens: estimateTokenCount(content),
       lines: content.split('\n').length
     }));
 

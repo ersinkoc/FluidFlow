@@ -1,49 +1,12 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Mic, MicOff, Loader2, Wand2, Paperclip, Image, Palette, X, Maximize2, Sparkles, Brain } from 'lucide-react';
 import { ChatAttachment, FileSystem } from '../../types';
 import { PromptLibrary, PromptDropdown } from './PromptLibrary';
 import { UploadCards } from './UploadCards';
 import { ExpandedPromptModal } from './ExpandedPromptModal';
 import { PromptImproverModal } from './PromptImproverModal';
-
-// Web Speech API types (not included in TypeScript lib by default)
-interface SpeechRecognitionEvent extends Event {
-  resultIndex: number;
-  results: SpeechRecognitionResultList;
-}
-
-interface SpeechRecognitionResultList {
-  length: number;
-  [index: number]: SpeechRecognitionResult;
-}
-
-interface SpeechRecognitionResult {
-  isFinal: boolean;
-  length: number;
-  [index: number]: SpeechRecognitionAlternative;
-}
-
-interface SpeechRecognitionAlternative {
-  transcript: string;
-  confidence: number;
-}
-
-interface SpeechRecognition extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onstart: (() => void) | null;
-  onresult: ((event: SpeechRecognitionEvent) => void) | null;
-  onerror: ((event: Event) => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-}
-
-interface WindowWithSpeechRecognition extends Window {
-  SpeechRecognition?: new () => SpeechRecognition;
-  webkitSpeechRecognition?: new () => SpeechRecognition;
-}
+import { QuickLevelToggle, usePromptLevel } from './PromptLevelModal';
+import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 
 interface ChatInputProps {
   onSend: (prompt: string, attachments: ChatAttachment[], fileContext?: string[]) => void;
@@ -66,13 +29,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 }) => {
   const [prompt, setPrompt] = useState('');
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
-  const [isListening, setIsListening] = useState(false);
   const [showPromptDropdown, setShowPromptDropdown] = useState(false);
   const [showPromptLibrary, setShowPromptLibrary] = useState(false);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [showExpandedModal, setShowExpandedModal] = useState(false);
   const [showImproverModal, setShowImproverModal] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [defaultLevel, setDefaultLevel] = usePromptLevel();
 
   // BUG-028 FIX: Track last applied external prompt to avoid dependency loop
   const lastExternalPromptRef = useRef<string | undefined>(undefined);
@@ -87,8 +50,16 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   }, [externalPrompt]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
   const attachTypeRef = useRef<'sketch' | 'brand'>('sketch');
+
+  // Speech recognition hook
+  const handleSpeechTranscript = useCallback((text: string) => {
+    setPrompt(prev => prev + (prev ? ' ' : '') + text);
+  }, []);
+  const { isListening, toggleListening, error: speechError } = useSpeechRecognition(handleSpeechTranscript);
+
+  // Combine local and speech errors
+  const error = localError || speechError;
 
   const handleAttach = (type: 'sketch' | 'brand', file: File, preview: string) => {
     const newAttachment: ChatAttachment = { type, file, preview };
@@ -111,14 +82,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     const hasPrompt = prompt.trim().length > 0;
 
     if (!hasExistingApp && !hasSketch && !hasPrompt) {
-      setError('Please upload a sketch or enter a prompt');
-      setTimeout(() => setError(null), 3000);
+      setLocalError('Please upload a sketch or enter a prompt');
+      setTimeout(() => setLocalError(null), 3000);
       return;
     }
 
     if (hasExistingApp && !hasPrompt && attachments.length === 0) {
-      setError('Please enter a prompt or attach an image');
-      setTimeout(() => setError(null), 3000);
+      setLocalError('Please enter a prompt or attach an image');
+      setTimeout(() => setLocalError(null), 3000);
       return;
     }
 
@@ -139,45 +110,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
-  // Speech Recognition
-  const toggleListening = () => {
-    if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
-    } else {
-      const windowWithSpeech = window as WindowWithSpeechRecognition;
-      const SpeechRecognitionAPI = windowWithSpeech.SpeechRecognition || windowWithSpeech.webkitSpeechRecognition;
-      if (!SpeechRecognitionAPI) {
-        setError('Voice not supported in this browser');
-        setTimeout(() => setError(null), 3000);
-        return;
-      }
-
-      const recognition = new SpeechRecognitionAPI();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = 'en-US';
-
-      recognition.onstart = () => setIsListening(true);
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
-        let finalTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          }
-        }
-        if (finalTranscript) {
-          setPrompt(prev => prev + (prev ? ' ' : '') + finalTranscript);
-        }
-      };
-      recognition.onerror = () => setIsListening(false);
-      recognition.onend = () => setIsListening(false);
-
-      recognitionRef.current = recognition;
-      recognition.start();
-    }
-  };
-
   const openFileDialog = (type: 'sketch' | 'brand') => {
     attachTypeRef.current = type;
     fileInputRef.current?.click();
@@ -190,8 +122,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
     const validTypes = ['image/png', 'image/jpeg', 'image/webp'];
     if (!validTypes.includes(file.type)) {
-      setError('Invalid file type. Use PNG, JPEG, or WebP.');
-      setTimeout(() => setError(null), 3000);
+      setLocalError('Invalid file type. Use PNG, JPEG, or WebP.');
+      setTimeout(() => setLocalError(null), 3000);
       return;
     }
 
@@ -330,6 +262,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               onOpenLibrary={() => setShowPromptLibrary(true)}
             />
           </div>
+
+          {/* Prompt Level Toggle */}
+          <QuickLevelToggle value={defaultLevel} onChange={setDefaultLevel} size="sm" />
 
           {/* AI Prompt Engineer button */}
           {onOpenPromptEngineer && (

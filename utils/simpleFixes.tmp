@@ -1,0 +1,20 @@
+/**
+ * Smart Auto-Fix Utility
+ * Handles common code errors without AI assistance
+ * Uses pattern matching and AST-lite analysis
+ */
+
+import {
+  REACT_IMPORTS,
+  COMMON_IMPORTS,
+  PROP_TYPOS,
+  SELF_CLOSING_TAGS,
+  ALL_KNOWN_IMPORTS,
+} from './importMappings';
+
+interface SimpleFixResult {
+  fixed: boolean;
+  newCode: string;
+  description: string;
+  fixType: 'import' | 'typo' | 'syntax' | 'jsx' | 'runtime' | 'react' | 'none';
+}

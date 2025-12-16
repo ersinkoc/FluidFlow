@@ -3,7 +3,8 @@ import {
   X, Palette, Smartphone, Sparkles, Zap, LayoutGrid, Accessibility,
   FileText, Wrench, ChevronRight, Search, BookOpen
 } from 'lucide-react';
-import { promptLibrary, quickPrompts, PromptItem } from '../../data/promptLibrary';
+import { promptLibrary, quickPrompts, PromptItem, PromptLevel } from '../../data/promptLibrary';
+import { PromptLevelModal, QuickLevelToggle, usePromptLevel } from './PromptLevelModal';
 
 interface PromptLibraryProps {
   isOpen: boolean;
@@ -25,6 +26,9 @@ const iconMap: Record<string, React.FC<{ className?: string }>> = {
 export const PromptLibrary: React.FC<PromptLibraryProps> = ({ isOpen, onClose, onSelectPrompt }) => {
   const [activeCategory, setActiveCategory] = useState<string>(promptLibrary[0].id);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedPrompt, setSelectedPrompt] = useState<PromptItem | null>(null);
+  const [showLevelModal, setShowLevelModal] = useState(false);
+  const [defaultLevel, setDefaultLevel] = usePromptLevel();
 
   if (!isOpen) return null;
 
@@ -35,13 +39,26 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({ isOpen, onClose, o
     ? promptLibrary.flatMap(cat =>
         cat.prompts.filter(p =>
           p.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          p.prompt.toLowerCase().includes(searchQuery.toLowerCase())
+          p.detailed.toLowerCase().includes(searchQuery.toLowerCase())
         ).map(p => ({ ...p, category: cat.name }))
       )
     : activePrompts;
 
-  const handleSelect = (prompt: string) => {
-    onSelectPrompt(prompt);
+  // Handle prompt click - show level modal
+  const handlePromptClick = (prompt: PromptItem) => {
+    setSelectedPrompt(prompt);
+    setShowLevelModal(true);
+  };
+
+  // Handle level selection from modal
+  const handleLevelSelect = (promptText: string, _level: PromptLevel) => {
+    onSelectPrompt(promptText);
+    onClose();
+  };
+
+  // Quick select using default level (for quick prompts footer)
+  const handleQuickSelect = (prompt: PromptItem) => {
+    onSelectPrompt(prompt[defaultLevel]);
     onClose();
   };
 
@@ -65,12 +82,18 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({ isOpen, onClose, o
               <p className="text-xs text-slate-500">Ready-to-use design prompts</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-slate-500 uppercase tracking-wide">Level</span>
+              <QuickLevelToggle value={defaultLevel} onChange={setDefaultLevel} size="sm" />
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Search */}
@@ -123,7 +146,7 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({ isOpen, onClose, o
               {filteredPrompts.map((prompt: PromptItem & { category?: string }) => (
                 <button
                   key={prompt.id}
-                  onClick={() => handleSelect(prompt.prompt)}
+                  onClick={() => handlePromptClick(prompt)}
                   className="w-full group flex items-start gap-3 p-3 rounded-xl bg-slate-800/30 hover:bg-slate-800/60 border border-white/5 hover:border-purple-500/30 transition-all text-left"
                 >
                   <div className="flex-1 min-w-0">
@@ -137,7 +160,7 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({ isOpen, onClose, o
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-500 mt-1 line-clamp-2">{prompt.prompt}</p>
+                    <p className="text-xs text-slate-500 mt-1 line-clamp-2">{prompt[defaultLevel]}</p>
                   </div>
                   <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-purple-400 transition-colors flex-shrink-0 mt-0.5" />
                 </button>
@@ -148,12 +171,14 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({ isOpen, onClose, o
 
         {/* Footer with Quick Prompts */}
         <div className="px-5 py-3 border-t border-white/5 bg-slate-950/50 flex-shrink-0">
-          <p className="text-[10px] text-slate-600 mb-2">Quick Actions</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] text-slate-600">Quick Actions (uses default level)</p>
+          </div>
           <div className="flex flex-wrap gap-2">
             {quickPrompts.map(qp => (
               <button
                 key={qp.id}
-                onClick={() => handleSelect(qp.prompt)}
+                onClick={() => handleQuickSelect(qp)}
                 className="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg border border-white/5 hover:border-purple-500/30 transition-all"
               >
                 {qp.label}
@@ -162,6 +187,16 @@ export const PromptLibrary: React.FC<PromptLibraryProps> = ({ isOpen, onClose, o
           </div>
         </div>
       </div>
+
+      {/* Level Selection Modal */}
+      <PromptLevelModal
+        isOpen={showLevelModal}
+        onClose={() => setShowLevelModal(false)}
+        prompt={selectedPrompt}
+        onSelect={handleLevelSelect}
+        defaultLevel={defaultLevel}
+        onSetDefaultLevel={setDefaultLevel}
+      />
     </div>
   );
 };
@@ -175,6 +210,8 @@ interface PromptDropdownProps {
 }
 
 export const PromptDropdown: React.FC<PromptDropdownProps> = ({ isOpen, onClose, onSelectPrompt, onOpenLibrary }) => {
+  const [defaultLevel] = usePromptLevel();
+
   if (!isOpen) return null;
 
   return (
@@ -192,7 +229,7 @@ export const PromptDropdown: React.FC<PromptDropdownProps> = ({ isOpen, onClose,
             <button
               key={qp.id}
               onClick={() => {
-                onSelectPrompt(qp.prompt);
+                onSelectPrompt(qp[defaultLevel]);
                 onClose();
               }}
               className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-left hover:bg-white/5 transition-colors group"
