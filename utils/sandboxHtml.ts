@@ -748,6 +748,8 @@ function getBootstrapScript(files: FileSystem): string {
         imports: {
           // React core
           "react": "https://esm.sh/react@19.0.0",
+          "react/jsx-runtime": "https://esm.sh/react@19.0.0/jsx-runtime",
+          "react/jsx-dev-runtime": "https://esm.sh/react@19.0.0/jsx-dev-runtime",
           "react-dom": "https://esm.sh/react-dom@19.0.0",
           "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
           // React Router - using our custom shim for sandbox compatibility
@@ -761,6 +763,8 @@ function getBootstrapScript(files: FileSystem): string {
           "tailwind-merge": "https://esm.sh/tailwind-merge@2.5.4",
           // Animation
           "framer-motion": "https://esm.sh/framer-motion@11.11.17?external=react,react-dom",
+          "motion": "https://esm.sh/motion@12.0.0?external=react,react-dom",
+          "motion/react": "https://esm.sh/motion@12.0.0/react?external=react,react-dom",
           // Date handling
           "date-fns": "https://esm.sh/date-fns@4.1.0",
           // State management (lightweight)

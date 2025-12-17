@@ -138,6 +138,13 @@ export const AI_MODELS: ModelConfig[] = [
     tier: 'pro',
     description: 'Latest flagship'
   }
+  ,
+  {
+    id: 'models/gemini-3-flash-preview',
+    name: 'Gemini 3 Flash',
+    tier: 'fast',
+    description: 'Latest preview'
+  }
 ];
 
 // Debug types

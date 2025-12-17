@@ -375,20 +375,32 @@ export const FileExplorer = memo(function FileExplorer({
   const tree = useMemo(() => buildTree(files), [files]);
 
   // Track expanded folders - expand common folders by default
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => {
-    const defaultExpanded = new Set<string>();
-    // Auto-expand src and first-level folders
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set<string>());
+
+  // Auto-expand folders when files change (new files arrive)
+  useEffect(() => {
+    const newExpanded = new Set<string>();
+    // Auto-expand src and first-level folders, plus all parent folders of files
     Object.keys(files).forEach(path => {
       const parts = path.split('/');
       if (parts.length > 1) {
-        defaultExpanded.add(parts[0]);
-        if (parts[0] === 'src' && parts.length > 2) {
-          defaultExpanded.add(`${parts[0]}/${parts[1]}`);
+        // Expand all parent folders of each file
+        for (let i = 1; i < parts.length; i++) {
+          newExpanded.add(parts.slice(0, i).join('/'));
         }
       }
     });
-    return defaultExpanded;
-  });
+
+    // Merge with existing expanded folders (don't collapse manually expanded ones)
+    setExpandedFolders(prev => {
+      const merged = new Set([...prev, ...newExpanded]);
+      // Only update if there are new folders to expand
+      if (merged.size > prev.size) {
+        return merged;
+      }
+      return prev;
+    });
+  }, [files]);
 
   // New file creation state
   const [isCreating, setIsCreating] = useState(false);
