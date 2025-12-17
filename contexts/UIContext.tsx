@@ -39,6 +39,8 @@ export interface UIContextValue {
   setAutoAcceptChanges: (accept: boolean) => void;
   diffModeEnabled: boolean;
   setDiffModeEnabled: (enabled: boolean) => void;
+  autoCommitEnabled: boolean;
+  setAutoCommitEnabled: (enabled: boolean) => void;
 
   // Reset
   resetUIState: () => void;
@@ -72,11 +74,19 @@ export function UIProvider({ children }: UIProviderProps) {
   const [diffModeEnabled, setDiffModeEnabled] = useState(() => {
     return localStorage.getItem('diffModeEnabled') === 'true';
   });
+  const [autoCommitEnabled, setAutoCommitEnabled] = useState(() => {
+    return localStorage.getItem('autoCommitEnabled') === 'true';
+  });
 
   // Persist diffModeEnabled to localStorage
   useEffect(() => {
     localStorage.setItem('diffModeEnabled', String(diffModeEnabled));
   }, [diffModeEnabled]);
+
+  // Persist autoCommitEnabled to localStorage
+  useEffect(() => {
+    localStorage.setItem('autoCommitEnabled', String(autoCommitEnabled));
+  }, [autoCommitEnabled]);
 
   // Reset function
   const resetUIState = useCallback(() => {
@@ -98,6 +108,8 @@ export function UIProvider({ children }: UIProviderProps) {
     setAutoAcceptChanges,
     diffModeEnabled,
     setDiffModeEnabled,
+    autoCommitEnabled,
+    setAutoCommitEnabled,
     resetUIState,
   }), [
     activeTab,
@@ -106,6 +118,7 @@ export function UIProvider({ children }: UIProviderProps) {
     suggestions,
     autoAcceptChanges,
     diffModeEnabled,
+    autoCommitEnabled,
     resetUIState,
   ]);
 
@@ -166,6 +179,6 @@ export function useModelState() {
  */
 // eslint-disable-next-line react-refresh/only-export-components -- Context hook pattern
 export function usePreferences() {
-  const { autoAcceptChanges, setAutoAcceptChanges, diffModeEnabled, setDiffModeEnabled } = useUI();
-  return { autoAcceptChanges, setAutoAcceptChanges, diffModeEnabled, setDiffModeEnabled };
+  const { autoAcceptChanges, setAutoAcceptChanges, diffModeEnabled, setDiffModeEnabled, autoCommitEnabled, setAutoCommitEnabled } = useUI();
+  return { autoAcceptChanges, setAutoAcceptChanges, diffModeEnabled, setDiffModeEnabled, autoCommitEnabled, setAutoCommitEnabled };
 }

@@ -25,6 +25,7 @@ import { SyncConfirmationDialog } from './components/SyncConfirmationDialog';
 import { DiffModal } from './components/DiffModal';
 import { useModalManager } from './hooks/useModalManager';
 import { useAppContext } from './contexts/AppContext';
+import { useAutoCommit } from './hooks/useAutoCommit';
 import { Undo2, Redo2, History, ChevronLeft, ChevronRight, Info } from 'lucide-react';
 import { InspectedElement, EditScope } from './components/PreviewPanel/ComponentInspector';
 import { getContextManager } from './services/conversationContext';
@@ -49,6 +50,25 @@ export default function App() {
   // Centralized modal state management
   const modals = useModalManager();
   const [megaSettingsInitialCategory] = useState<'ai-providers' | 'context-manager' | 'tech-stack' | 'projects' | 'editor' | 'appearance' | 'debug' | 'shortcuts' | 'advanced'>('ai-providers');
+
+  // Preview error tracking for auto-commit
+  const [previewHasErrors, setPreviewHasErrors] = useState(false);
+
+  // Auto-commit feature: commits when preview is error-free
+  const { isAutoCommitting } = useAutoCommit({
+    enabled: ctx.autoCommitEnabled,
+    files: ctx.files,
+    hasUncommittedChanges: ctx.hasUncommittedChanges,
+    previewHasErrors,
+    gitInitialized: ctx.gitStatus?.initialized ?? false,
+    localChanges: ctx.localChanges,
+    onCommit: ctx.commit,
+  });
+
+  // Toggle auto-commit
+  const handleToggleAutoCommit = useCallback(() => {
+    ctx.setAutoCommitEnabled(!ctx.autoCommitEnabled);
+  }, [ctx]);
 
   // Reset key for ControlPanel re-mount
   const [resetKey, setResetKey] = useState(0);
@@ -207,6 +227,10 @@ export default function App() {
           gitStatus={ctx.gitStatus}
           hasUncommittedChanges={ctx.hasUncommittedChanges}
           onOpenGitTab={() => ctx.setActiveTab('git')}
+          // Auto-commit feature
+          autoCommitEnabled={ctx.autoCommitEnabled}
+          onToggleAutoCommit={handleToggleAutoCommit}
+          isAutoCommitting={isAutoCommitting}
           // History Timeline checkpoint
           onSaveCheckpoint={ctx.saveSnapshot}
           onCreateProject={ctx.createProject}
@@ -244,6 +268,11 @@ export default function App() {
           onDiscardChanges={ctx.discardChanges}
           onRevertToCommit={ctx.revertToCommit}
           onSendErrorToChat={(error) => controlPanelRef.current?.sendErrorToChat(error)}
+          // Auto-commit error tracking
+          onPreviewErrorsChange={setPreviewHasErrors}
+          // Undo/Revert support for error fix panel
+          onUndo={ctx.undo}
+          canUndo={ctx.canUndo}
         />
       </main>
 

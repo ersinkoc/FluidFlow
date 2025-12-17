@@ -83,6 +83,10 @@ interface ControlPanelProps {
   gitStatus?: GitStatus | null;
   hasUncommittedChanges?: boolean;
   onOpenGitTab?: () => void;
+  // Auto-commit feature
+  autoCommitEnabled?: boolean;
+  onToggleAutoCommit?: () => void;
+  isAutoCommitting?: boolean;
   // History Timeline checkpoint
   onSaveCheckpoint?: (name: string) => void;
 }
@@ -121,6 +125,10 @@ export const ControlPanel = forwardRef<ControlPanelRef, ControlPanelProps>(({
   gitStatus,
   hasUncommittedChanges,
   onOpenGitTab,
+  // Auto-commit feature
+  autoCommitEnabled,
+  onToggleAutoCommit,
+  isAutoCommitting,
   // History Timeline checkpoint
   onSaveCheckpoint
 }, ref) => {
@@ -653,6 +661,9 @@ Fix the error in src/App.tsx.`;
           gitStatus={gitStatus}
           hasUncommittedChanges={hasUncommittedChanges}
           onOpenGitTab={onOpenGitTab}
+          autoCommitEnabled={autoCommitEnabled}
+          onToggleAutoCommit={onToggleAutoCommit}
+          isAutoCommitting={isAutoCommitting}
           // Unsaved work props - only show if more files than default template (9 files)
           // or if files have been modified (we check count as a simple proxy)
           hasUnsavedWork={!currentProject && Object.keys(files).length > 9}

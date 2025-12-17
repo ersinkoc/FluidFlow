@@ -24,7 +24,8 @@ import {
   Info,
   AlertCircle,
   Clock,
-  FileCode
+  FileCode,
+  Undo2
 } from 'lucide-react';
 import { AgentState, AgentLogEntry, errorFixAgent, AgentConfig } from '../../services/errorFixAgent';
 import { FileSystem } from '../../types';
@@ -36,6 +37,9 @@ interface ErrorFixPanelProps {
   targetFile: string;
   onFileUpdate: (path: string, content: string) => void;
   onFixComplete?: (success: boolean) => void;
+  // Revert to last working state (undo)
+  onUndo?: () => void;
+  canUndo?: boolean;
 }
 
 // State colors and icons
@@ -69,7 +73,9 @@ export const ErrorFixPanel: React.FC<ErrorFixPanelProps> = ({
   currentErrorStack,
   targetFile,
   onFileUpdate,
-  onFixComplete
+  onFixComplete,
+  onUndo,
+  canUndo
 }) => {
   const [agentState, setAgentState] = useState<AgentState>('idle');
   const [logs, setLogs] = useState<AgentLogEntry[]>([]);
@@ -209,6 +215,18 @@ export const ErrorFixPanel: React.FC<ErrorFixPanelProps> = ({
               <option value={10}>10</option>
             </select>
           </div>
+
+          {/* Revert button - undo last change */}
+          {onUndo && canUndo && currentError && !isRunning && (
+            <button
+              onClick={onUndo}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 rounded text-sm font-medium transition-colors"
+              title="Revert to last working code"
+            >
+              <Undo2 className="w-4 h-4" />
+              Revert
+            </button>
+          )}
 
           {/* Start/Stop button */}
           {!isRunning ? (

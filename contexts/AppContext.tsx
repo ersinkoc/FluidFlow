@@ -89,6 +89,8 @@ export interface AppContextValue {
   setAutoAcceptChanges: (accept: boolean) => void;
   diffModeEnabled: boolean;
   setDiffModeEnabled: (enabled: boolean) => void;
+  autoCommitEnabled: boolean;
+  setAutoCommitEnabled: (enabled: boolean) => void;
 
   // Diff/Review
   pendingReview: { label: string; newFiles: FileSystem } | null;
@@ -138,6 +140,7 @@ export function AppProvider({ children, defaultFiles }: AppProviderProps) {
     selectedModel, setSelectedModel,
     autoAcceptChanges, setAutoAcceptChanges,
     diffModeEnabled, setDiffModeEnabled,
+    autoCommitEnabled, setAutoCommitEnabled,
     resetUIState,
   } = ui;
 
@@ -519,6 +522,8 @@ export function AppProvider({ children, defaultFiles }: AppProviderProps) {
     setAutoAcceptChanges,
     diffModeEnabled,
     setDiffModeEnabled,
+    autoCommitEnabled,
+    setAutoCommitEnabled,
 
     // Diff/Review
     pendingReview,
@@ -543,6 +548,7 @@ export function AppProvider({ children, defaultFiles }: AppProviderProps) {
     activeTab, setActiveTab, isGenerating, setIsGenerating,
     suggestions, setSuggestions, selectedModel, setSelectedModel,
     autoAcceptChanges, setAutoAcceptChanges, diffModeEnabled, setDiffModeEnabled,
+    autoCommitEnabled, setAutoCommitEnabled,
     pendingReview, reviewChange, confirmChange, cancelReview, resetApp
   ]);
 

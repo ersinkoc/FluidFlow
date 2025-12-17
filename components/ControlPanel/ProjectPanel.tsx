@@ -30,6 +30,10 @@ interface ProjectPanelProps {
   gitStatus?: GitStatus | null;
   hasUncommittedChanges?: boolean;
   onOpenGitTab?: () => void;
+  // Auto-commit feature
+  autoCommitEnabled?: boolean;
+  onToggleAutoCommit?: () => void;
+  isAutoCommitting?: boolean;
   // Unsaved work handling
   hasUnsavedWork?: boolean;
   fileCount?: number;
@@ -69,6 +73,9 @@ export const ProjectPanel: React.FC<ProjectPanelProps> = ({
   gitStatus,
   hasUncommittedChanges,
   onOpenGitTab,
+  autoCommitEnabled,
+  onToggleAutoCommit,
+  isAutoCommitting,
   hasUnsavedWork,
   fileCount = 0,
   onSaveCurrentAsProject,
@@ -275,6 +282,35 @@ export const ProjectPanel: React.FC<ProjectPanelProps> = ({
               <span className="text-slate-500">No git</span>
             )}
           </button>
+
+          {/* Auto-Commit Toggle - only show when git is initialized */}
+          {gitStatus?.initialized && onToggleAutoCommit && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleAutoCommit();
+              }}
+              className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[10px] transition-colors ${
+                autoCommitEnabled
+                  ? 'bg-emerald-500/20 text-emerald-400'
+                  : 'bg-slate-500/10 text-slate-500 hover:text-slate-400'
+              }`}
+              title={autoCommitEnabled ? 'Auto-commit enabled: Will commit when preview is error-free' : 'Enable auto-commit'}
+            >
+              {isAutoCommitting ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <div className={`w-5 h-2.5 rounded-full transition-colors relative ${
+                  autoCommitEnabled ? 'bg-emerald-500' : 'bg-slate-600'
+                }`}>
+                  <div className={`absolute top-0.5 w-1.5 h-1.5 rounded-full bg-white transition-transform ${
+                    autoCommitEnabled ? 'left-3' : 'left-0.5'
+                  }`} />
+                </div>
+              )}
+              <span>Auto</span>
+            </button>
+          )}
 
           {/* Uncommitted Changes Indicator */}
           {hasUncommittedChanges && (

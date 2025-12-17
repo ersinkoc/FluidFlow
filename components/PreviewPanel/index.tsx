@@ -63,13 +63,20 @@ interface PreviewPanelProps {
   localChanges?: { path: string; status: 'added' | 'modified' | 'deleted' }[];
   onDiscardChanges?: () => Promise<void>;
   onRevertToCommit?: (commitHash: string) => Promise<boolean>;
+  // Auto-commit error tracking
+  onPreviewErrorsChange?: (hasErrors: boolean) => void;
+  // Undo/Revert support
+  onUndo?: () => void;
+  canUndo?: boolean;
 }
 
 export const PreviewPanel = memo(function PreviewPanel({
   files, setFiles, activeFile, setActiveFile, suggestions, setSuggestions, isGenerating, reviewChange, selectedModel,
   activeTab: externalActiveTab, setActiveTab: externalSetActiveTab, onInspectEdit, onSendErrorToChat,
   projectId, gitStatus, onInitGit, onCommit, onRefreshGitStatus,
-  hasUncommittedChanges, localChanges, onDiscardChanges, onRevertToCommit
+  hasUncommittedChanges, localChanges, onDiscardChanges, onRevertToCommit,
+  onPreviewErrorsChange,
+  onUndo, canUndo
 }: PreviewPanelProps) {
   // State
   const [iframeSrc, setIframeSrc] = useState<string>('');
@@ -84,6 +91,17 @@ export const PreviewPanel = memo(function PreviewPanel({
 
   // Console logs state (shared between useAutoFix and useIframeMessaging)
   const [logs, setLogs] = useState<LogEntry[]>([]);
+
+  // Track preview errors for auto-commit feature
+  const prevHasErrorsRef = useRef<boolean>(false);
+  useEffect(() => {
+    // Check if there are any error logs (excluding fixed ones)
+    const hasErrors = logs.some(log => log.type === 'error' && !log.isFixed);
+    if (hasErrors !== prevHasErrorsRef.current) {
+      prevHasErrorsRef.current = hasErrors;
+      onPreviewErrorsChange?.(hasErrors);
+    }
+  }, [logs, onPreviewErrorsChange]);
 
   // Inspect editing state (shared between useIframeMessaging and useInspectMode)
   const [isInspectEditing, setIsInspectEditing] = useState(false);
@@ -563,6 +581,8 @@ export const PreviewPanel = memo(function PreviewPanel({
                   setCurrentErrorStack(undefined);
                 }
               }}
+              onUndo={onUndo}
+              canUndo={canUndo}
             />
           </div>
         ) : activeTab === 'database' || activeTab === 'codemap' || activeTab === 'docs' ? (
