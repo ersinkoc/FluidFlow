@@ -157,13 +157,36 @@ export const RunnerPanel: React.FC<RunnerPanelProps> = ({
     };
   }, [fetchStatus]);
 
-  // Auto-scroll terminal logs
+  // Auto-scroll terminal logs (throttled to prevent jank)
   const terminalRef = useRef<HTMLDivElement>(null);
+  const scrollRequestRef = useRef<number | null>(null);
+  const lastLogCountRef = useRef(0);
+
   useEffect(() => {
+    // Only scroll if new logs were added (not on every render)
+    if (terminalLogs.length === lastLogCountRef.current) return;
+    lastLogCountRef.current = terminalLogs.length;
+
     if (terminalRef.current && devToolsTab === 'terminal') {
-      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+      // Cancel pending scroll request
+      if (scrollRequestRef.current) {
+        cancelAnimationFrame(scrollRequestRef.current);
+      }
+      // Schedule scroll on next frame
+      scrollRequestRef.current = requestAnimationFrame(() => {
+        if (terminalRef.current) {
+          terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+        }
+        scrollRequestRef.current = null;
+      });
     }
-  }, [terminalLogs, devToolsTab]);
+
+    return () => {
+      if (scrollRequestRef.current) {
+        cancelAnimationFrame(scrollRequestRef.current);
+      }
+    };
+  }, [terminalLogs.length, devToolsTab]);
 
   // Start project
   const handleStart = async () => {
