@@ -16,9 +16,15 @@ interface VersionHistoryState {
   future: HistoryEntry[];
 }
 
+// Options for setFiles
+export interface SetFilesOptions {
+  label?: string;
+  skipHistory?: boolean;  // Skip creating history entry (for revert/time travel)
+}
+
 export interface UseVersionHistoryReturn {
   files: FileSystem;
-  setFiles: (newFiles: FileSystem | ((prev: FileSystem) => FileSystem), label?: string) => void;
+  setFiles: (newFiles: FileSystem | ((prev: FileSystem) => FileSystem), options?: string | SetFilesOptions) => void;
   undo: () => void;
   redo: () => void;
   canUndo: boolean;
@@ -134,14 +140,40 @@ export function useVersionHistory(initialFiles: FileSystem): UseVersionHistoryRe
   }, []);
 
   // Set files with debounced history
-  const setFiles = useCallback((newFilesOrUpdater: FileSystem | ((prev: FileSystem) => FileSystem), label?: string) => {
+  const setFiles = useCallback((
+    newFilesOrUpdater: FileSystem | ((prev: FileSystem) => FileSystem),
+    options?: string | SetFilesOptions
+  ) => {
+    // Parse options - support both string (label) and object
+    const opts: SetFilesOptions = typeof options === 'string'
+      ? { label: options }
+      : (options || {});
+
     setState(prevState => {
       const newFiles = typeof newFilesOrUpdater === 'function'
         ? newFilesOrUpdater(prevState.present.files)
         : newFilesOrUpdater;
 
+      // If skipHistory is true, just update present without touching history
+      if (opts.skipHistory) {
+        // Clear any pending changes to prevent them from being committed
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = null;
+        }
+        pendingFilesRef.current = null;
+
+        return {
+          ...prevState,
+          present: {
+            ...prevState.present,
+            files: newFiles,
+          },
+        };
+      }
+
       // Store pending changes with label
-      pendingFilesRef.current = { files: newFiles, label };
+      pendingFilesRef.current = { files: newFiles, label: opts.label };
 
       // Clear existing timer
       if (debounceTimerRef.current) {

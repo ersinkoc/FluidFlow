@@ -93,8 +93,8 @@ export interface AppContextValue {
   setAutoCommitEnabled: (enabled: boolean) => void;
 
   // Diff/Review
-  pendingReview: { label: string; newFiles: FileSystem } | null;
-  reviewChange: (label: string, newFiles: FileSystem) => void;
+  pendingReview: { label: string; newFiles: FileSystem; skipHistory?: boolean } | null;
+  reviewChange: (label: string, newFiles: FileSystem, options?: { skipHistory?: boolean }) => void;
   confirmChange: () => void;
   cancelReview: () => void;
 
@@ -167,6 +167,7 @@ export function AppProvider({ children, defaultFiles }: AppProviderProps) {
   const [pendingReview, setPendingReview] = useState<{
     label: string;
     newFiles: FileSystem;
+    skipHistory?: boolean;
   } | null>(null);
 
   // Calculate local changes for display
@@ -278,21 +279,30 @@ export function AppProvider({ children, defaultFiles }: AppProviderProps) {
   }, [files, activeFile, activeTab, project.currentProject?.id]);
 
   // Review change handler
-  const reviewChange = useCallback((label: string, newFiles: FileSystem) => {
+  const reviewChange = useCallback((
+    label: string,
+    newFiles: FileSystem,
+    options?: { skipHistory?: boolean }
+  ) => {
     if (autoAcceptChanges) {
-      setFiles(newFiles);
+      // Pass skipHistory option to setFiles
+      setFiles(newFiles, options?.skipHistory ? { skipHistory: true } : undefined);
       if (!newFiles[activeFile]) {
         const firstSrc = Object.keys(newFiles).find(f => f.startsWith('src/'));
         setActiveFile(firstSrc || 'package.json');
       }
     } else {
-      setPendingReview({ label, newFiles });
+      setPendingReview({ label, newFiles, skipHistory: options?.skipHistory });
     }
   }, [autoAcceptChanges, activeFile, setFiles]);
 
   const confirmChange = useCallback(() => {
     if (pendingReview) {
-      setFiles(pendingReview.newFiles);
+      // Respect skipHistory option from pending review
+      setFiles(
+        pendingReview.newFiles,
+        pendingReview.skipHistory ? { skipHistory: true } : undefined
+      );
       if (!pendingReview.newFiles[activeFile]) {
         const firstSrc = Object.keys(pendingReview.newFiles).find(f => f.startsWith('src/'));
         setActiveFile(firstSrc || 'package.json');
@@ -449,12 +459,34 @@ export function AppProvider({ children, defaultFiles }: AppProviderProps) {
     }
   }, [project, activeFile, activeTab, exportHistory, restoreHistory, resetFiles, setActiveTab, setSuggestions]);
 
-  // Reset app
+  // Reset app - comprehensive reset including project close and WIP clear
   const resetApp = useCallback(() => {
+    // Close project if open (this clears project state)
+    if (project.currentProject) {
+      // Clear WIP for this project (fire and forget)
+      clearWIP(project.currentProject.id).catch(console.warn);
+      project.closeProject();
+    }
+
+    // Reset version history to default files
     resetFiles(defaultFiles);
+
+    // Reset active file
     setActiveFile('src/App.tsx');
+
+    // Reset uncommitted changes tracking
+    lastCommittedFilesRef.current = '';
+    setHasUncommittedChanges(false);
+    hasInitializedFromBackend.current = false;
+
+    // Clear pending review
+    setPendingReview(null);
+
+    // Reset UI state (tabs, generating, suggestions, etc.)
     resetUIState();
-  }, [defaultFiles, resetFiles, resetUIState]);
+
+    console.log('[AppContext] Full reset completed');
+  }, [defaultFiles, resetFiles, resetUIState, project]);
 
   // Context value
   const value = useMemo<AppContextValue>(() => ({

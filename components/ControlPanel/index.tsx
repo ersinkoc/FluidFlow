@@ -28,6 +28,7 @@ import { SettingsPanel } from './SettingsPanel';
 import { ModeToggle } from './ModeToggle';
 import { ProjectPanel } from './ProjectPanel';
 import { ResetConfirmModal } from './ResetConfirmModal';
+import { runnerApi } from '@/services/projectApi';
 import type { ProjectMeta } from '@/services/projectApi';
 
 // Local hooks
@@ -55,7 +56,7 @@ interface ControlPanelProps {
   isGenerating: boolean;
   setIsGenerating: (isGenerating: boolean) => void;
   resetApp: () => void;
-  reviewChange: (label: string, newFiles: FileSystem) => void;
+  reviewChange: (label: string, newFiles: FileSystem, options?: { skipHistory?: boolean }) => void;
   selectedModel: string;
   onModelChange: (modelId: string) => void;
   onOpenAISettings?: () => void;
@@ -89,6 +90,8 @@ interface ControlPanelProps {
   isAutoCommitting?: boolean;
   // History Timeline checkpoint
   onSaveCheckpoint?: (name: string) => void;
+  // Runner state for reset modal
+  hasRunningServer?: boolean;
 }
 
 export const ControlPanel = forwardRef<ControlPanelRef, ControlPanelProps>(({
@@ -130,7 +133,9 @@ export const ControlPanel = forwardRef<ControlPanelRef, ControlPanelProps>(({
   onToggleAutoCommit,
   isAutoCommitting,
   // History Timeline checkpoint
-  onSaveCheckpoint
+  onSaveCheckpoint,
+  // Runner state for reset modal
+  hasRunningServer
 }, ref) => {
   // Chat state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -359,9 +364,22 @@ export const ControlPanel = forwardRef<ControlPanelRef, ControlPanelProps>(({
   const handleRevert = (messageId: string) => {
     const message = messages.find(m => m.id === messageId);
     if (message?.snapshotFiles) {
-      reviewChange(`Revert to earlier state`, message.snapshotFiles);
+      // Skip history for revert - don't create undo entry
+      reviewChange(`Revert to earlier state`, message.snapshotFiles, { skipHistory: true });
     }
   };
+
+  // Handle time travel navigation (preview snapshot without creating history)
+  const handleTimeTravel = useCallback((snapshotFiles: FileSystem | null) => {
+    if (snapshotFiles === null) {
+      // Return to current state - need to restore from history
+      // For now, just log - actual restore would need history access
+      console.log('[ControlPanel] Time travel: returning to current state');
+      return;
+    }
+    // Preview the snapshot files without creating history entry
+    reviewChange('Time Travel Preview', snapshotFiles, { skipHistory: true });
+  }, [reviewChange]);
 
   const handleRetry = (errorMessageId: string) => {
     // Find the error message and the user message before it
@@ -420,11 +438,25 @@ Fix the error in src/App.tsx.`;
     modals.openResetConfirm();
   };
 
-  const handleConfirmReset = () => {
+  const handleConfirmReset = async () => {
+    // Stop all running servers (fire and forget)
+    runnerApi.stopAll().catch(err => {
+      console.warn('[ControlPanel] Failed to stop runners:', err);
+    });
+
+    // Clear chat messages
     setMessages([]);
+
+    // Clear AI context
     contextManager.clearContext(sessionId);
+
+    // Reset app state (files, project, WIP, UI)
     resetApp();
+
+    // Close the modal
     modals.closeResetConfirm();
+
+    console.log('[ControlPanel] Start Fresh completed');
   };
 
   return (
@@ -570,6 +602,7 @@ Fix the error in src/App.tsx.`;
             setMessages(prev => [...prev, errorMessage]);
           }
         }}
+        onTimeTravel={handleTimeTravel}
         onRestoreFromHistory={() => {
           const lastEntry = aiHistory.history.find(h => h.success);
           if (!lastEntry) return;
@@ -688,6 +721,7 @@ Fix the error in src/App.tsx.`;
         currentProjectName={currentProject?.name}
         hasUncommittedChanges={hasUncommittedChanges}
         onOpenGitTab={onOpenGitTab}
+        hasRunningServer={hasRunningServer}
       />
 
       {/* AI History Modal */}

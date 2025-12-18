@@ -1,7 +1,13 @@
 import React, { useRef, useEffect, useState, useCallback, memo } from 'react';
 import { User, Bot, Image, Palette, RotateCcw, FileCode, Plus, Minus, Loader2, AlertCircle, RefreshCw, Zap, Clock, Layers, Bookmark } from 'lucide-react';
 import DOMPurify from 'dompurify';
-import { ChatMessage, FileChange } from '../../types';
+import { ChatMessage, FileChange, FileSystem } from '../../types';
+import { TextExpandModal } from './TextExpandModal';
+import { ChatTimeline } from './ChatTimeline';
+
+// Truncation limits
+const TRUNCATE_PROMPT_LENGTH = 200;
+const TRUNCATE_EXPLANATION_LENGTH = 500;
 
 interface ChatPanelProps {
   messages: ChatMessage[];
@@ -52,7 +58,15 @@ interface ChatPanelProps {
     total: number;
     completed: string[];
   } | null;
+  // Time travel prop
+  onTimeTravel?: (files: FileSystem | null) => void;
 }
+
+// Extract filename from full path
+const getFileName = (path: string): string => {
+  const parts = path.split('/');
+  return parts[parts.length - 1];
+};
 
 // HTML entity escaping to prevent XSS attacks
 const escapeHtml = (text: string): string => {
@@ -157,11 +171,14 @@ const FileChangesSummary = memo(function FileChangesSummary({ changes }: { chang
           <div key={idx} className="flex items-center justify-between text-xs py-1 px-2 rounded bg-slate-900/50">
             <div className="flex items-center gap-2 min-w-0">
               <FileCode className="w-3 h-3 text-slate-500 flex-shrink-0" />
-              <span className={`truncate ${
-                change.type === 'added' ? 'text-green-400' :
-                change.type === 'deleted' ? 'text-red-400' : 'text-slate-300'
-              }`}>
-                {change.path}
+              <span
+                className={`truncate ${
+                  change.type === 'added' ? 'text-green-400' :
+                  change.type === 'deleted' ? 'text-red-400' : 'text-slate-300'
+                }`}
+                title={change.path}
+              >
+                {getFileName(change.path)}
               </span>
               {change.type === 'added' && (
                 <span className="text-[9px] px-1 py-0.5 rounded bg-green-500/20 text-green-400">NEW</span>
@@ -212,6 +229,16 @@ function messageItemAreEqual(prev: MessageItemProps, next: MessageItemProps): bo
   return true;
 }
 
+// Truncation helpers
+const shouldTruncate = (text: string | undefined, limit: number): boolean => {
+  return text !== undefined && text.length > limit;
+};
+
+const getTruncatedText = (text: string, limit: number): string => {
+  if (text.length <= limit) return text;
+  return text.substring(0, limit) + '...';
+};
+
 // Memoized individual message component - prevents re-renders during streaming
 const MessageItem = memo(function MessageItem({
   message,
@@ -223,7 +250,25 @@ const MessageItem = memo(function MessageItem({
   onRetry,
   onSetExternalPrompt,
 }: MessageItemProps) {
+  // Modal state for expanded text
+  const [expandedModal, setExpandedModal] = useState<{
+    type: 'prompt' | 'explanation';
+    content: string;
+    title: string;
+  } | null>(null);
+
   return (
+    <>
+    {/* Text expand modal */}
+    {expandedModal && (
+      <TextExpandModal
+        isOpen={true}
+        onClose={() => setExpandedModal(null)}
+        title={expandedModal.title}
+        content={expandedModal.content}
+        type={expandedModal.type}
+      />
+    )}
     <div className={`flex gap-3 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}>
       {/* Avatar */}
       <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${
@@ -265,8 +310,24 @@ const MessageItem = memo(function MessageItem({
             )}
             {/* Prompt */}
             {message.prompt && (
-              <div className="bg-blue-600/20 border border-blue-500/20 rounded-xl rounded-tr-sm px-3 py-2 inline-block">
-                <p className="text-sm text-slate-200">{message.prompt}</p>
+              <div className="bg-blue-600/20 border border-blue-500/20 rounded-xl rounded-tr-sm px-3 py-2 inline-block max-w-full">
+                <p className="text-sm text-slate-200 break-words whitespace-pre-wrap">
+                  {shouldTruncate(message.prompt, TRUNCATE_PROMPT_LENGTH) ? (
+                    <>
+                      {getTruncatedText(message.prompt, TRUNCATE_PROMPT_LENGTH)}
+                      <button
+                        onClick={() => setExpandedModal({
+                          type: 'prompt',
+                          content: message.prompt || '',
+                          title: 'Full Prompt'
+                        })}
+                        className="ml-1 text-blue-400 hover:text-blue-300 text-xs font-medium"
+                      >
+                        show more
+                      </button>
+                    </>
+                  ) : message.prompt}
+                </p>
               </div>
             )}
           </div>
@@ -305,7 +366,21 @@ const MessageItem = memo(function MessageItem({
             {/* Explanation */}
             {message.explanation && (
               <div className="prose prose-invert prose-sm max-w-none">
-                {renderMarkdown(message.explanation)}
+                {shouldTruncate(message.explanation, TRUNCATE_EXPLANATION_LENGTH) ? (
+                  <>
+                    {renderMarkdown(getTruncatedText(message.explanation, TRUNCATE_EXPLANATION_LENGTH))}
+                    <button
+                      onClick={() => setExpandedModal({
+                        type: 'explanation',
+                        content: message.explanation || '',
+                        title: 'Full Explanation'
+                      })}
+                      className="text-blue-400 hover:text-blue-300 text-xs font-medium mt-2 block"
+                    >
+                      Read more...
+                    </button>
+                  </>
+                ) : renderMarkdown(message.explanation)}
               </div>
             )}
 
@@ -417,6 +492,7 @@ const MessageItem = memo(function MessageItem({
         </div>
       </div>
     </div>
+    </>
   );
 }, messageItemAreEqual);
 
@@ -437,12 +513,29 @@ export const ChatPanel = memo(function ChatPanel({
   continuationState,
   onContinueGeneration,
   filePlan,
-  onSaveCheckpoint
+  onSaveCheckpoint,
+  onTimeTravel
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoContinueCountdown, setAutoContinueCountdown] = useState<number>(0);
+  const [viewingSnapshotIndex, setViewingSnapshotIndex] = useState<number | null>(null);
   const wasAtBottomRef = useRef(true);
   const lastMessageCountRef = useRef(0);
+
+  // Handle time travel navigation
+  const handleTimeTravel = useCallback((messageIndex: number | null) => {
+    setViewingSnapshotIndex(messageIndex);
+    if (onTimeTravel) {
+      if (messageIndex !== null) {
+        const message = messages[messageIndex];
+        if (message.snapshotFiles) {
+          onTimeTravel(message.snapshotFiles);
+        }
+      } else {
+        onTimeTravel(null); // Return to current state
+      }
+    }
+  }, [messages, onTimeTravel]);
 
   // Track if user is near bottom of chat (within 100px)
   const handleScroll = useCallback(() => {
@@ -526,20 +619,30 @@ export const ChatPanel = memo(function ChatPanel({
       <div className="flex items-center justify-between px-3 py-2 border-b border-white/5 flex-shrink-0">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-medium text-slate-300">Chat History</h3>
-          <span className="text-xs text-slate-500">({messages.length} messages)</span>
+          <span className="text-xs text-slate-500">({messages.length})</span>
         </div>
-        {onSaveCheckpoint && (
-          <button
-            onClick={onSaveCheckpoint}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
-            title="Save current state as checkpoint"
-          >
-            <Bookmark className="w-3.5 h-3.5" />
-            Save Checkpoint
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Time Travel Navigation */}
+          {onTimeTravel && (
+            <ChatTimeline
+              messages={messages}
+              currentViewIndex={viewingSnapshotIndex}
+              onNavigate={handleTimeTravel}
+            />
+          )}
+          {onSaveCheckpoint && (
+            <button
+              onClick={onSaveCheckpoint}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
+              title="Save current state as checkpoint"
+            >
+              <Bookmark className="w-3.5 h-3.5" />
+              Checkpoint
+            </button>
+          )}
+        </div>
       </div>
-      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-4">
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-3 space-y-4">
       {messages.map((message, index) => (
         <MessageItem
           key={message.id}
@@ -710,6 +813,7 @@ export const ChatPanel = memo(function ChatPanel({
                                 ? 'bg-blue-500/10 border border-blue-500/20 text-blue-300 animate-pulse'
                                 : 'bg-slate-900/50 text-slate-500'
                             }`}
+                            title={file}
                           >
                             {isCompleted ? (
                               <span className="w-4 h-4 flex items-center justify-center text-emerald-400">✓</span>
@@ -718,7 +822,7 @@ export const ChatPanel = memo(function ChatPanel({
                             ) : (
                               <Clock className="w-3.5 h-3.5 text-slate-600" />
                             )}
-                            <span className="truncate">{file}</span>
+                            <span className="truncate">{getFileName(file)}</span>
                           </div>
                         );
                       })}
@@ -731,9 +835,10 @@ export const ChatPanel = memo(function ChatPanel({
                             <div
                               key={`del-${file}`}
                               className="flex items-center gap-2 text-xs font-mono px-2 py-1 rounded bg-red-500/10 border border-red-500/20 text-red-400"
+                              title={file}
                             >
                               <span className="w-4 h-4 flex items-center justify-center">🗑️</span>
-                              <span className="truncate line-through">{file}</span>
+                              <span className="truncate line-through">{getFileName(file)}</span>
                             </div>
                           ))}
                         </>
@@ -754,9 +859,10 @@ export const ChatPanel = memo(function ChatPanel({
                         <div
                           key={file}
                           className={`flex items-center gap-2 text-xs font-mono text-slate-300 px-2 py-1 rounded ${idx === 0 ? 'animate-in slide-in-from-top-2 duration-200 bg-emerald-500/10 border border-emerald-500/20' : 'bg-slate-900/50'}`}
+                          title={file}
                         >
                           <span className={`w-1.5 h-1.5 rounded-full ${idx === 0 ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
-                          {file}
+                          {getFileName(file)}
                         </div>
                       ))}
                     </div>

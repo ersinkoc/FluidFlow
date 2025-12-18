@@ -68,6 +68,8 @@ interface PreviewPanelProps {
   // Undo/Revert support
   onUndo?: () => void;
   canUndo?: boolean;
+  // Runner status callback
+  onRunnerStatusChange?: (isRunning: boolean) => void;
 }
 
 export const PreviewPanel = memo(function PreviewPanel({
@@ -76,7 +78,8 @@ export const PreviewPanel = memo(function PreviewPanel({
   projectId, gitStatus, onInitGit, onCommit, onRefreshGitStatus,
   hasUncommittedChanges, localChanges, onDiscardChanges, onRevertToCommit,
   onPreviewErrorsChange,
-  onUndo, canUndo
+  onUndo, canUndo,
+  onRunnerStatusChange
 }: PreviewPanelProps) {
   // State
   const [iframeSrc, setIframeSrc] = useState<string>('');
@@ -116,6 +119,11 @@ export const PreviewPanel = memo(function PreviewPanel({
 
   // Runner status for indicator
   const [isRunnerActive, setIsRunnerActive] = useState(false);
+
+  // Notify parent when runner status changes
+  useEffect(() => {
+    onRunnerStatusChange?.(isRunnerActive);
+  }, [isRunnerActive, onRunnerStatusChange]);
 
   // Close settings when clicking outside
   useEffect(() => {

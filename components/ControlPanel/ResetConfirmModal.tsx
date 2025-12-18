@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, X, RotateCcw, MessageSquare, FileCode, History } from 'lucide-react';
+import { AlertTriangle, X, RotateCcw, MessageSquare, FileCode, History, Server, FolderOpen } from 'lucide-react';
 
 interface ResetConfirmModalProps {
   isOpen: boolean;
@@ -8,6 +8,7 @@ interface ResetConfirmModalProps {
   currentProjectName?: string;
   hasUncommittedChanges?: boolean;
   onOpenGitTab?: () => void;
+  hasRunningServer?: boolean;
 }
 
 export function ResetConfirmModal({
@@ -16,7 +17,8 @@ export function ResetConfirmModal({
   onConfirm,
   currentProjectName,
   hasUncommittedChanges,
-  onOpenGitTab
+  onOpenGitTab,
+  hasRunningServer
 }: ResetConfirmModalProps) {
   if (!isOpen) return null;
 
@@ -70,6 +72,28 @@ export function ResetConfirmModal({
                 <p className="text-xs text-slate-500">All undo/redo states will be lost</p>
               </div>
             </div>
+
+            {/* Running Server */}
+            {hasRunningServer && (
+              <div className="flex items-center gap-3 p-3 bg-orange-500/10 rounded-lg border border-orange-500/20">
+                <Server className="w-5 h-5 text-orange-400 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-orange-300">Running Server</p>
+                  <p className="text-xs text-orange-400/70">Development server will be stopped</p>
+                </div>
+              </div>
+            )}
+
+            {/* Current Project */}
+            {currentProjectName && (
+              <div className="flex items-center gap-3 p-3 bg-cyan-500/10 rounded-lg border border-cyan-500/20">
+                <FolderOpen className="w-5 h-5 text-cyan-400 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-cyan-300">Project: {currentProjectName}</p>
+                  <p className="text-xs text-cyan-400/70">Project will be closed (saved changes preserved)</p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Uncommitted Changes Warning */}

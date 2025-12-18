@@ -54,6 +54,9 @@ export default function App() {
   // Preview error tracking for auto-commit
   const [previewHasErrors, setPreviewHasErrors] = useState(false);
 
+  // Runner status for Start Fresh modal
+  const [hasRunningServer, setHasRunningServer] = useState(false);
+
   // Auto-commit feature: commits when preview is error-free
   const { isAutoCommitting } = useAutoCommit({
     enabled: ctx.autoCommitEnabled,
@@ -242,6 +245,7 @@ export default function App() {
           onDuplicateProject={ctx.duplicateProject}
           onRefreshProjects={ctx.refreshProjects}
           onCloseProject={ctx.closeProject}
+          hasRunningServer={hasRunningServer}
         />
         <PreviewPanel
           files={ctx.files}
@@ -273,6 +277,8 @@ export default function App() {
           // Undo/Revert support for error fix panel
           onUndo={ctx.undo}
           canUndo={ctx.canUndo}
+          // Runner status for Start Fresh modal
+          onRunnerStatusChange={setHasRunningServer}
         />
       </main>
 
