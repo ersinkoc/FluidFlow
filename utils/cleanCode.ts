@@ -763,6 +763,25 @@ export function cleanGeneratedCode(code: string, filePath?: string): string {
   // Remove any remaining triple backticks
   cleaned = cleaned.replace(/```/g, '');
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // Remove stray FILE markers that AI sometimes leaves in generated code
+  // These are from marker-based format parsing that wasn't fully cleaned
+  // ═══════════════════════════════════════════════════════════════════════
+  // Remove: <!-- FILE:path --> or <!-- /FILE:path --> or <!-- /FILE -->
+  cleaned = cleaned.replace(/<!--\s*\/?FILE(?::[^\s>]*)?\s*-->/g, '');
+  // Remove: <!-- GENERATION_META --> blocks
+  cleaned = cleaned.replace(/<!--\s*GENERATION_META\s*-->[\s\S]*?<!--\s*\/GENERATION_META\s*-->/g, '');
+  // Remove standalone GENERATION_META markers
+  cleaned = cleaned.replace(/<!--\s*\/?GENERATION_META\s*-->/g, '');
+  // Remove: <!-- PLAN --> blocks
+  cleaned = cleaned.replace(/<!--\s*PLAN\s*-->[\s\S]*?<!--\s*\/PLAN\s*-->/g, '');
+  // Remove standalone PLAN markers
+  cleaned = cleaned.replace(/<!--\s*\/?PLAN\s*-->/g, '');
+  // Remove: <!-- EXPLANATION --> blocks
+  cleaned = cleaned.replace(/<!--\s*EXPLANATION\s*-->[\s\S]*?<!--\s*\/EXPLANATION\s*-->/g, '');
+  // Remove standalone EXPLANATION markers
+  cleaned = cleaned.replace(/<!--\s*\/?EXPLANATION\s*-->/g, '');
+
   // Check if this is a JS/TS file
   const isJsFile = filePath
     ? /\.(tsx?|jsx?|mjs|cjs)$/.test(filePath)
@@ -772,15 +791,61 @@ export function cleanGeneratedCode(code: string, filePath?: string): string {
   // This is safe and necessary for browser ES modules
   if (isJsFile) {
     cleaned = fixBareSpecifierImports(cleaned);
-  }
 
-  // NOTE: We intentionally do NOT call fixJsxTextContent or fixCommonSyntaxErrors here.
-  // These "fixes" were causing more problems than they solved by transforming
-  // valid LLM-generated code into broken code. Examples:
-  // - "function Name() => {" hybrid syntax errors
-  // - "const x = (param: Type) {" missing arrow errors
-  // If the LLM generates broken code, let it fail clearly rather than
-  // silently transforming it into different broken code.
+    // ═══════════════════════════════════════════════════════════════════
+    // AI SYNTAX ERROR FIXES - Applied when code is saved to files state
+    // These fix common mistakes AI makes with arrow function syntax
+    // ═══════════════════════════════════════════════════════════════════
+
+    // Fix space in arrow: = > → =>
+    cleaned = cleaned.replace(/=\s+>/g, '=>');
+
+    // ─────────────────────────────────────────────────────────────────
+    // FIX 1: Hybrid function/arrow - "function Name() => {" → "function Name() {"
+    // AI sometimes mixes function declaration with arrow syntax
+    // ─────────────────────────────────────────────────────────────────
+    cleaned = cleaned.replace(/function\s+(\w+)\s*\(\)\s*=>\s*\{/g, 'function $1() {');
+    cleaned = cleaned.replace(/function\s+(\w+)\s*\(([^)]*)\)\s*=>\s*\{/g, 'function $1($2) {');
+    cleaned = cleaned.replace(/(\bfunction\s+\w+[\s\S]*?)\s*=>\s*\{/g, '$1 {');
+
+    // ─────────────────────────────────────────────────────────────────
+    // FIX 2: Missing arrow - "= () {" → "= () => {"
+    // AI sometimes forgets the => in arrow functions
+    // ─────────────────────────────────────────────────────────────────
+
+    // Pattern: const fn = () { or const fn = async () {
+    cleaned = cleaned.replace(/(=\s*)(async\s+)?\(([^)]*)\)\s*\{/g, (match, eq, asyncKw, params) => {
+      if (match.includes('=>')) return match;
+      return eq + (asyncKw || '') + '(' + params + ') => {';
+    });
+
+    // Pattern: useEffect(() { or any callback(() {
+    cleaned = cleaned.replace(/(\w+)\s*\(\s*\(([^)]*)\)\s*\{(?!\s*=>)/g, (match, fnName, params) => {
+      if (fnName === 'function') return match;
+      if (match.includes('=>')) return match;
+      return fnName + '((' + params + ') => {';
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // FIX 3: JSX event handler missing arrow - "onClick={() {}}" → "onClick={() => {}}"
+    // AI sometimes forgets the => in JSX callback props
+    // ─────────────────────────────────────────────────────────────────
+    // Pattern: ={( or ={ ( followed by params and { without =>
+    // Handles: onClick={() {}} onChange={(e) {}} onSubmit={(e, data) {}}
+    cleaned = cleaned.replace(/=\{\s*\(([^)]*)\)\s*\{(?!\s*=>)/g, (match, params) => {
+      if (match.includes('=>')) return match;
+      return '={(' + params + ') => {';
+    });
+
+    // Pattern: return () { (useEffect cleanup)
+    cleaned = cleaned.replace(/return\s+\(([^)]*)\)\s*\{/g, (match, params) => {
+      if (match.includes('=>')) return match;
+      return 'return (' + params + ') => {';
+    });
+
+    // Pattern: ( ) => → () => (extra space in empty params)
+    cleaned = cleaned.replace(/\(\s+\)\s*=>/g, '() =>');
+  }
 
   // Trim whitespace
   cleaned = cleaned.trim();

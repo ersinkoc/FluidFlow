@@ -173,6 +173,55 @@ describe('cleanCode', () => {
       const result = cleanGeneratedCode(input);
       expect(result).toBe('const x = 1;');
     });
+
+    it('should remove stray FILE markers', () => {
+      // Test <!-- /FILE --> without path
+      const input1 = 'const x = 1;\n<!-- /FILE -->';
+      expect(cleanGeneratedCode(input1)).toBe('const x = 1;');
+
+      // Test <!-- /FILE:path -->
+      const input2 = 'const x = 1;\n<!-- /FILE:src/App.tsx -->';
+      expect(cleanGeneratedCode(input2)).toBe('const x = 1;');
+
+      // Test <!-- FILE:path -->
+      const input3 = '<!-- FILE:src/App.tsx -->\nconst x = 1;';
+      expect(cleanGeneratedCode(input3)).toBe('const x = 1;');
+
+      // Test both markers
+      const input4 = '<!-- FILE:src/App.tsx -->\nconst x = 1;\n<!-- /FILE:src/App.tsx -->';
+      expect(cleanGeneratedCode(input4)).toBe('const x = 1;');
+    });
+
+    it('should remove PLAN and EXPLANATION markers', () => {
+      // Test <!-- PLAN --> block
+      const input1 = '<!-- PLAN -->\ncreate: src/App.tsx\n<!-- /PLAN -->\nconst x = 1;';
+      expect(cleanGeneratedCode(input1)).toBe('const x = 1;');
+
+      // Test standalone markers
+      const input2 = '<!-- EXPLANATION -->\nSome text\n<!-- /EXPLANATION -->\nconst x = 1;';
+      expect(cleanGeneratedCode(input2)).toBe('const x = 1;');
+
+      // Test GENERATION_META
+      const input3 = 'const x = 1;\n<!-- GENERATION_META -->\n{}\n<!-- /GENERATION_META -->';
+      expect(cleanGeneratedCode(input3)).toBe('const x = 1;');
+    });
+
+    it('should fix JSX event handler missing arrow: onClick={() {}}', () => {
+      // onClick={() {}} → onClick={() => {}}
+      const input1 = '<button onClick={() {}}>Click</button>';
+      const result1 = cleanGeneratedCode(input1, 'test.tsx');
+      expect(result1).toContain('onClick={() => {}}');
+
+      // onChange={(e) {}} → onChange={(e) => {}}
+      const input2 = '<input onChange={(e) { console.log(e); }} />';
+      const result2 = cleanGeneratedCode(input2, 'test.tsx');
+      expect(result2).toContain('onChange={(e) => {');
+
+      // Don't modify valid arrow functions
+      const input3 = '<button onClick={() => {}}>Click</button>';
+      const result3 = cleanGeneratedCode(input3, 'test.tsx');
+      expect(result3).toBe(input3);
+    });
   });
 
   describe('parseMultiFileResponse', () => {

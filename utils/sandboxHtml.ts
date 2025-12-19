@@ -138,6 +138,12 @@ function buildIframeHtmlTemplate(files: FileSystem, isInspectMode: boolean): str
       return false;
     };
 
+    // Handle unhandled promise rejections (async errors)
+    window.onunhandledrejection = function(event) {
+      const msg = event.reason?.message || String(event.reason) || 'Unhandled Promise rejection';
+      notify('error', isIgnorableError(msg) ? '[TRANSIENT] ' + msg : msg);
+    };
+
     // Patch URL constructor FIRST - before any library loads
     (function() {
       var OriginalURL = window.URL;
@@ -694,20 +700,240 @@ function getBootstrapScript(files: FileSystem): string {
       const routerShimCode = \`
         import * as ReactRouterDom from 'https://esm.sh/react-router-dom@6.28.0?external=react,react-dom';
         import React from 'https://esm.sh/react@19.0.0';
+        console.log('[RouterShim] === ROUTER SHIM MODULE LOADED ===');
+        console.log('[RouterShim] ReactRouterDom keys:', Object.keys(ReactRouterDom));
 
-        // Re-export everything from react-router-dom EXCEPT Link, NavLink, useNavigate, BrowserRouter
+        // Re-export utility functions that don't need Router context
         export {
-          Routes, Route, Navigate, Outlet, useLocation, useParams, useSearchParams,
-          useMatch, useMatches, useResolvedPath, useHref, useInRouterContext,
-          useNavigationType, useOutlet, useOutletContext, useRoutes,
+          generatePath, matchPath, matchRoutes, resolvePath,
+          createRoutesFromElements, createRoutesFromChildren,
           MemoryRouter, HashRouter, Router, RouterProvider, createBrowserRouter,
-          createHashRouter, createMemoryRouter, createRoutesFromElements,
-          createRoutesFromChildren, generatePath, matchPath, matchRoutes,
-          renderMatches, resolvePath, Form, ScrollRestoration, useFetcher,
-          useFetchers, useFormAction, useLoaderData, useActionData,
-          useNavigation, useRevalidator, useRouteError, useRouteLoaderData,
-          useSubmit, useBeforeUnload, unstable_usePrompt, unstable_useBlocker
+          createHashRouter, createMemoryRouter, Form, ScrollRestoration,
+          renderMatches
         } from 'https://esm.sh/react-router-dom@6.28.0?external=react,react-dom';
+
+        // Our own safe useInRouterContext that never throws
+        // This checks for the NavigationContext which react-router uses
+        const _originalUseInRouterContext = ReactRouterDom.useInRouterContext;
+        export function useInRouterContext() {
+          try {
+            const result = _originalUseInRouterContext();
+            console.log('[RouterShim] useInRouterContext() =', result);
+            return result;
+          } catch (e) {
+            console.log('[RouterShim] useInRouterContext() threw, returning false');
+            return false;
+          }
+        }
+
+        // Store references to original components
+        const OriginalRoutes = ReactRouterDom.Routes;
+        const OriginalRoute = ReactRouterDom.Route;
+        const OriginalNavigate = ReactRouterDom.Navigate;
+        const OriginalOutlet = ReactRouterDom.Outlet;
+
+        // AutoRouter wrapper - automatically wraps children with MemoryRouter if not already in Router context
+        function AutoRouterWrapper({ children }) {
+          const inRouter = useInRouterContext();
+          if (inRouter) {
+            return children;
+          }
+          // No Router context - wrap with MemoryRouter
+          const initialPath = window.__SANDBOX_ROUTER__?.currentPath || '/';
+          return React.createElement(ReactRouterDom.MemoryRouter, { initialEntries: [initialPath] }, children);
+        }
+
+        // Safe Routes that auto-wraps with Router if needed
+        export function Routes(props) {
+          return React.createElement(AutoRouterWrapper, null,
+            React.createElement(OriginalRoutes, props)
+          );
+        }
+
+        // Re-export Route directly (it's used inside Routes which handles context)
+        export const Route = OriginalRoute;
+
+        // Safe Navigate that auto-wraps with Router if needed
+        export function Navigate(props) {
+          return React.createElement(AutoRouterWrapper, null,
+            React.createElement(OriginalNavigate, props)
+          );
+        }
+
+        // Safe Outlet that auto-wraps with Router if needed
+        export function Outlet(props) {
+          return React.createElement(AutoRouterWrapper, null,
+            React.createElement(OriginalOutlet, props)
+          );
+        }
+
+        // Safe hook wrappers - return fallback values when outside Router context
+        // All use our safe useInRouterContext() which never throws
+        export function useMatch(pattern) {
+          if (!useInRouterContext()) return null;
+          return ReactRouterDom.useMatch(pattern);
+        }
+
+        export function useMatches() {
+          if (!useInRouterContext()) return [];
+          return ReactRouterDom.useMatches();
+        }
+
+        export function useResolvedPath(to) {
+          if (!useInRouterContext()) {
+            const path = typeof to === 'string' ? to : to.pathname || '/';
+            return { pathname: path, search: '', hash: '' };
+          }
+          return ReactRouterDom.useResolvedPath(to);
+        }
+
+        export function useHref(to) {
+          if (!useInRouterContext()) {
+            return typeof to === 'string' ? to : to.pathname || '/';
+          }
+          return ReactRouterDom.useHref(to);
+        }
+
+        export function useNavigationType() {
+          if (!useInRouterContext()) return 'POP';
+          return ReactRouterDom.useNavigationType();
+        }
+
+        export function useOutlet(context) {
+          if (!useInRouterContext()) return null;
+          return ReactRouterDom.useOutlet(context);
+        }
+
+        export function useOutletContext() {
+          if (!useInRouterContext()) return undefined;
+          return ReactRouterDom.useOutletContext();
+        }
+
+        export function useRoutes(routes, location) {
+          if (!useInRouterContext()) return null;
+          return ReactRouterDom.useRoutes(routes, location);
+        }
+
+        // Data router hooks - return null/undefined when outside context
+        export function useFetcher() {
+          if (!useInRouterContext()) return { state: 'idle', data: undefined, load: () => {}, submit: () => {} };
+          return ReactRouterDom.useFetcher();
+        }
+
+        export function useFetchers() {
+          if (!useInRouterContext()) return [];
+          return ReactRouterDom.useFetchers();
+        }
+
+        export function useFormAction(action) {
+          if (!useInRouterContext()) return action || '';
+          return ReactRouterDom.useFormAction(action);
+        }
+
+        export function useLoaderData() {
+          if (!useInRouterContext()) return undefined;
+          return ReactRouterDom.useLoaderData();
+        }
+
+        export function useActionData() {
+          if (!useInRouterContext()) return undefined;
+          return ReactRouterDom.useActionData();
+        }
+
+        export function useNavigation() {
+          if (!useInRouterContext()) return { state: 'idle', location: undefined, formMethod: undefined, formAction: undefined, formEncType: undefined, formData: undefined };
+          return ReactRouterDom.useNavigation();
+        }
+
+        export function useRevalidator() {
+          if (!useInRouterContext()) return { state: 'idle', revalidate: () => {} };
+          return ReactRouterDom.useRevalidator();
+        }
+
+        export function useRouteError() {
+          if (!useInRouterContext()) return undefined;
+          return ReactRouterDom.useRouteError();
+        }
+
+        export function useRouteLoaderData(routeId) {
+          if (!useInRouterContext()) return undefined;
+          return ReactRouterDom.useRouteLoaderData(routeId);
+        }
+
+        export function useSubmit() {
+          if (!useInRouterContext()) return () => {};
+          return ReactRouterDom.useSubmit();
+        }
+
+        export function useBeforeUnload(callback) {
+          React.useEffect(() => {
+            if (callback) {
+              window.addEventListener('beforeunload', callback);
+              return () => window.removeEventListener('beforeunload', callback);
+            }
+          }, [callback]);
+        }
+
+        export function unstable_usePrompt() {
+          // No-op outside Router
+        }
+
+        export function unstable_useBlocker() {
+          if (!useInRouterContext()) return { state: 'unblocked', proceed: () => {}, reset: () => {} };
+          return ReactRouterDom.unstable_useBlocker();
+        }
+
+        // Standalone useLocation - uses sandbox router, doesn't need Router context
+        // This is always safe to call and provides reactive updates
+        export function useLocation() {
+          console.log('[RouterShim] useLocation called (our safe version)');
+          const [location, setLocation] = React.useState(() => {
+            const loc = window.__SANDBOX_ROUTER__?.getLocation() || { pathname: '/', search: '', hash: '', state: null, key: 'default' };
+            console.log('[RouterShim] useLocation initial state:', loc);
+            return loc;
+          });
+
+          React.useEffect(() => {
+            if (window.__SANDBOX_ROUTER__) {
+              return window.__SANDBOX_ROUTER__.subscribe((loc) => setLocation(loc));
+            }
+          }, []);
+
+          return location;
+        }
+
+        // Standalone useParams - returns empty object (no route params without Routes)
+        export function useParams() {
+          return {};
+        }
+
+        // Standalone useSearchParams - parses from sandbox router
+        export function useSearchParams() {
+          const [params, setParamsState] = React.useState(() => {
+            const search = window.__SANDBOX_ROUTER__?.search || '';
+            return new URLSearchParams(search);
+          });
+
+          React.useEffect(() => {
+            if (window.__SANDBOX_ROUTER__) {
+              return window.__SANDBOX_ROUTER__.subscribe((loc) => {
+                setParamsState(new URLSearchParams(loc.search || ''));
+              });
+            }
+          }, []);
+
+          const setParams = React.useCallback((newParams) => {
+            const currentParams = new URLSearchParams(window.__SANDBOX_ROUTER__?.search || '');
+            const searchString = typeof newParams === 'function'
+              ? newParams(currentParams).toString()
+              : new URLSearchParams(newParams).toString();
+            window.__SANDBOX_ROUTER__?.navigate(
+              window.__SANDBOX_ROUTER__.currentPath + (searchString ? '?' + searchString : '') + window.__SANDBOX_ROUTER__.hash
+            );
+          }, []);
+
+          return [params, setParams];
+        }
 
         // Custom BrowserRouter that uses MemoryRouter internally for sandbox compatibility
         export function BrowserRouter({ children, ...props }) {
@@ -745,14 +971,10 @@ function getBootstrapScript(files: FileSystem): string {
           return children;
         }
 
-        // Override useNavigate to use our sandbox history AND update MemoryRouter
-        const originalUseNavigate = ReactRouterDom.useNavigate;
+        // Standalone useNavigate - uses sandbox history, doesn't need Router context
         export function useNavigate() {
-          const memoryNavigate = originalUseNavigate();
-          return (to, options) => {
-            // Update MemoryRouter first
-            memoryNavigate(to, options);
-            // Then update our sandbox router for URL display
+          return React.useCallback((to, options) => {
+            // Update sandbox router for URL display
             if (typeof to === 'string') {
               if (options?.replace) {
                 window.__SANDBOX_HISTORY__.replaceState(options?.state || null, '', to);
@@ -762,7 +984,7 @@ function getBootstrapScript(files: FileSystem): string {
             } else if (typeof to === 'number') {
               window.__SANDBOX_HISTORY__.go(to);
             }
-          };
+          }, []);
         }
 
         // Custom Link that updates both MemoryRouter AND sandbox router
@@ -787,9 +1009,14 @@ function getBootstrapScript(files: FileSystem): string {
         }
 
         // Custom NavLink that updates both MemoryRouter AND sandbox router
+        // Safe version that works even without Router context
         export function NavLink({ to, replace, state, children, className, style, end, ...props }) {
-          const location = ReactRouterDom.useLocation();
+          console.log('[RouterShim] NavLink rendering, to=', to);
+          // Use our safe hooks which handle missing Router context internally
+          const location = useLocation();
+          console.log('[RouterShim] NavLink got location=', location);
           const navigate = useNavigate();
+          console.log('[RouterShim] NavLink got navigate function');
 
           // Determine if this NavLink is active
           const toPath = typeof to === 'string' ? to : to.pathname;
@@ -831,15 +1058,22 @@ function getBootstrapScript(files: FileSystem): string {
       // Dynamic imports detected from user code (proactive resolution)
       const dynamicImports = __DYNAMIC_IMPORTS_PLACEHOLDER__;
 
+      // Remove react-router and react-router-dom from dynamic imports - we always use our shim
+      const filteredDynamicImports = { ...dynamicImports };
+      delete filteredDynamicImports['react-router'];
+      delete filteredDynamicImports['react-router-dom'];
+
       const importMap = {
         imports: {
+          // Dynamic imports first (auto-detected from code) - can be overridden by our explicit mappings
+          ...filteredDynamicImports,
           // React core
           "react": "https://esm.sh/react@19.0.0",
           "react/jsx-runtime": "https://esm.sh/react@19.0.0/jsx-runtime",
           "react/jsx-dev-runtime": "https://esm.sh/react@19.0.0/jsx-dev-runtime",
           "react-dom": "https://esm.sh/react-dom@19.0.0",
           "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
-          // React Router - both point to our custom shim for sandbox compatibility
+          // React Router - MUST use our custom shim for sandbox compatibility
           // This handles cases where AI imports from 'react-router' instead of 'react-router-dom'
           "react-router-dom": routerShimUrl,
           "react-router": routerShimUrl,
@@ -858,9 +1092,7 @@ function getBootstrapScript(files: FileSystem): string {
           // State management (lightweight)
           "zustand": "https://esm.sh/zustand@5.0.1?external=react",
           // Form handling
-          "react-hook-form": "https://esm.sh/react-hook-form@7.53.2?external=react",
-          // Dynamic imports (auto-detected from code)
-          ...dynamicImports
+          "react-hook-form": "https://esm.sh/react-hook-form@7.53.2?external=react"
         }
       };
 
@@ -1017,8 +1249,29 @@ function getBootstrapScript(files: FileSystem): string {
         // ( ) => → () =>
         fixed = fixed.replace(/\\(\\s+\\)\\s*=>/g, '() =>');
 
-        // Missing arrow: (x) { return → (x) => { return
-        fixed = fixed.replace(/\\)\\s*\\{(\\s*(?:return|const|let|if|for|while))/g, ') => {$1');
+        // Fix missing arrow in arrow functions (NOT function declarations)
+        // Pattern: "= () {" or "= async () {" → "= () => {" or "= async () => {"
+        // This catches: const fn = () {, const fn = async () {, but NOT function Name() {
+        fixed = fixed.replace(/(=\\s*)(async\\s+)?\\(([^)]*)\\)\\s*\\{/g, function(match, eq, asyncKw, params) {
+          if (match.includes('=>')) return match;
+          console.log('[AutoFix] Fixed missing arrow after =');
+          return eq + (asyncKw || '') + '(' + params + ') => {';
+        });
+
+        // Fix: useEffect(() { → useEffect(() => {
+        // Pattern: identifier( followed by (() { - callback without arrow
+        fixed = fixed.replace(/(\\w+)\\s*\\(\\s*\\(([^)]*)\\)\\s*\\{(?!\\s*=>)/g, function(match, fnName, params) {
+          if (fnName === 'function') return match;
+          console.log('[AutoFix] Fixed missing arrow in callback: ' + fnName);
+          return fnName + '((' + params + ') => {';
+        });
+
+        // Fix: return () { → return () => { (useEffect cleanup functions)
+        fixed = fixed.replace(/return\\s+\\(([^)]*)\\)\\s*\\{/g, function(match, params) {
+          if (match.includes('=>')) return match;
+          console.log('[AutoFix] Fixed missing arrow in return');
+          return 'return (' + params + ') => {';
+        });
 
         // ═══════════════════════════════════════════════════════════
         // PHASE 2: JSX attribute fixes
@@ -1093,28 +1346,55 @@ function getBootstrapScript(files: FileSystem): string {
         return fixed;
       }
 
-      // Try transpile with auto-fix retry
+      // Try transpile with auto-fix (apply fix BEFORE first compile attempt)
+      // Detect if code contains JSX syntax
+      function containsJSX(code) {
+        // Remove comments and strings to avoid false positives
+        const cleaned = code
+          .replace(/\\/\\/.*$/gm, '')  // Remove single-line comments
+          .replace(/\\/\\*[\\s\\S]*?\\*\\//g, '')  // Remove multi-line comments
+          .replace(/"(?:[^"\\\\\\\\]|\\\\\\\\.)*"/g, '""')  // Remove double-quoted strings
+          .replace(/'(?:[^'\\\\\\\\]|\\\\\\\\.)*'/g, "''")  // Remove single-quoted strings
+          .replace(/\`(?:[^\`\\\\\\\\]|\\\\\\\\.)*\`/g, '""');  // Remove template literals
+
+        // Look for JSX patterns: <Component, </Component, <div, </div, <>, </>
+        // Must start with < followed by uppercase letter (component) or lowercase (HTML element)
+        const jsxPattern = /<\\/?[A-Za-z][A-Za-z0-9]*(?:\\s|>|\\/|$)/;
+        const fragmentPattern = /<>|<\\/>/;
+
+        return jsxPattern.test(cleaned) || fragmentPattern.test(cleaned);
+      }
+
       function tryTranspile(code, filename, maxRetries = 2) {
-        let currentCode = code;
+        // ALWAYS apply auto-fix first - this catches common AI syntax errors
+        // like "function Name() => {" before they cause compile errors
+        let currentCode = autoFixCode(code);
+        if (currentCode !== code) {
+          console.log('[Sandbox] Pre-applied auto-fix for ' + filename);
+        }
         let lastError = null;
+
+        // If .ts file contains JSX, treat it as .tsx for Babel
+        let babelFilename = filename;
+        if (filename.endsWith('.ts') && !filename.endsWith('.tsx') && containsJSX(currentCode)) {
+          babelFilename = filename.replace(/\\.ts$/, '.tsx');
+          console.log('[Sandbox] Detected JSX in .ts file, treating as .tsx: ' + filename);
+        }
 
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
           try {
             const transformedContent = transformImports(currentCode, filename);
             const transpiled = Babel.transform(transformedContent, {
               presets: ['react', ['env', { modules: false }], 'typescript'],
-              filename
+              filename: babelFilename
             }).code;
-            if (attempt > 0) {
-              console.log('[Sandbox] Fixed and compiled: ' + filename + ' (after ' + attempt + ' fix attempts)');
-            }
             return { success: true, code: transpiled };
           } catch (err) {
             lastError = err;
             if (attempt < maxRetries) {
               const fixedCode = autoFixCode(currentCode);
               if (fixedCode !== currentCode) {
-                console.log('[Sandbox] Attempting auto-fix for ' + filename + ' (attempt ' + (attempt + 1) + ')');
+                console.log('[Sandbox] Attempting additional auto-fix for ' + filename + ' (attempt ' + (attempt + 1) + ')');
                 currentCode = fixedCode;
               } else {
                 break;
@@ -1260,10 +1540,12 @@ function getBootstrapScript(files: FileSystem): string {
         return; // Don't try to mount app if compilation failed
       }
 
+      console.log('[Sandbox] Creating import map with react-router-dom:', importMap.imports['react-router-dom']);
       const mapScript = document.createElement('script');
       mapScript.type = "importmap";
       mapScript.textContent = JSON.stringify(importMap);
       document.head.appendChild(mapScript);
+      console.log('[Sandbox] Import map added to head');
 
       // Find App entry point - try multiple possible paths
       const appPaths = ['src/App.tsx', 'src/App.jsx', 'src/App.ts', 'src/App.js', 'App.tsx', 'App.jsx', 'App.ts', 'App.js'];
@@ -1303,10 +1585,82 @@ function getBootstrapScript(files: FileSystem): string {
         window.memo = React.memo;
         window.Fragment = React.Fragment;
 
-        // Render the app
+        // Error Boundary component to catch runtime errors
+        class ErrorBoundary extends React.Component {
+          constructor(props) {
+            super(props);
+            this.state = { hasError: false, error: null, errorInfo: null };
+          }
+
+          static getDerivedStateFromError(error) {
+            return { hasError: true, error };
+          }
+
+          componentDidCatch(error, errorInfo) {
+            this.setState({ errorInfo });
+            console.error('[Sandbox] React Error Boundary caught error:', error.message);
+            console.error('[Sandbox] Component stack:', errorInfo?.componentStack);
+          }
+
+          render() {
+            if (this.state.hasError) {
+              const { error, errorInfo } = this.state;
+              return React.createElement('div', {
+                style: {
+                  padding: '20px',
+                  fontFamily: 'monospace',
+                  backgroundColor: '#1e1e2e',
+                  color: '#f38ba8',
+                  minHeight: '100vh',
+                  boxSizing: 'border-box'
+                }
+              },
+                React.createElement('h2', {
+                  style: { color: '#f38ba8', marginBottom: '10px' }
+                }, '⚠️ Runtime Error'),
+                React.createElement('pre', {
+                  style: {
+                    backgroundColor: '#313244',
+                    padding: '15px',
+                    borderRadius: '8px',
+                    overflow: 'auto',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word'
+                  }
+                }, error?.message || 'Unknown error'),
+                errorInfo?.componentStack && React.createElement('details', {
+                  style: { marginTop: '15px' }
+                },
+                  React.createElement('summary', {
+                    style: { cursor: 'pointer', color: '#89b4fa' }
+                  }, 'Component Stack'),
+                  React.createElement('pre', {
+                    style: {
+                      backgroundColor: '#313244',
+                      padding: '10px',
+                      borderRadius: '8px',
+                      marginTop: '10px',
+                      fontSize: '12px',
+                      color: '#a6adc8'
+                    }
+                  }, errorInfo.componentStack)
+                )
+              );
+            }
+            return this.props.children;
+          }
+        }
+
+        // Render the app with ErrorBoundary
         try {
           const root = createRoot(document.getElementById('root'));
-          root.render(React.createElement(React.StrictMode, null, React.createElement(App)));
+          root.render(
+            React.createElement(React.StrictMode, null,
+              React.createElement(ErrorBoundary, null,
+                React.createElement(App)
+              )
+            )
+          );
           window.__SANDBOX_READY__ = true;
           console.log('[Sandbox] App mounted successfully');
         } catch (err) {
@@ -1323,6 +1677,13 @@ function getBootstrapScript(files: FileSystem): string {
           filename: 'bootstrap.tsx'
         }).code;
         script.src = URL.createObjectURL(new Blob([transpiledBootstrap], { type: 'application/javascript' }));
+
+        // Handle script loading errors (module resolution failures)
+        script.onerror = function(event) {
+          console.error('[Sandbox] Bootstrap script failed to load');
+          showSafeError('Module Load Error', { message: 'Failed to load application modules. Check console for details.' });
+        };
+
         document.body.appendChild(script);
       } catch (err) {
         console.error('[Sandbox] Bootstrap transpilation failed:', err.message);
