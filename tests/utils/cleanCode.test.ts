@@ -11,7 +11,12 @@ import {
   cleanGeneratedCode,
   parseMultiFileResponse,
   fixJsxTextContent,
-  fixBareSpecifierImports
+  fixBareSpecifierImports,
+  fixCommonSyntaxErrors,
+  validateJsxSyntax,
+  validateAndFixCode,
+  getErrorContext,
+  parseBabelError
 } from '../../utils/cleanCode';
 
 describe('cleanCode', () => {
@@ -362,6 +367,343 @@ import React from "react";`;
       const input = 'export { Button } from "components/Button";';
       const result = fixBareSpecifierImports(input);
       expect(result).toBe('export { Button } from "/components/Button";');
+    });
+  });
+
+  describe('fixCommonSyntaxErrors', () => {
+    describe('malformed ternary operators', () => {
+      it('should fix ") : condition && (" pattern', () => {
+        const input = `status === 'error' ? (<Error />) : status === 'loading' && (<Loading />)`;
+        const result = fixCommonSyntaxErrors(input);
+        expect(result).toContain(`: status === 'loading' ? (`);
+        expect(result).not.toContain('&&');
+      });
+
+      it('should fix variable-based ") : isLoading && (" pattern', () => {
+        const input = `isError ? (<Error />) : isLoading && (<Loading />)`;
+        const result = fixCommonSyntaxErrors(input);
+        expect(result).toContain(': isLoading ? (');
+        expect(result).not.toContain('&& (');
+      });
+
+      it('should fix negated condition ") : !condition && ("', () => {
+        const input = `isError ? (<Error />) : !isLoading && (<NotLoading />)`;
+        const result = fixCommonSyntaxErrors(input);
+        expect(result).toContain(': !isLoading ? (');
+      });
+
+      it('should fix after JSX closing tag "</Component>) : condition && ("', () => {
+        const input = `condition ? (<div>Yes</div>) : otherCondition && (<div>No</div>)`;
+        const result = fixCommonSyntaxErrors(input);
+        expect(result).toContain('</div>) : otherCondition ? (');
+      });
+
+      it('should fix after self-closing JSX "/>) : condition && ("', () => {
+        const input = `condition ? (<Icon />) : otherCondition && (<OtherIcon />)`;
+        const result = fixCommonSyntaxErrors(input);
+        expect(result).toContain('/>) : otherCondition ? (');
+      });
+    });
+
+    describe('incomplete ternary (missing : null)', () => {
+      it('should add ": null" when missing in simple case', () => {
+        const input = `{isLoading ? <Spinner /> }`;
+        const result = fixCommonSyntaxErrors(input);
+        expect(result).toContain(': null}');
+      });
+
+      it('should add ": null" when missing with parentheses', () => {
+        const input = `{isLoading ? (<Spinner />) }`;
+        const result = fixCommonSyntaxErrors(input);
+        expect(result).toContain(': null}');
+      });
+
+      it('should not add ": null" when already complete', () => {
+        const input = `{isLoading ? <Spinner /> : null}`;
+        const result = fixCommonSyntaxErrors(input);
+        // Should remain unchanged
+        expect(result).toBe(input);
+      });
+    });
+
+    describe('arrow function syntax', () => {
+      it('should fix "= >" with space', () => {
+        const input = `const fn = () = > { return 1; };`;
+        const result = fixCommonSyntaxErrors(input);
+        expect(result).toContain('() => {');
+      });
+
+      it('should ensure space after arrow before brace', () => {
+        const input = `const fn = () =>{`;
+        const result = fixCommonSyntaxErrors(input);
+        expect(result).toContain('=> {');
+      });
+    });
+
+    describe('JSX attribute syntax', () => {
+      it('should fix missing equals in className', () => {
+        const input = `<div className"test">`;
+        const result = fixCommonSyntaxErrors(input);
+        expect(result).toBe('<div className="test">');
+      });
+
+      it('should fix double equals in className', () => {
+        const input = `<div className=="test">`;
+        const result = fixCommonSyntaxErrors(input);
+        expect(result).toBe('<div className="test">');
+      });
+
+      it('should fix missing equals in type', () => {
+        const input = `<input type"text">`;
+        const result = fixCommonSyntaxErrors(input);
+        expect(result).toBe('<input type="text">');
+      });
+    });
+
+    describe('duplicate imports', () => {
+      it('should remove exact duplicate imports', () => {
+        const input = `import React from 'react';
+import React from 'react';
+const App = () => <div />;`;
+        const result = fixCommonSyntaxErrors(input);
+        const reactImports = result.match(/import React from 'react'/g);
+        expect(reactImports?.length).toBe(1);
+      });
+
+      it('should merge named imports from same source', () => {
+        const input = `import { useState } from 'react';
+import { useEffect } from 'react';
+const App = () => {};`;
+        const result = fixCommonSyntaxErrors(input);
+        expect(result).toContain('useState');
+        expect(result).toContain('useEffect');
+        // Should have only one import from 'react'
+        const reactImports = result.match(/from 'react'/g);
+        expect(reactImports?.length).toBe(1);
+      });
+
+      it('should merge default and named imports', () => {
+        const input = `import React from 'react';
+import { useState } from 'react';
+const App = () => {};`;
+        const result = fixCommonSyntaxErrors(input);
+        expect(result).toContain('React');
+        expect(result).toContain('useState');
+        const reactImports = result.match(/from 'react'/g);
+        expect(reactImports?.length).toBe(1);
+      });
+    });
+
+    describe('JSX structural issues', () => {
+      it('should fix double closing braces before JSX tag', () => {
+        const input = `{value}}</div>`;
+        const result = fixCommonSyntaxErrors(input);
+        expect(result).toBe('{value}</div>');
+      });
+
+      it('should fix double opening braces', () => {
+        const input = `<div>{ { value }</div>`;
+        const result = fixCommonSyntaxErrors(input);
+        expect(result).toContain('{ value');
+        expect(result).not.toContain('{ {');
+      });
+    });
+
+    describe('TypeScript issues', () => {
+      it('should fix trailing comma before closing brace', () => {
+        const input = `interface Props { a: string, }`;
+        const result = fixCommonSyntaxErrors(input);
+        expect(result).toBe('interface Props { a: string }');
+      });
+
+      it('should fix missing closing > in React.FC generic', () => {
+        const input = `const App: React.FC<Props = () => <div />`;
+        const result = fixCommonSyntaxErrors(input);
+        expect(result).toContain('React.FC<Props>');
+      });
+    });
+
+    describe('unclosed template literals', () => {
+      it('should close unclosed template literal', () => {
+        const input = 'const str = `hello world';
+        const result = fixCommonSyntaxErrors(input);
+        const backticks = result.match(/`/g);
+        expect(backticks?.length).toBe(2);
+      });
+
+      it('should not modify already closed template literal', () => {
+        const input = 'const str = `hello world`';
+        const result = fixCommonSyntaxErrors(input);
+        expect(result).toBe(input);
+      });
+    });
+
+    it('should handle empty input', () => {
+      expect(fixCommonSyntaxErrors('')).toBe('');
+    });
+
+    it('should not break valid code', () => {
+      const validCode = `
+import React, { useState, useEffect } from 'react';
+
+const App: React.FC<Props> = () => {
+  const [count, setCount] = useState(0);
+
+  return (
+    <div className="container">
+      {isLoading ? (
+        <Spinner />
+      ) : isError ? (
+        <Error />
+      ) : (
+        <Content />
+      )}
+    </div>
+  );
+};
+
+export default App;
+`;
+      const result = fixCommonSyntaxErrors(validCode);
+      // Valid code should remain essentially the same
+      expect(result).toContain('useState');
+      expect(result).toContain('useEffect');
+      expect(result).toContain('isLoading ?');
+      expect(result).toContain('isError ?');
+      expect(result).toContain('<Content />');
+    });
+  });
+
+  describe('validateJsxSyntax', () => {
+    it('should detect malformed ternary patterns', () => {
+      const code = `{status === 'error' ? (<Error />) : isLoading && (<Spinner />)}`;
+      const issues = validateJsxSyntax(code);
+      expect(issues.some(i => i.message.includes('Malformed ternary'))).toBe(true);
+    });
+
+    it('should detect arrow function syntax errors', () => {
+      const code = `const fn = () = > { return 1; };`;
+      const issues = validateJsxSyntax(code);
+      expect(issues.some(i => i.message.includes('arrow function'))).toBe(true);
+    });
+
+    it('should detect missing equals in JSX attribute', () => {
+      const code = `<div className"test">`;
+      const issues = validateJsxSyntax(code);
+      expect(issues.some(i => i.message.includes('Missing ='))).toBe(true);
+    });
+
+    it('should detect unbalanced braces', () => {
+      const code = `function test() { if (true) { return 1; }`;
+      const issues = validateJsxSyntax(code);
+      expect(issues.some(i => i.message.includes('Unbalanced braces'))).toBe(true);
+    });
+
+    it('should detect unbalanced parentheses', () => {
+      const code = `function test(a, b { return a + b; }`;
+      const issues = validateJsxSyntax(code);
+      expect(issues.some(i => i.message.includes('Unbalanced parentheses'))).toBe(true);
+    });
+
+    it('should return empty array for valid code', () => {
+      const code = `
+const App = () => {
+  return (
+    <div>
+      {isLoading ? <Spinner /> : <Content />}
+    </div>
+  );
+};`;
+      const issues = validateJsxSyntax(code);
+      const errors = issues.filter(i => i.type === 'error');
+      expect(errors.length).toBe(0);
+    });
+  });
+
+  describe('validateAndFixCode', () => {
+    it('should fix code and return fixed status', () => {
+      const code = `const fn = () = > { return 1; };`;
+      const result = validateAndFixCode(code, 'test.tsx');
+      expect(result.code).toContain('=>');
+      expect(result.code).not.toContain('= >');
+    });
+
+    it('should run multiple passes for complex issues', () => {
+      const code = `
+        const App = () = > {
+          return (
+            <div className"test">
+            </div>
+          );
+        };
+      `;
+      const result = validateAndFixCode(code, 'test.tsx');
+      expect(result.code).toContain('=>');
+      expect(result.code).toContain('className=');
+    });
+
+    it('should handle empty input', () => {
+      const result = validateAndFixCode('');
+      expect(result.code).toBe('');
+      expect(result.fixed).toBe(false);
+      expect(result.issues).toEqual([]);
+    });
+  });
+
+  describe('getErrorContext', () => {
+    it('should extract context around error line', () => {
+      const code = `line 1
+line 2
+line 3
+line 4
+line 5`;
+      const context = getErrorContext(code, 3, 1);
+      expect(context).toContain('>>> ');
+      expect(context).toContain('line 3');
+      expect(context).toContain('line 2');
+      expect(context).toContain('line 4');
+    });
+
+    it('should handle edge cases at start of file', () => {
+      const code = `line 1
+line 2
+line 3`;
+      const context = getErrorContext(code, 1, 2);
+      expect(context).toContain('>>> ');
+      expect(context).toContain('line 1');
+    });
+
+    it('should handle edge cases at end of file', () => {
+      const code = `line 1
+line 2
+line 3`;
+      const context = getErrorContext(code, 3, 2);
+      expect(context).toContain('>>> ');
+      expect(context).toContain('line 3');
+    });
+  });
+
+  describe('parseBabelError', () => {
+    it('should extract line and column from error with (line:col) format', () => {
+      const error = 'file.tsx: Unexpected token (15:23)';
+      const result = parseBabelError(error);
+      expect(result.line).toBe(15);
+      expect(result.column).toBe(23);
+    });
+
+    it('should extract line from "Line N:" format', () => {
+      const error = 'Line 42: Unexpected identifier';
+      const result = parseBabelError(error);
+      expect(result.line).toBe(42);
+      expect(result.message).toContain('Unexpected identifier');
+    });
+
+    it('should return just message for unrecognized format', () => {
+      const error = 'Some random error message';
+      const result = parseBabelError(error);
+      expect(result.line).toBeUndefined();
+      expect(result.column).toBeUndefined();
+      expect(result.message).toBe('Some random error message');
     });
   });
 });

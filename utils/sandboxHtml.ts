@@ -922,19 +922,46 @@ function getBootstrapScript(files: FileSystem): string {
         );
       }
 
+      // Bare specifier directories that need resolution
+      const bareSpecifierDirs = ['src/', 'components/', 'hooks/', 'utils/', 'services/', 'contexts/', 'types/', 'lib/', 'pages/', 'features/', 'modules/', 'assets/', 'styles/', 'api/'];
+
       // Transform imports in code to use absolute paths
       function transformImports(code, fromFile) {
         // First transform lucide imports
         code = transformLucideImports(code);
+
+        // Helper to resolve import path
+        function resolveImport(importPath) {
+          // Handle relative imports
+          if (importPath.startsWith('.')) {
+            const resolved = resolvePath(fromFile, importPath);
+            const actualFile = findFile(resolved);
+            return actualFile || resolved;
+          }
+
+          // Handle bare specifiers like 'src/components/X' or 'components/X'
+          const isBareSpecifier = bareSpecifierDirs.some(dir => importPath.startsWith(dir));
+          if (isBareSpecifier) {
+            // Try to find the file directly
+            const actualFile = findFile(importPath);
+            if (actualFile) return actualFile;
+
+            // Try adding src/ prefix if not present
+            if (!importPath.startsWith('src/')) {
+              const withSrc = 'src/' + importPath;
+              const actualWithSrc = findFile(withSrc);
+              if (actualWithSrc) return actualWithSrc;
+            }
+          }
+
+          return importPath;
+        }
+
         return code.replace(
           /(import\\s+(?:[\\w{},\\s*]+\\s+from\\s+)?['"])([^'"]+)(['"])/g,
           (match, prefix, importPath, suffix) => {
-            if (importPath.startsWith('.')) {
-              const resolved = resolvePath(fromFile, importPath);
-              const actualFile = findFile(resolved);
-              if (actualFile) {
-                return prefix + actualFile + suffix;
-              }
+            const resolved = resolveImport(importPath);
+            if (resolved !== importPath) {
               return prefix + resolved + suffix;
             }
             return match;
@@ -942,12 +969,8 @@ function getBootstrapScript(files: FileSystem): string {
         ).replace(
           /(export\\s+(?:[\\w{},\\s*]+\\s+from\\s+)?['"])([^'"]+)(['"])/g,
           (match, prefix, importPath, suffix) => {
-            if (importPath.startsWith('.')) {
-              const resolved = resolvePath(fromFile, importPath);
-              const actualFile = findFile(resolved);
-              if (actualFile) {
-                return prefix + actualFile + suffix;
-              }
+            const resolved = resolveImport(importPath);
+            if (resolved !== importPath) {
               return prefix + resolved + suffix;
             }
             return match;
@@ -959,16 +982,152 @@ function getBootstrapScript(files: FileSystem): string {
       const errors = [];
       console.log('[Sandbox] Processing ' + Object.keys(files).length + ' files...');
 
-      for (const [filename, content] of Object.entries(files)) {
-        if (/\\.(tsx|ts|jsx|js)$/.test(filename)) {
+      // Comprehensive auto-fix function for common syntax errors
+      function autoFixCode(code) {
+        let fixed = code;
+
+        // ═══════════════════════════════════════════════════════════
+        // PHASE 1: Arrow function fixes
+        // ═══════════════════════════════════════════════════════════
+
+        // = > → =>
+        fixed = fixed.replace(/=\\s+>/g, '=>');
+
+        // ( ) => → () =>
+        fixed = fixed.replace(/\\(\\s+\\)\\s*=>/g, '() =>');
+
+        // Missing arrow: (x) { return → (x) => { return
+        fixed = fixed.replace(/\\)\\s*\\{(\\s*(?:return|const|let|if|for|while))/g, ') => {$1');
+
+        // ═══════════════════════════════════════════════════════════
+        // PHASE 2: JSX attribute fixes
+        // ═══════════════════════════════════════════════════════════
+
+        // className"value" → className="value"
+        fixed = fixed.replace(/(className)"([^"]+)"/g, '$1="$2"');
+        fixed = fixed.replace(/(onClick)"([^"]+)"/g, '$1={$2}');
+        fixed = fixed.replace(/(onChange)"([^"]+)"/g, '$1={$2}');
+        fixed = fixed.replace(/(onSubmit)"([^"]+)"/g, '$1={$2}');
+        fixed = fixed.replace(/(style)"([^"]+)"/g, '$1={{$2}}');
+        fixed = fixed.replace(/(key)"([^"]+)"/g, '$1="$2"');
+        fixed = fixed.replace(/(href)"([^"]+)"/g, '$1="$2"');
+        fixed = fixed.replace(/(src)"([^"]+)"/g, '$1="$2"');
+
+        // className=="" → className=""
+        fixed = fixed.replace(/(className|style|onClick|key|href|src)=="/g, '$1="');
+
+        // Missing closing brace in expression: {value onClick → {value} onClick
+        fixed = fixed.replace(/=\\{([a-zA-Z_][a-zA-Z0-9_]*)(\\s+[a-z])/gi, '={$1}$2');
+
+        // ═══════════════════════════════════════════════════════════
+        // PHASE 3: Ternary operator fixes
+        // ═══════════════════════════════════════════════════════════
+
+        // ) : condition && ( → ) : (condition && (
+        fixed = fixed.replace(/\\)\\s*:\\s*([a-zA-Z_][a-zA-Z0-9_.]*)\\s*&&\\s*\\(/g, ') : ($1 && (');
+
+        // Incomplete ternary: ? <JSX /> } → ? <JSX /> : null }
+        fixed = fixed.replace(/(\\?\\s*<[A-Z][^}]*(?:\\/>|<\\/[A-Z][a-zA-Z0-9]*>))(\\s*\\})/g, function(match, jsx, closing) {
+          if (jsx.indexOf(':') !== -1 && jsx.indexOf('className:') === -1 && jsx.indexOf('style:') === -1) {
+            return match;
+          }
+          return jsx + ' : null' + closing;
+        });
+
+        // ═══════════════════════════════════════════════════════════
+        // PHASE 4: TypeScript fixes
+        // ═══════════════════════════════════════════════════════════
+
+        // : : type → : type
+        fixed = fixed.replace(/:\\s*:\\s*/g, ': ');
+
+        // Trailing comma before }
+        fixed = fixed.replace(/,\\s*\\}/g, ' }');
+
+        // Missing closing > in generics: React.FC<Props = → React.FC<Props> =
+        fixed = fixed.replace(/(React\\.FC<[a-zA-Z_][a-zA-Z0-9_]*)(\\s*=)/g, '$1>$2');
+
+        // ═══════════════════════════════════════════════════════════
+        // PHASE 5: Bracket balance (simplified for sandbox)
+        // ═══════════════════════════════════════════════════════════
+
+        // Count brackets (simple approach - ignores strings for performance)
+        var braces = 0, parens = 0, brackets = 0;
+        var chars = fixed.split('');
+        for (var k = 0; k < chars.length; k++) {
+          var c = chars[k];
+          if (c === '{') braces++;
+          else if (c === '}') braces--;
+          else if (c === '(') parens++;
+          else if (c === ')') parens--;
+          else if (c === '[') brackets++;
+          else if (c === ']') brackets--;
+        }
+
+        // Add missing closers at end
+        if (braces > 0) fixed = fixed.trimEnd() + '\\n' + '}'.repeat(braces);
+        if (parens > 0) fixed = fixed.trimEnd() + ')'.repeat(parens);
+        if (brackets > 0) fixed = fixed.trimEnd() + ']'.repeat(brackets);
+
+        return fixed;
+      }
+
+      // Try transpile with auto-fix retry
+      function tryTranspile(code, filename, maxRetries = 2) {
+        let currentCode = code;
+        let lastError = null;
+
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
           try {
-            // Transform relative imports to absolute before transpiling
-            const transformedContent = transformImports(content, filename);
+            const transformedContent = transformImports(currentCode, filename);
             const transpiled = Babel.transform(transformedContent, {
               presets: ['react', ['env', { modules: false }], 'typescript'],
               filename
             }).code;
-            const url = URL.createObjectURL(new Blob([transpiled], { type: 'application/javascript' }));
+            if (attempt > 0) {
+              console.log('[Sandbox] Fixed and compiled: ' + filename + ' (after ' + attempt + ' fix attempts)');
+            }
+            return { success: true, code: transpiled };
+          } catch (err) {
+            lastError = err;
+            if (attempt < maxRetries) {
+              const fixedCode = autoFixCode(currentCode);
+              if (fixedCode !== currentCode) {
+                console.log('[Sandbox] Attempting auto-fix for ' + filename + ' (attempt ' + (attempt + 1) + ')');
+                currentCode = fixedCode;
+              } else {
+                break;
+              }
+            }
+          }
+        }
+
+        // Extract line context from error
+        let errorMsg = lastError.message;
+        const lineMatch = errorMsg.match(/\\((\\d+):(\\d+)\\)/);
+        if (lineMatch) {
+          const line = parseInt(lineMatch[1], 10);
+          const lines = currentCode.split('\\n');
+          if (lines[line - 1]) {
+            const start = Math.max(0, line - 3);
+            const end = Math.min(lines.length, line + 2);
+            let context = '';
+            for (let i = start; i < end; i++) {
+              const marker = (i + 1) === line ? '>>>' : '   ';
+              context += marker + ' ' + (i + 1) + ': ' + lines[i] + '\\n';
+            }
+            errorMsg = errorMsg + '\\n\\nContext:\\n' + context;
+          }
+        }
+
+        return { success: false, error: errorMsg };
+      }
+
+      for (const [filename, content] of Object.entries(files)) {
+        if (/\\.(tsx|ts|jsx|js)$/.test(filename)) {
+          const result = tryTranspile(content, filename);
+          if (result.success) {
+            const url = URL.createObjectURL(new Blob([result.code], { type: 'application/javascript' }));
 
             // Add multiple import map entries for flexibility
             importMap.imports[filename] = url;
@@ -998,9 +1157,9 @@ function getBootstrapScript(files: FileSystem): string {
             }
 
             console.log('[Sandbox] Compiled: ' + filename);
-          } catch (err) {
-            console.error('[Sandbox] Transpilation failed for ' + filename + ': ' + err.message);
-            errors.push({ file: filename, error: err.message });
+          } else {
+            console.error('[Sandbox] Transpilation failed for ' + filename + ': ' + result.error);
+            errors.push({ file: filename, error: result.error });
           }
         } else if (/\\.css$/.test(filename)) {
           // Handle CSS files - inject as style tag
@@ -1029,6 +1188,55 @@ function getBootstrapScript(files: FileSystem): string {
 
       if (errors.length > 0) {
         console.warn('[Sandbox] ' + errors.length + ' file(s) failed to compile');
+        // Show compilation errors prominently
+        errors.forEach(e => {
+          console.error('[Sandbox] COMPILE ERROR in ' + e.file + ': ' + e.error);
+        });
+        // Notify parent about compilation failures
+        window.parent.postMessage({
+          type: 'CONSOLE_LOG',
+          logType: 'error',
+          message: 'Compilation failed for: ' + errors.map(e => e.file).join(', ') + '. Check console for details.',
+          timestamp: Date.now()
+        }, '*');
+
+        // Show visual error in preview
+        const root = document.getElementById('root');
+        if (root) {
+          root.textContent = '';
+          const errorContainer = document.createElement('div');
+          errorContainer.style.cssText = 'padding: 20px; font-family: ui-monospace, monospace; background: #1a1a2e; color: #eee; min-height: 100vh;';
+
+          const title = document.createElement('h2');
+          title.style.cssText = 'color: #ff6b6b; margin: 0 0 20px 0; font-size: 18px;';
+          title.textContent = '⚠️ Compilation Error' + (errors.length > 1 ? 's' : '');
+          errorContainer.appendChild(title);
+
+          errors.forEach(e => {
+            const errorBlock = document.createElement('div');
+            errorBlock.style.cssText = 'background: #252542; border-left: 4px solid #ff6b6b; padding: 12px 16px; margin-bottom: 12px; border-radius: 0 8px 8px 0;';
+
+            const fileName = document.createElement('div');
+            fileName.style.cssText = 'color: #4ecdc4; font-weight: bold; margin-bottom: 8px;';
+            fileName.textContent = '📄 ' + e.file;
+            errorBlock.appendChild(fileName);
+
+            const errorMsg = document.createElement('pre');
+            errorMsg.style.cssText = 'color: #ff9999; margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 13px;';
+            errorMsg.textContent = e.error;
+            errorBlock.appendChild(errorMsg);
+
+            errorContainer.appendChild(errorBlock);
+          });
+
+          const hint = document.createElement('p');
+          hint.style.cssText = 'color: #888; font-size: 12px; margin-top: 20px;';
+          hint.textContent = 'Tip: Check for syntax errors like malformed ternary operators, missing closing brackets, or invalid JSX.';
+          errorContainer.appendChild(hint);
+
+          root.appendChild(errorContainer);
+        }
+        return; // Don't try to mount app if compilation failed
       }
 
       const mapScript = document.createElement('script');
@@ -1036,11 +1244,28 @@ function getBootstrapScript(files: FileSystem): string {
       mapScript.textContent = JSON.stringify(importMap);
       document.head.appendChild(mapScript);
 
+      // Find App entry point - try multiple possible paths
+      const appPaths = ['src/App.tsx', 'src/App.jsx', 'src/App.ts', 'src/App.js', 'App.tsx', 'App.jsx', 'App.ts', 'App.js'];
+      let appPath = null;
+      for (const path of appPaths) {
+        if (importMap.imports[path]) {
+          appPath = path;
+          break;
+        }
+      }
+      if (!appPath) {
+        // Last resort - find any file with "App" in the name
+        const appKey = Object.keys(importMap.imports).find(k => k.includes('App') && /\\.(tsx|jsx|ts|js)$/.test(k));
+        appPath = appKey || 'src/App.tsx'; // Default fallback
+        console.warn('[Sandbox] Could not find App entry point, trying:', appPath);
+      }
+      console.log('[Sandbox] Using App entry point:', appPath);
+
       // Bootstrap code that makes React hooks globally available
       const bootstrapCode = \`
         import * as React from 'react';
         import { createRoot } from 'react-dom/client';
-        import App from 'src/App.tsx';
+        import App from '\${appPath}';
 
         // Make React and hooks globally available
         window.React = React;

@@ -106,6 +106,47 @@ src/
 - **Under 150 lines** - split larger components
 - **Props interface** when component has 3+ props
 
+### ⚠️ JSX Conditional Rendering (CRITICAL - READ CAREFULLY):
+
+**NEVER use `&&` after `:` in a ternary expression. This causes SYNTAX ERRORS.**
+
+```tsx
+// ✓ CORRECT - Nested ternary chain (condition ? A : condition ? B : C)
+{status === 'error' ? (
+  <AlertCircle />
+) : status === 'loading' ? (    // ← USE ? not &&
+  <Loader />
+) : status === 'success' ? (    // ← USE ? not &&
+  <CheckCircle />
+) : (
+  <Circle />
+)}
+
+// ✓ CORRECT - Simple ternary with null fallback
+{isLoading ? <Spinner /> : null}
+
+// ✓ CORRECT - Separate && for independent conditions (no else)
+{isError && <AlertCircle />}
+{isLoading && <Loader />}
+
+// ✗✗✗ WRONG - NEVER DO THIS (SYNTAX ERROR!) ✗✗✗
+{condition ? (
+  <A />
+) : otherCondition && (  // ← FATAL ERROR! Use ? instead of &&
+  <B />
+)}
+
+// ✗ ALSO WRONG - Missing else branch
+{condition ? <Component /> }  // ← Add : null at the end!
+```
+
+**Rule: After `:` in a ternary, you MUST use either:**
+1. Another `?` (for chained ternary)
+2. A value/component (for the else branch)
+3. `null` (for no else case)
+
+**NEVER use `&&` after `:`**
+
 ## STYLING (Tailwind CSS ONLY)
 
 ### Layout Patterns:

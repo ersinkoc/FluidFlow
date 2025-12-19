@@ -10,6 +10,9 @@ import {
   getMarkerStreamingStatus,
 } from './markerFormat';
 
+// Import comprehensive syntax fixer for aggressive error repair
+import { aggressiveFix, quickValidate } from './syntaxFixer';
+
 // Local alias for internal use
 const isIgnoredFilePath = isIgnoredPath;
 
@@ -150,6 +153,573 @@ export function fixJsxTextContent(code: string): string {
 }
 
 /**
+ * Comprehensive syntax error fixer for AI-generated JSX/TSX code.
+ *
+ * Fixes these common AI mistakes:
+ * 1. Malformed ternary chains (mixing && with ?:)
+ * 2. Incomplete ternary (missing : null)
+ * 3. Duplicate imports (merges them)
+ * 4. Malformed arrow functions
+ * 5. JSX attribute syntax errors
+ * 6. Unclosed template literals
+ * 7. TypeScript syntax issues
+ */
+export function fixCommonSyntaxErrors(code: string): string {
+  if (!code) return '';
+
+  let fixed = code;
+
+  // ══════════════════════════════════════════════════════════════
+  // PHASE 1: Fix malformed ternary operators (most common AI error)
+  // ══════════════════════════════════════════════════════════════
+
+  // 1a: `) : condition && (` → `) : condition ? (`
+  // Example: `status === 'error' ? <Error/>) : status === 'loading' && (<Loading/>)`
+  fixed = fixed.replace(
+    /\)\s*:\s*([\w.]+\s*===?\s*['"][^'"]+['"]\s*)&&\s*\(/g,
+    ') : $1? ('
+  );
+
+  // 1b: Variable-based: `) : isLoading && (` or `) : !isLoading && (`
+  fixed = fixed.replace(
+    /\)\s*:\s*(!?[\w.]+)\s*&&\s*\(/g,
+    ') : $1 ? ('
+  );
+
+  // 1c: After JSX closing tag: `</Component>) : condition && (`
+  fixed = fixed.replace(
+    /(<\/\w+>)\s*\)\s*:\s*([\w.!]+(?:\s*===?\s*['"][^'"]+['"])?)\s*&&\s*\(/g,
+    '$1) : $2 ? ('
+  );
+
+  // 1d: After self-closing JSX: `<Component />) : condition && (`
+  fixed = fixed.replace(
+    /(\/>)\s*\)\s*:\s*([\w.!]+(?:\s*===?\s*['"][^'"]+['"])?)\s*&&\s*\(/g,
+    '$1) : $2 ? ('
+  );
+
+  // 1e: `{condition && (content) : (other)}` → `{condition ? (content) : (other)}`
+  fixed = fixed.replace(
+    /\{\s*([\w.!]+(?:\s*[=!<>]+\s*['"\w.]+)?)\s*&&\s*\(([^)]+)\)\s*:\s*\(/g,
+    '{ $1 ? ($2) : ('
+  );
+
+  // 1f: Negated condition with &&: `) : !something && (`
+  fixed = fixed.replace(
+    /\)\s*:\s*(![\w.]+(?:\?\.[\w.]+)*)\s*&&\s*\(/g,
+    ') : $1 ? ('
+  );
+
+  // ══════════════════════════════════════════════════════════════
+  // PHASE 2: Fix incomplete ternary (missing else)
+  // ══════════════════════════════════════════════════════════════
+
+  // 2a: `{condition ? <Component /> }` missing `: null`
+  // Match: `? <.../>` followed by `}` without a `:` in between
+  fixed = fixed.replace(
+    /(\?\s*<[\w][\w\s="'{}.,-]*?\s*\/>)\s*(\})/g,
+    (match, ternaryPart, closeBrace) => {
+      // Check if there's already a colon after the ternary
+      if (match.includes(' : ') || match.includes(': ')) return match;
+      return ternaryPart + ' : null' + closeBrace;
+    }
+  );
+
+  // 2b: `{condition ? (<Component />) }` missing `: null`
+  fixed = fixed.replace(
+    /(\?\s*\(\s*<[\w][\w\s="'{}.,-]*?\s*\/>\s*\))\s*(\})/g,
+    (match, ternaryPart, closeBrace) => {
+      if (match.includes(' : ') || match.includes(': ')) return match;
+      return ternaryPart + ' : null' + closeBrace;
+    }
+  );
+
+  // ══════════════════════════════════════════════════════════════
+  // PHASE 3: Fix arrow function syntax
+  // ══════════════════════════════════════════════════════════════
+
+  // 3a: `() = > {` (space before >) → `() => {`
+  fixed = fixed.replace(/=\s+>/g, '=>');
+
+  // 3b: `= >{` (no space after =>) → `=> {`
+  fixed = fixed.replace(/=>\s*\{/g, '=> {');
+
+  // ══════════════════════════════════════════════════════════════
+  // PHASE 4: Fix JSX attribute syntax
+  // ══════════════════════════════════════════════════════════════
+
+  // 4a: `className"value"` missing `=`
+  fixed = fixed.replace(
+    /(className|style|onClick|onChange|onSubmit|type|placeholder|value|disabled|checked|id|name|href|src|alt)("[^"]*")/g,
+    '$1=$2'
+  );
+
+  // 4b: `className=="value"` double equals
+  fixed = fixed.replace(
+    /(className|style|onClick|onChange|type|placeholder)=="([^"]*)"/g,
+    '$1="$2"'
+  );
+
+  // ══════════════════════════════════════════════════════════════
+  // PHASE 5: Fix JSX structural issues
+  // ══════════════════════════════════════════════════════════════
+
+  // 5a: Extra `}}` that should be single `}`
+  // Only when followed by JSX closing tag
+  fixed = fixed.replace(/\}\}\s*(<\/)/g, '}$1');
+
+  // 5b: `{ {` double opening braces
+  fixed = fixed.replace(/\{\s*\{\s*(?=[^{])/g, '{ ');
+
+  // ══════════════════════════════════════════════════════════════
+  // PHASE 6: Deduplicate and merge imports
+  // ══════════════════════════════════════════════════════════════
+
+  const lines = fixed.split('\n');
+  const importsBySource = new Map<string, { line: string; idx: number; named: Set<string>; defaultImport: string | null }>();
+  const dedupedLines: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith('import ') && trimmed.includes('from')) {
+      // Extract source
+      const sourceMatch = trimmed.match(/from\s+['"]([^'"]+)['"]/);
+      if (sourceMatch) {
+        const source = sourceMatch[1];
+        const existing = importsBySource.get(source);
+
+        // Extract named imports
+        const namedMatch = trimmed.match(/\{\s*([^}]+)\s*\}/);
+        const namedImports = new Set<string>();
+        if (namedMatch) {
+          namedMatch[1].split(',').map(s => s.trim()).filter(Boolean).forEach(n => namedImports.add(n));
+        }
+
+        // Extract default import
+        const defaultMatch = trimmed.match(/import\s+(\w+)\s*(?:,|\s+from)/);
+        const defaultImport = (defaultMatch && !trimmed.startsWith('import {')) ? defaultMatch[1] : null;
+
+        if (existing) {
+          // Merge with existing import
+          namedImports.forEach(n => existing.named.add(n));
+          if (defaultImport && !existing.defaultImport) {
+            existing.defaultImport = defaultImport;
+          }
+          // Update the existing line
+          const merged = buildImportLine(existing.defaultImport, existing.named, source);
+          dedupedLines[existing.idx] = merged;
+          continue; // Skip this duplicate
+        }
+
+        importsBySource.set(source, {
+          line,
+          idx: dedupedLines.length,
+          named: namedImports,
+          defaultImport
+        });
+      }
+    } else if (trimmed.startsWith('import ') && !trimmed.includes('from')) {
+      // Side-effect import like `import './styles.css'`
+      const alreadyExists = dedupedLines.some(l => l.trim() === trimmed);
+      if (alreadyExists) continue;
+    }
+
+    dedupedLines.push(line);
+  }
+
+  fixed = dedupedLines.join('\n');
+
+  // ══════════════════════════════════════════════════════════════
+  // PHASE 7: Fix unclosed template literals
+  // ══════════════════════════════════════════════════════════════
+
+  const backtickCount = (fixed.match(/`/g) || []).length;
+  if (backtickCount % 2 !== 0) {
+    // Find unclosed template literal and close it
+    const lines2 = fixed.split('\n');
+    let inTemplate = false;
+    for (let i = 0; i < lines2.length; i++) {
+      const count = (lines2[i].match(/`/g) || []).length;
+      if (count % 2 !== 0) {
+        inTemplate = !inTemplate;
+        if (inTemplate && i === lines2.length - 1) {
+          // Last line starts unclosed template - close it
+          lines2[i] += '`';
+          inTemplate = false;
+        }
+      }
+    }
+    if (inTemplate) {
+      // Still unclosed - add closing backtick to last line
+      fixed += '`';
+    } else {
+      fixed = lines2.join('\n');
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // PHASE 8: Fix TypeScript issues
+  // ══════════════════════════════════════════════════════════════
+
+  // 8a: Trailing comma in interface/type before closing brace
+  fixed = fixed.replace(/,(\s*\})/g, '$1');
+
+  // 8b: Missing closing > in generics: `React.FC<Props =` → `React.FC<Props> =`
+  fixed = fixed.replace(/(React\.FC<\w+)(\s*=)/g, '$1>$2');
+
+  // ══════════════════════════════════════════════════════════════
+  // PHASE 9: Fix bracket/brace/parenthesis balance
+  // ══════════════════════════════════════════════════════════════
+
+  fixed = fixBracketBalance(fixed);
+
+  return fixed;
+}
+
+/**
+ * Fix unbalanced brackets, braces, and parentheses
+ * This is a best-effort fix - it adds missing closers at the end
+ */
+function fixBracketBalance(code: string): string {
+  const stack: { char: string; line: number }[] = [];
+  const pairs: Record<string, string> = { '(': ')', '[': ']', '{': '}', '<': '>' };
+  const closers: Record<string, string> = { ')': '(', ']': '[', '}': '{', '>': '<' };
+
+  let inString = false;
+  let stringChar = '';
+  let inTemplate = false;
+  let inJsx = false;
+  let lineNum = 1;
+
+  for (let i = 0; i < code.length; i++) {
+    const char = code[i];
+    const prev = code[i - 1];
+
+    // Track line numbers
+    if (char === '\n') lineNum++;
+
+    // Track string state
+    if ((char === '"' || char === "'" || char === '`') && prev !== '\\') {
+      if (!inString) {
+        inString = true;
+        stringChar = char;
+        if (char === '`') inTemplate = true;
+      } else if (char === stringChar) {
+        inString = false;
+        stringChar = '';
+        if (char === '`') inTemplate = false;
+      }
+      continue;
+    }
+
+    // Skip if in string (except template literal expressions)
+    if (inString && !inTemplate) continue;
+
+    // Handle template literal ${} expressions
+    if (inTemplate && char === '$' && code[i + 1] === '{') {
+      // Template expression start - push the brace
+      continue;
+    }
+
+    // Track JSX tags (simple heuristic)
+    if (char === '<' && /[A-Z]/.test(code[i + 1] || '')) {
+      inJsx = true;
+    }
+    if (inJsx && char === '>') {
+      inJsx = false;
+      continue; // Don't track JSX angle brackets
+    }
+    if (inJsx) continue;
+
+    // Skip angle brackets in type annotations
+    if (char === '<' || char === '>') {
+      // Simple heuristic: skip if looks like generic/type annotation
+      const before = code.substring(Math.max(0, i - 20), i);
+      if (/<\w+>/.test(before) || /:\s*$/.test(before) || /extends\s+$/.test(before)) {
+        continue;
+      }
+    }
+
+    // Track brackets
+    if (pairs[char] && char !== '<') {
+      stack.push({ char, line: lineNum });
+    } else if (closers[char] && char !== '>') {
+      if (stack.length > 0 && stack[stack.length - 1].char === closers[char]) {
+        stack.pop();
+      }
+      // If we have an unmatched closer, leave it (might be intentional)
+    }
+  }
+
+  // Add missing closers at the end
+  if (stack.length > 0) {
+    let suffix = '';
+    while (stack.length > 0) {
+      const unmatched = stack.pop();
+      if (unmatched) {
+        suffix += pairs[unmatched.char];
+      }
+    }
+    // Add closers on new line if there's content
+    if (suffix && code.trim().length > 0) {
+      code = code.trimEnd() + '\n' + suffix;
+    }
+  }
+
+  return code;
+}
+
+/**
+ * Validate JSX syntax and return issues found
+ * This is a quick pre-check before transpilation
+ */
+export interface SyntaxIssue {
+  type: 'error' | 'warning';
+  message: string;
+  line?: number;
+  column?: number;
+  fix?: string;
+}
+
+export function validateJsxSyntax(code: string): SyntaxIssue[] {
+  const issues: SyntaxIssue[] = [];
+  const lines = code.split('\n');
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lineNum = i + 1;
+
+    // Check for `: condition && (` pattern
+    if (/\)\s*:\s*[\w!.]+\s*&&\s*\(/.test(line)) {
+      issues.push({
+        type: 'error',
+        message: 'Malformed ternary: using && instead of ? after :',
+        line: lineNum,
+        fix: 'Replace && with ? for chained ternary'
+      });
+    }
+
+    // Check for unclosed JSX tags on single line
+    const jsxTagMatch = line.match(/<([A-Z]\w*)(?:\s[^>]*)?>(?!.*<\/\1>)(?!.*\/>)/);
+    if (jsxTagMatch && !line.includes('return') && !lines.slice(i + 1, i + 10).some(l => l.includes(`</${jsxTagMatch[1]}>`))) {
+      // Don't warn if closing tag is on a nearby line
+      const hasClosingNearby = lines.slice(i, i + 20).some(l => l.includes(`</${jsxTagMatch[1]}>`));
+      if (!hasClosingNearby) {
+        issues.push({
+          type: 'warning',
+          message: `Potentially unclosed JSX tag: <${jsxTagMatch[1]}>`,
+          line: lineNum
+        });
+      }
+    }
+
+    // Check for = > instead of =>
+    if (/=\s+>/.test(line) && !/[<>]=/.test(line)) {
+      issues.push({
+        type: 'error',
+        message: 'Malformed arrow function: space between = and >',
+        line: lineNum,
+        fix: 'Remove space: = > should be =>'
+      });
+    }
+
+    // Check for className"value" without =
+    if (/className"[^"]+"|onClick"[^"]+"/.test(line)) {
+      issues.push({
+        type: 'error',
+        message: 'Missing = in JSX attribute',
+        line: lineNum,
+        fix: 'Add = before the value'
+      });
+    }
+
+    // Check for incomplete ternary at end of expression
+    if (/\?\s*<[A-Z]\w*[^:]*\s*\}$/.test(line.trim())) {
+      const hasColonAfter = lines.slice(i + 1, i + 3).some(l => /^\s*:/.test(l));
+      if (!hasColonAfter) {
+        issues.push({
+          type: 'error',
+          message: 'Incomplete ternary: missing else branch (: null)',
+          line: lineNum,
+          fix: 'Add : null before the closing }'
+        });
+      }
+    }
+  }
+
+  // Check overall bracket balance
+  let braceCount = 0;
+  let parenCount = 0;
+  let bracketCount = 0;
+
+  for (const char of code) {
+    if (char === '{') braceCount++;
+    if (char === '}') braceCount--;
+    if (char === '(') parenCount++;
+    if (char === ')') parenCount--;
+    if (char === '[') bracketCount++;
+    if (char === ']') bracketCount--;
+  }
+
+  if (braceCount !== 0) {
+    issues.push({
+      type: 'error',
+      message: `Unbalanced braces: ${braceCount > 0 ? 'missing ' + braceCount + ' closing }' : 'extra ' + Math.abs(braceCount) + ' closing }'}`,
+    });
+  }
+  if (parenCount !== 0) {
+    issues.push({
+      type: 'error',
+      message: `Unbalanced parentheses: ${parenCount > 0 ? 'missing ' + parenCount + ' closing )' : 'extra ' + Math.abs(parenCount) + ' closing )'}`,
+    });
+  }
+  if (bracketCount !== 0) {
+    issues.push({
+      type: 'error',
+      message: `Unbalanced brackets: ${bracketCount > 0 ? 'missing ' + bracketCount + ' closing ]' : 'extra ' + Math.abs(bracketCount) + ' closing ]'}`,
+    });
+  }
+
+  return issues;
+}
+
+/**
+ * Comprehensive code fixer that runs multiple passes
+ * Returns the fixed code and any issues that couldn't be fixed
+ */
+export function validateAndFixCode(code: string, filePath?: string): {
+  code: string;
+  fixed: boolean;
+  issues: SyntaxIssue[];
+} {
+  if (!code) return { code: '', fixed: false, issues: [] };
+
+  let currentCode = code;
+  let passCount = 0;
+  const maxPasses = 3;
+  let totalFixed = false;
+
+  // Phase 1: Run basic fixCommonSyntaxErrors passes
+  while (passCount < maxPasses) {
+    const issuesBefore = validateJsxSyntax(currentCode);
+    const errorsBefore = issuesBefore.filter(i => i.type === 'error').length;
+
+    // Apply basic fixes
+    currentCode = fixCommonSyntaxErrors(currentCode);
+
+    const issuesAfter = validateJsxSyntax(currentCode);
+    const errorsAfter = issuesAfter.filter(i => i.type === 'error').length;
+
+    if (errorsAfter < errorsBefore) {
+      totalFixed = true;
+    }
+
+    // If no errors or no improvement, stop basic passes
+    if (errorsAfter === 0 || errorsAfter >= errorsBefore) {
+      break;
+    }
+
+    passCount++;
+  }
+
+  // Phase 2: If still has issues, try aggressive fixer from syntaxFixer.ts
+  let remainingIssues = validateJsxSyntax(currentCode);
+  const hasErrors = remainingIssues.some(i => i.type === 'error');
+
+  if (hasErrors || !quickValidate(currentCode)) {
+    // Apply aggressive fixes
+    const aggressiveResult = aggressiveFix(currentCode, 2);
+
+    if (aggressiveResult.fixesApplied.length > 0) {
+      // Verify the aggressive fixes didn't break anything
+      if (quickValidate(aggressiveResult.code)) {
+        currentCode = aggressiveResult.code;
+        totalFixed = true;
+
+        if (filePath) {
+          console.log(`[validateAndFixCode] ${filePath}: Applied ${aggressiveResult.fixesApplied.length} aggressive fixes`);
+        }
+      }
+    }
+
+    // Re-validate after aggressive fixes
+    remainingIssues = validateJsxSyntax(currentCode);
+  }
+
+  if (remainingIssues.length > 0 && filePath) {
+    console.warn(`[validateAndFixCode] ${filePath}: ${remainingIssues.length} issues after all passes`);
+  }
+
+  return {
+    code: currentCode,
+    fixed: totalFixed,
+    issues: remainingIssues
+  };
+}
+
+/**
+ * Extract line context around an error for better debugging
+ */
+export function getErrorContext(code: string, line: number, contextLines = 2): string {
+  const lines = code.split('\n');
+  const start = Math.max(0, line - 1 - contextLines);
+  const end = Math.min(lines.length, line + contextLines);
+
+  return lines
+    .slice(start, end)
+    .map((l, i) => {
+      const lineNum = start + i + 1;
+      const marker = lineNum === line ? '>>> ' : '    ';
+      return `${marker}${lineNum.toString().padStart(4)}: ${l}`;
+    })
+    .join('\n');
+}
+
+/**
+ * Parse Babel error message to extract line/column info
+ */
+export function parseBabelError(error: string): { line?: number; column?: number; message: string } {
+  // Pattern: "file.tsx: Unexpected token (15:23)"
+  const lineColMatch = error.match(/\((\d+):(\d+)\)/);
+  if (lineColMatch) {
+    return {
+      line: parseInt(lineColMatch[1], 10),
+      column: parseInt(lineColMatch[2], 10),
+      message: error.replace(/\(\d+:\d+\)/, '').trim()
+    };
+  }
+
+  // Pattern: "Line 15: ..."
+  const lineMatch = error.match(/Line (\d+):/i);
+  if (lineMatch) {
+    return {
+      line: parseInt(lineMatch[1], 10),
+      message: error
+    };
+  }
+
+  return { message: error };
+}
+
+/**
+ * Build an import statement from components
+ */
+function buildImportLine(defaultImport: string | null, named: Set<string>, source: string): string {
+  const namedStr = Array.from(named).filter(Boolean).join(', ');
+
+  if (defaultImport && namedStr) {
+    return `import ${defaultImport}, { ${namedStr} } from '${source}';`;
+  } else if (defaultImport) {
+    return `import ${defaultImport} from '${source}';`;
+  } else if (namedStr) {
+    return `import { ${namedStr} } from '${source}';`;
+  }
+  return `import '${source}';`;
+}
+
+/**
  * Fixes bare specifier imports that AI often generates incorrectly.
  * Converts: import X from "src/..." to import X from "/src/..."
  * Also handles: import X from "components/..." etc.
@@ -234,6 +804,8 @@ export function cleanGeneratedCode(code: string, filePath?: string): string {
 
   if (isJsxContent) {
     cleaned = fixJsxTextContent(cleaned);
+    // Also fix common syntax errors in JSX (malformed ternaries, etc.)
+    cleaned = fixCommonSyntaxErrors(cleaned);
   }
 
   // Trim whitespace
