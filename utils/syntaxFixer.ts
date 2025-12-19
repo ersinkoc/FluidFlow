@@ -88,21 +88,20 @@ export function fixMalformedTernary(code: string): string {
 export function fixArrowFunctions(code: string): string {
   let result = code;
 
+  // FIRST: = > should be => (must run before hybrid function fix)
+  result = result.replace(/=\s+>/g, '=>');
+
   // CRITICAL: Fix hybrid function/arrow syntax: "function Name() => {" -> "function Name() {"
   // AI commonly generates this invalid mix of function declaration and arrow function
-  result = result.replace(
-    /\bfunction\s+(\w+)\s*\(([^)]*)\)\s*(?::\s*[\w<>[\],\s|]+)?\s*=>\s*\{/g,
-    'function $1($2) {'
-  );
 
-  // Also fix with TypeScript return type: "function Name(): Type => {" -> "function Name(): Type {"
-  result = result.replace(
-    /\bfunction\s+(\w+)\s*\(([^)]*)\)\s*:\s*([\w<>[\],\s|]+)\s*=>\s*\{/g,
-    'function $1($2): $3 {'
-  );
+  // Pattern 1: Simple case - no params: function Name() => {
+  result = result.replace(/function\s+(\w+)\s*\(\)\s*=>\s*\{/g, 'function $1() {');
 
-  // = > should be =>
-  result = result.replace(/=\s+>/g, '=>');
+  // Pattern 2: With params but no nested parens: function Name(a, b) => {
+  result = result.replace(/function\s+(\w+)\s*\(([^)]*)\)\s*=>\s*\{/g, 'function $1($2) {');
+
+  // Pattern 3: Complex - any content between function and => { (non-greedy)
+  result = result.replace(/(\bfunction\s+\w+[\s\S]*?)\s*=>\s*\{/g, '$1 {');
 
   // ( ) => should be () =>
   result = result.replace(/\(\s+\)\s*=>/g, '() =>');

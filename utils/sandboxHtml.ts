@@ -990,12 +990,29 @@ function getBootstrapScript(files: FileSystem): string {
         // PHASE 1: Arrow function fixes
         // ═══════════════════════════════════════════════════════════
 
+        // FIRST: Fix space in arrow = > → => (must run before function fix)
+        fixed = fixed.replace(/=\\s+>/g, '=>');
+
         // CRITICAL: Fix hybrid function/arrow syntax - "function Name() => {" → "function Name() {"
         // AI commonly generates this invalid mix of function declaration and arrow function
-        fixed = fixed.replace(/\\bfunction\\s+(\\w+)\\s*\\(([^)]*)\\)\\s*(?::\\s*[\\w<>\\[\\],\\s|]+)?\\s*=>\\s*\\{/g, 'function $1($2) {');
 
-        // = > → =>
-        fixed = fixed.replace(/=\\s+>/g, '=>');
+        // Pattern 1: Simple case - no params: function Name() => {
+        fixed = fixed.replace(/function\\s+(\\w+)\\s*\\(\\)\\s*=>\\s*\\{/g, function(m, name) {
+          console.log('[AutoFix] Fixed hybrid function: ' + name);
+          return 'function ' + name + '() {';
+        });
+
+        // Pattern 2: With params but no nested parens: function Name(a, b) => {
+        fixed = fixed.replace(/function\\s+(\\w+)\\s*\\(([^)]*)\\)\\s*=>\\s*\\{/g, function(m, name, params) {
+          console.log('[AutoFix] Fixed hybrid function with params: ' + name);
+          return 'function ' + name + '(' + params + ') {';
+        });
+
+        // Pattern 3: Complex - any content between function and => { (non-greedy)
+        fixed = fixed.replace(/(\\bfunction\\s+\\w+[\\s\\S]*?)\\s*=>\\s*\\{/g, function(m, decl) {
+          console.log('[AutoFix] Fixed complex hybrid function');
+          return decl + ' {';
+        });
 
         // ( ) => → () =>
         fixed = fixed.replace(/\\(\\s+\\)\\s*=>/g, '() =>');

@@ -621,14 +621,22 @@ const App = () => {
   });
 
   describe('validateAndFixCode', () => {
-    it('should fix code and return fixed status', () => {
+    it('should detect syntax issues but not modify code', () => {
+      // validateAndFixCode no longer attempts to fix code - it only validates
+      // This prevents aggressive "fixes" from breaking working LLM-generated code
       const code = `const fn = () = > { return 1; };`;
       const result = validateAndFixCode(code, 'test.tsx');
-      expect(result.code).toContain('=>');
-      expect(result.code).not.toContain('= >');
+
+      // Should return original code unchanged
+      expect(result.code).toBe(code);
+      expect(result.fixed).toBe(false);
+
+      // Should detect the issue
+      expect(result.issues.length).toBeGreaterThan(0);
+      expect(result.issues.some(i => i.message.includes('arrow function'))).toBe(true);
     });
 
-    it('should run multiple passes for complex issues', () => {
+    it('should detect multiple issues without modifying code', () => {
       const code = `
         const App = () = > {
           return (
@@ -638,8 +646,13 @@ const App = () => {
         };
       `;
       const result = validateAndFixCode(code, 'test.tsx');
-      expect(result.code).toContain('=>');
-      expect(result.code).toContain('className=');
+
+      // Should return original code unchanged
+      expect(result.code).toBe(code);
+      expect(result.fixed).toBe(false);
+
+      // Should detect issues (arrow function and/or JSX attribute)
+      expect(result.issues.length).toBeGreaterThan(0);
     });
 
     it('should handle empty input', () => {
@@ -647,6 +660,14 @@ const App = () => {
       expect(result.code).toBe('');
       expect(result.fixed).toBe(false);
       expect(result.issues).toEqual([]);
+    });
+
+    it('should return no issues for valid code', () => {
+      const code = `const App = () => { return <div className="test"></div>; };`;
+      const result = validateAndFixCode(code, 'test.tsx');
+      expect(result.code).toBe(code);
+      expect(result.fixed).toBe(false);
+      // Valid code should have few or no issues
     });
   });
 

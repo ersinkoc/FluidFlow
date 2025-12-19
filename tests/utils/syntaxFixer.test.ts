@@ -105,6 +105,28 @@ describe('fixArrowFunctions', () => {
     expect(result).toContain(') {');
     expect(result).not.toContain('=>');
   });
+
+  it('should fix hybrid function/arrow with nested parentheses in default values', () => {
+    // Edge case: rgba() contains parens that would break naive [^)]* regex
+    const input = "export function GlowCard({ glowColor = 'rgba(0, 255, 255, 0.1)' }: Props) => {";
+    const result = fixArrowFunctions(input);
+    expect(result).toContain('function GlowCard(');
+    expect(result).toContain(') {');
+    expect(result).not.toContain('=>');
+    expect(result).toContain('rgba(0, 255, 255, 0.1)'); // Preserve nested parens
+  });
+
+  it('should fix hybrid function/arrow with multi-line parameters', () => {
+    const input = `export function ComplexComponent({
+  title,
+  description,
+  color = 'rgba(255, 0, 0, 0.5)'
+}: ComponentProps) => {`;
+    const result = fixArrowFunctions(input);
+    expect(result).toContain('function ComplexComponent(');
+    expect(result).toContain('}: ComponentProps) {');
+    expect(result).not.toContain('=>');
+  });
 });
 
 // ============================================================================

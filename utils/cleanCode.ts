@@ -10,8 +10,9 @@ import {
   getMarkerStreamingStatus,
 } from './markerFormat';
 
-// Import comprehensive syntax fixer for aggressive error repair
-import { aggressiveFix, quickValidate } from './syntaxFixer';
+// Note: syntaxFixer.ts exports are available but we intentionally don't use them here.
+// Aggressive syntax "fixes" were causing more harm than good.
+// The functions are still exported from syntaxFixer.ts for optional/explicit use.
 
 // Local alias for internal use
 const isIgnoredFilePath = isIgnoredPath;
@@ -238,15 +239,20 @@ export function fixCommonSyntaxErrors(code: string): string {
   // PHASE 3: Fix arrow function syntax
   // ══════════════════════════════════════════════════════════════
 
-  // 3a: CRITICAL - Fix hybrid function/arrow syntax: "function Name() => {" -> "function Name() {"
-  // AI commonly generates this invalid mix of function declaration and arrow function
-  fixed = fixed.replace(
-    /\bfunction\s+(\w+)\s*\(([^)]*)\)\s*(?::\s*[\w<>[\],\s|]+)?\s*=>\s*\{/g,
-    'function $1($2) {'
-  );
-
-  // 3b: `() = > {` (space before >) → `() => {`
+  // 3a: FIRST - `() = > {` (space before >) → `() => {` (must run before hybrid fix)
   fixed = fixed.replace(/=\s+>/g, '=>');
+
+  // 3b: CRITICAL - Fix hybrid function/arrow syntax: "function Name() => {" -> "function Name() {"
+  // AI commonly generates this invalid mix of function declaration and arrow function
+
+  // Pattern 1: Simple case - no params: function Name() => {
+  fixed = fixed.replace(/function\s+(\w+)\s*\(\)\s*=>\s*\{/g, 'function $1() {');
+
+  // Pattern 2: With params but no nested parens: function Name(a, b) => {
+  fixed = fixed.replace(/function\s+(\w+)\s*\(([^)]*)\)\s*=>\s*\{/g, 'function $1($2) {');
+
+  // Pattern 3: Complex - any content between function and => { (non-greedy)
+  fixed = fixed.replace(/(\bfunction\s+\w+[\s\S]*?)\s*=>\s*\{/g, '$1 {');
 
   // 3c: `= >{` (no space after =>) → `=> {`
   fixed = fixed.replace(/=>\s*\{/g, '=> {');
@@ -593,8 +599,13 @@ export function validateJsxSyntax(code: string): SyntaxIssue[] {
 }
 
 /**
- * Comprehensive code fixer that runs multiple passes
- * Returns the fixed code and any issues that couldn't be fixed
+ * Validates code and returns issues found.
+ *
+ * IMPORTANT: This function no longer attempts to "fix" code.
+ * Previous "fix" attempts were causing more harm than good by transforming
+ * valid LLM-generated code into broken code.
+ *
+ * Now it only validates and reports issues - the caller can decide what to do.
  */
 export function validateAndFixCode(code: string, filePath?: string): {
   code: string;
@@ -603,66 +614,20 @@ export function validateAndFixCode(code: string, filePath?: string): {
 } {
   if (!code) return { code: '', fixed: false, issues: [] };
 
-  let currentCode = code;
-  let passCount = 0;
-  const maxPasses = 3;
-  let totalFixed = false;
+  // Only validate - do NOT attempt to fix
+  // Aggressive fixes were causing issues like:
+  // - "function Name() => {" hybrid syntax errors
+  // - "const x = (param: Type) {" missing arrow errors
+  const issues = validateJsxSyntax(code);
 
-  // Phase 1: Run basic fixCommonSyntaxErrors passes
-  while (passCount < maxPasses) {
-    const issuesBefore = validateJsxSyntax(currentCode);
-    const errorsBefore = issuesBefore.filter(i => i.type === 'error').length;
-
-    // Apply basic fixes
-    currentCode = fixCommonSyntaxErrors(currentCode);
-
-    const issuesAfter = validateJsxSyntax(currentCode);
-    const errorsAfter = issuesAfter.filter(i => i.type === 'error').length;
-
-    if (errorsAfter < errorsBefore) {
-      totalFixed = true;
-    }
-
-    // If no errors or no improvement, stop basic passes
-    if (errorsAfter === 0 || errorsAfter >= errorsBefore) {
-      break;
-    }
-
-    passCount++;
-  }
-
-  // Phase 2: If still has issues, try aggressive fixer from syntaxFixer.ts
-  let remainingIssues = validateJsxSyntax(currentCode);
-  const hasErrors = remainingIssues.some(i => i.type === 'error');
-
-  if (hasErrors || !quickValidate(currentCode)) {
-    // Apply aggressive fixes
-    const aggressiveResult = aggressiveFix(currentCode, 2);
-
-    if (aggressiveResult.fixesApplied.length > 0) {
-      // Verify the aggressive fixes didn't break anything
-      if (quickValidate(aggressiveResult.code)) {
-        currentCode = aggressiveResult.code;
-        totalFixed = true;
-
-        if (filePath) {
-          console.log(`[validateAndFixCode] ${filePath}: Applied ${aggressiveResult.fixesApplied.length} aggressive fixes`);
-        }
-      }
-    }
-
-    // Re-validate after aggressive fixes
-    remainingIssues = validateJsxSyntax(currentCode);
-  }
-
-  if (remainingIssues.length > 0 && filePath) {
-    console.warn(`[validateAndFixCode] ${filePath}: ${remainingIssues.length} issues after all passes`);
+  if (issues.length > 0 && filePath) {
+    console.warn(`[validateAndFixCode] ${filePath}: ${issues.length} syntax issues detected`);
   }
 
   return {
-    code: currentCode,
-    fixed: totalFixed,
-    issues: remainingIssues
+    code: code, // Return original code unchanged
+    fixed: false,
+    issues
   };
 }
 
@@ -769,7 +734,12 @@ export function fixBareSpecifierImports(code: string): string {
 }
 
 /**
- * Cleans AI-generated code by removing markdown artifacts and code block markers
+ * Cleans AI-generated code by removing markdown artifacts and code block markers.
+ *
+ * IMPORTANT: This function intentionally does MINIMAL processing.
+ * We only remove markdown formatting - we do NOT attempt to "fix" syntax.
+ * Aggressive transformations were causing more harm than good by breaking
+ * valid code that LLMs generate.
  */
 export function cleanGeneratedCode(code: string, filePath?: string): string {
   if (!code) return '';
@@ -799,21 +769,18 @@ export function cleanGeneratedCode(code: string, filePath?: string): string {
     : /import\s+.*from\s+['"]|export\s+/.test(cleaned);
 
   // Fix bare specifier imports (src/... -> /src/...)
+  // This is safe and necessary for browser ES modules
   if (isJsFile) {
     cleaned = fixBareSpecifierImports(cleaned);
   }
 
-  // Fix JSX text content with unescaped < and > characters
-  // Only for JSX/TSX files (determined by content or file extension)
-  const isJsxContent = filePath
-    ? /\.(tsx|jsx)$/.test(filePath)
-    : /<\w+[^>]*>[\s\S]*<\/\w+>/.test(cleaned); // Has JSX-like structure
-
-  if (isJsxContent) {
-    cleaned = fixJsxTextContent(cleaned);
-    // Also fix common syntax errors in JSX (malformed ternaries, etc.)
-    cleaned = fixCommonSyntaxErrors(cleaned);
-  }
+  // NOTE: We intentionally do NOT call fixJsxTextContent or fixCommonSyntaxErrors here.
+  // These "fixes" were causing more problems than they solved by transforming
+  // valid LLM-generated code into broken code. Examples:
+  // - "function Name() => {" hybrid syntax errors
+  // - "const x = (param: Type) {" missing arrow errors
+  // If the LLM generates broken code, let it fail clearly rather than
+  // silently transforming it into different broken code.
 
   // Trim whitespace
   cleaned = cleaned.trim();
