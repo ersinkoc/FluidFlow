@@ -157,7 +157,7 @@ export function fixJsxAttributes(code: string): string {
  * Fix string and template literal issues
  */
 export function fixStringIssues(code: string): string {
-  let result = code;
+  const result = code;
   const lines = result.split('\n');
   const fixedLines: string[] = [];
 
@@ -431,13 +431,13 @@ export function fixBracketBalanceAdvanced(code: string): string {
   let stringChar = '';
   let inTemplate = false;
   let templateDepth = 0;
-  let inRegex = false;
+  const _inRegex = false; // Reserved for future regex detection
   let inComment = false;
   let inMultilineComment = false;
 
   const lines = code.split('\n');
   let globalIndex = 0;
-  const extraClosers: { char: string; afterIndex: number }[] = [];
+  const _extraClosers: { char: string; afterIndex: number }[] = []; // Reserved for future extra closer detection
 
   for (let lineNum = 0; lineNum < lines.length; lineNum++) {
     const line = lines[lineNum];
@@ -602,7 +602,7 @@ export function parseImports(code: string): ImportInfo[] {
 
     const match = line.match(importRegex);
     if (match) {
-      const [fullMatch, typeOnly, namespaceImport, defaultImport, namedImportsStr, source] = match;
+      const [_fullMatch, typeOnly, namespaceImport, defaultImport, namedImportsStr, source] = match;
 
       const namedImports = namedImportsStr
         ? namedImportsStr.split(',').map(s => s.trim()).filter(Boolean)
@@ -720,7 +720,7 @@ export function fixAndMergeImports(code: string): string {
  * Fix return statement issues
  */
 export function fixReturnStatements(code: string): string {
-  let result = code;
+  const result = code;
 
   // Fix: return ( without matching )
   // This requires careful analysis

@@ -1,10 +1,14 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with
+code in this repository.
 
 ## Project Overview
 
-FluidFlow is a sketch-to-app prototyping tool that converts wireframes/sketches into functional React applications using AI. It features multi-provider AI support, live preview with device simulation, Git integration, and IndexedDB-based WIP persistence.
+FluidFlow is a sketch-to-app prototyping tool that converts wireframes/sketches
+into functional React applications using AI. It features multi-provider AI
+support, live preview with device simulation, Git integration, and
+IndexedDB-based WIP persistence.
 
 ## Development Commands
 
@@ -29,12 +33,14 @@ npm run test:run             # Single run (CI)
 npm run test:coverage        # With coverage report
 npm test -- path/to/test.ts  # Run specific file
 npm test -- --grep "pattern" # Filter by test name
+npm run test:ui              # Vitest UI interface
 npm run test:security        # Security tests only
 ```
 
 ## Environment Setup
 
 Create `.env.local` in project root:
+
 ```env
 GEMINI_API_KEY=your_key      # At least one provider key required
 # Optional: OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY, ZAI_API_KEY
@@ -43,13 +49,16 @@ GEMINI_API_KEY=your_key      # At least one provider key required
 ## Architecture
 
 ### Tech Stack
-- **Frontend**: React 19, TypeScript 5.9, Vite 7, Tailwind CSS 4 (port 3100, HTTPS)
+
+- **Frontend**: React 19, TypeScript 5.9, Vite 7, Tailwind CSS 4 (port 3100,
+  HTTPS)
 - **Backend**: Express 5, tsx (port 3200)
 - **Editor**: Monaco Editor
 - **Testing**: Vitest 4 with jsdom
 
 ### Directory Structure
-```
+
+```text
 server/           # Express API endpoints
   api/            # projects.ts, git.ts, github.ts, settings.ts, runner.ts
   middleware/     # security.ts (request validation)
@@ -77,7 +86,8 @@ projects/         # Local project storage (gitignored, auto-generated)
 ```
 
 ### Core Data Flow
-```
+
+```text
 User Input → ControlPanel.handleSend() → AI Provider (streaming)
     → Parse Response → DiffModal (review changes)
     → Confirm → Update files state → Save to filesystem
@@ -86,20 +96,27 @@ User Input → ControlPanel.handleSend() → AI Provider (streaming)
 
 ### Key Patterns
 
-**Virtual File System**: Projects stored as `Record<string, string>` in `projects/[id]/files/`. Uncommitted changes (WIP) persist in IndexedDB for page refresh resilience.
+**Virtual File System**: Projects stored as `Record<string, string>` in
+`projects/[id]/files/`. Uncommitted changes (WIP) persist in IndexedDB for page
+refresh resilience.
 
 **AI Provider Architecture** (`services/ai/index.ts`):
+
 - `ProviderManager` class with factory pattern
-- Providers: gemini, openai, openrouter, anthropic, zai, ollama, lmstudio, custom
+- Providers: gemini, openai, openrouter, anthropic, zai, ollama, lmstudio,
+  custom
 - Methods: `generate()`, `generateStream()` with streaming callbacks
 - Config persisted in localStorage + backend sync
 
 **Context Management** (`services/conversationContext.ts`):
+
 - Separate contexts: `main-chat`, `prompt-improver`, `git-commit`, `quick-edit`
 - Token estimation: ~4 characters = 1 token
 - Auto-compaction: AI summarizes old messages when approaching model limits
 
-**State Management**: Centralized in `contexts/AppContext.tsx` (used by `App.tsx`):
+**State Management**: Centralized in `contexts/AppContext.tsx` (used by
+`App.tsx`):
+
 - `files` - Virtual file system
 - `currentProject` - Project metadata
 - `gitStatus` - Repository state
@@ -107,12 +124,15 @@ User Input → ControlPanel.handleSend() → AI Provider (streaming)
 - History/undo-redo via `useVersionHistory` hook
 
 **Preview System**:
+
 - Iframe-based with Babel transpilation in browser
 - Console/network interception via postMessage
 - Device simulation (desktop, tablet, mobile)
-- HTTPS required for WebContainer API (configured via `@vitejs/plugin-basic-ssl`)
+- HTTPS required for WebContainer API (configured via
+  `@vitejs/plugin-basic-ssl`)
 
 ### Vite Dev Server Notes
+
 - HTTPS enabled with self-signed cert for WebContainer API
 - Cross-Origin headers: `Cross-Origin-Embedder-Policy: credentialless`
 - API proxy: `/api` → `http://localhost:3200`
@@ -124,11 +144,13 @@ User Input → ControlPanel.handleSend() → AI Provider (streaming)
 '@/*' → project root  // Used in imports: @/components, @/utils, etc.
 ```
 
-Additional test aliases in `vitest.config.ts`: `@utils`, `@components`, `@services`, `@hooks`, `@types`, `@server`
+Additional test aliases in `vitest.config.ts`: `@utils`, `@components`,
+`@services`, `@hooks`, `@types`, `@server`
 
 ## Code Quality
 
 ### ESLint (`eslint.config.js` - flat config, ESLint 9)
+
 - TypeScript strict with `typescript-eslint`
 - React hooks rules enforced
 - Unused vars allowed with `_` prefix pattern
@@ -138,23 +160,25 @@ Additional test aliases in `vitest.config.ts`: `@utils`, `@components`, `@servic
 Key rules: `eqeqeq: always`, `prefer-const`, `no-var`
 
 ### Testing
+
 - Framework: Vitest with jsdom environment
 - Setup: `tests/setup.ts`
-- Security tests in `tests/security/` cover XSS, path traversal, SQL injection patterns
+- Security tests in `tests/security/` cover XSS, path traversal, SQL injection
+  patterns
 
 ## Critical Files
 
 These files require understanding multiple parts of the codebase:
 
-| File | Purpose |
-|------|---------|
-| `contexts/AppContext.tsx` | Centralized state: files, projects, git, UI, history |
-| `App.tsx` | Main orchestrator, modal management, DiffModal |
-| `services/ai/index.ts` | ProviderManager, provider factory, config persistence |
-| `services/conversationContext.ts` | Token tracking, context compaction logic |
-| `services/wipStorage.ts` | IndexedDB persistence for WIP changes |
-| `utils/cleanCode.ts` | AI response parsing, code extraction |
-| `utils/validation.ts` | Security: XSS prevention, path traversal checks |
-| `server/api/projects.ts` | Project CRUD, file management |
-| `hooks/useProject.ts` | Project state, git integration, GitHub push |
-| `components/ControlPanel/index.tsx` | AI call orchestration, message handling |
+| File                                | Purpose                                               |
+| ----------------------------------- | ----------------------------------------------------- |
+| `contexts/AppContext.tsx`           | Centralized state: files, projects, git, UI, history  |
+| `App.tsx`                           | Main orchestrator, modal management, DiffModal        |
+| `services/ai/index.ts`              | ProviderManager, provider factory, config persistence |
+| `services/conversationContext.ts`   | Token tracking, context compaction logic              |
+| `services/wipStorage.ts`            | IndexedDB persistence for WIP changes                 |
+| `utils/cleanCode.ts`                | AI response parsing, code extraction                  |
+| `utils/validation.ts`               | Security: XSS prevention, path traversal checks       |
+| `server/api/projects.ts`            | Project CRUD, file management                         |
+| `hooks/useProject.ts`               | Project state, git integration, GitHub push           |
+| `components/ControlPanel/index.tsx` | AI call orchestration, message handling               |

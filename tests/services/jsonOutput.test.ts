@@ -326,14 +326,14 @@ describe('JSON Output Utilities', () => {
       // Test with properly escaped quotes - the code path does nothing (no-op)
       const jsonWithEscapes = '{"message": "He said \\"hello\\""}';
       const result = parseJsonResponse(jsonWithEscapes, false);
-      expect(result.data.message).toBe('He said "hello"');
+      expect((result.data as { message: string }).message).toBe('He said "hello"');
     });
 
     it('should handle JSON with backslash but no double escape', () => {
       // Test for the escape handling branch
       const jsonWithBackslash = '{"path": "C:\\\\Users\\\\test"}';
       const result = parseJsonResponse(jsonWithBackslash, false);
-      expect(result.data.path).toBe('C:\\Users\\test');
+      expect((result.data as { path: string }).path).toBe('C:\\Users\\test');
     });
   });
 });

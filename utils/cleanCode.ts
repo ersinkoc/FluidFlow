@@ -10,6 +10,9 @@ import {
   getMarkerStreamingStatus,
 } from './markerFormat';
 
+// Import unified AI response parser
+import { parseAIResponse as parseAIResponseUnified } from './aiResponseParser';
+
 // Note: syntaxFixer.ts exports are available but we intentionally don't use them here.
 // Aggressive syntax "fixes" were causing more harm than good.
 // The functions are still exported from syntaxFixer.ts for optional/explicit use.
@@ -1790,47 +1793,95 @@ export function detectResponseFormat(response: string): ResponseFormatType {
 /**
  * Unified parser that handles both JSON and Marker formats
  * Automatically detects the format and calls the appropriate parser
+ *
+ * Uses the new aiResponseParser as backend for robust multi-format handling
  */
 export function parseUnifiedResponse(response: string): UnifiedParsedResponse | null {
   if (!response || !response.trim()) {
     return null;
   }
 
-  // Check for marker format first (it's more distinctive)
-  if (isMarkerFormat(response)) {
-    const markerResult = parseMarkerFormatResponse(response);
-    if (markerResult) {
-      // Log warning if there are incomplete files
-      if (markerResult.incompleteFiles && markerResult.incompleteFiles.length > 0) {
-        console.warn('[parseUnifiedResponse] Response has incomplete files that will NOT be included:', markerResult.incompleteFiles);
-      }
+  // Use the new unified parser from aiResponseParser
+  const result = parseAIResponseUnified(response, { aggressiveRecovery: true });
 
+  // Check if we got any files
+  if (Object.keys(result.files).length === 0) {
+    // Fall back to legacy parsers for backwards compatibility
+    // Check for marker format first (it's more distinctive)
+    if (isMarkerFormat(response)) {
+      const markerResult = parseMarkerFormatResponse(response);
+      if (markerResult) {
+        // Log warning if there are incomplete files
+        if (markerResult.incompleteFiles && markerResult.incompleteFiles.length > 0) {
+          console.warn('[parseUnifiedResponse] Response has incomplete files that will NOT be included:', markerResult.incompleteFiles);
+        }
+
+        return {
+          format: 'marker',
+          files: markerResult.files,
+          explanation: markerResult.explanation,
+          truncated: markerResult.truncated,
+          deletedFiles: markerResult.plan?.delete,
+          generationMeta: markerResult.generationMeta,
+          incompleteFiles: markerResult.incompleteFiles,
+        };
+      }
+    }
+
+    // Try JSON format
+    const jsonResult = parseMultiFileResponse(response, true);
+    if (jsonResult) {
       return {
-        format: 'marker',
-        files: markerResult.files,
-        explanation: markerResult.explanation,
-        truncated: markerResult.truncated,
-        deletedFiles: markerResult.plan?.delete,
-        generationMeta: markerResult.generationMeta,
-        incompleteFiles: markerResult.incompleteFiles,
+        format: 'json',
+        files: jsonResult.files,
+        explanation: jsonResult.explanation,
+        truncated: jsonResult.truncated,
+        deletedFiles: jsonResult.deletedFiles,
+        generationMeta: jsonResult.generationMeta,
       };
     }
+
+    return null;
   }
 
-  // Try JSON format
-  const jsonResult = parseMultiFileResponse(response, true);
-  if (jsonResult) {
-    return {
-      format: 'json',
-      files: jsonResult.files,
-      explanation: jsonResult.explanation,
-      truncated: jsonResult.truncated,
-      deletedFiles: jsonResult.deletedFiles,
-      generationMeta: jsonResult.generationMeta,
+  // Convert new parser result to UnifiedParsedResponse format
+  const format: ResponseFormatType = result.format.startsWith('marker') ? 'marker' : 'json';
+
+  // Convert batch info to generationMeta if present
+  let generationMeta: GenerationMeta | undefined;
+  if (result.batch) {
+    generationMeta = {
+      totalFilesPlanned: result.plan
+        ? result.plan.create.length + result.plan.update.length
+        : Object.keys(result.files).length + (result.batch.remaining?.length || 0),
+      filesInThisBatch: Object.keys(result.files),
+      completedFiles: result.batch.completed,
+      remainingFiles: result.batch.remaining,
+      currentBatch: result.batch.current,
+      totalBatches: result.batch.total,
+      isComplete: result.batch.isComplete,
     };
   }
 
-  return null;
+  // Log warning if there are incomplete files
+  if (result.incompleteFiles && result.incompleteFiles.length > 0) {
+    console.warn('[parseUnifiedResponse] Response has incomplete files that will NOT be included:', result.incompleteFiles);
+  }
+
+  // Log warning if there were recovered files
+  if (result.recoveredFiles && result.recoveredFiles.length > 0) {
+    console.log('[parseUnifiedResponse] Files recovered from malformed response:', result.recoveredFiles);
+  }
+
+  return {
+    format,
+    files: result.files,
+    explanation: result.explanation,
+    truncated: result.truncated,
+    deletedFiles: result.deletedFiles,
+    generationMeta,
+    incompleteFiles: result.incompleteFiles,
+  };
 }
 
 /**
