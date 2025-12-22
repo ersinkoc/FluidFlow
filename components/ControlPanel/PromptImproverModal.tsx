@@ -7,6 +7,7 @@ import { FileSystem } from '../../types';
 import { getProviderManager } from '../../services/ai';
 import { getContextManager, CONTEXT_IDS } from '../../services/conversationContext';
 import { getFluidFlowConfig } from '../../services/fluidflowConfig';
+import { checkAndAutoCompact } from '../../services/contextCompaction';
 import { ContextIndicator } from '../ContextIndicator';
 import { PROMPT_ENGINEER_SYSTEM } from './prompts';
 
@@ -497,10 +498,22 @@ Create an improved prompt that:
           setMessages(prev => [...prev, assistantMessage]);
         }
 
-        // Check if context needs compaction
-        if (contextManager.needsCompaction(sessionId)) {
-          console.log('[PromptImprover] Context needs compaction');
-          // Could trigger auto-compaction here
+        // Check if context needs compaction and trigger based on settings
+        const compactionResult = await checkAndAutoCompact(sessionId);
+        if (compactionResult) {
+          if (compactionResult.compacted) {
+            console.log('[PromptImprover] Context compacted:', compactionResult);
+            // Show notification to user
+            setMessages(prev => [...prev, {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content: `📦 Context compacted: ${compactionResult.beforeTokens.toLocaleString()} → ${compactionResult.afterTokens.toLocaleString()} tokens`,
+              timestamp: Date.now()
+            }]);
+          } else if (!getFluidFlowConfig().getContextSettings().autoCompact) {
+            // Auto-compact is off, show prompt to user
+            console.log('[PromptImprover] Context needs compaction, awaiting user action');
+          }
         }
       }
 

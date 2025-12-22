@@ -19,6 +19,7 @@ import { PromptEngineerModal } from './PromptEngineerModal';
 import { BatchGenerationModal } from './BatchGenerationModal';
 import { ContextIndicator } from '../ContextIndicator';
 import { getFluidFlowConfig } from '../../services/fluidflowConfig';
+import { checkAndAutoCompact } from '../../services/contextCompaction';
 
 // Sub-components
 import { ChatPanel } from './ChatPanel';
@@ -197,10 +198,17 @@ export const ControlPanel = forwardRef<ControlPanelRef, ControlPanelProps>(({
   // AI History - persists across refreshes (declared early for use in useCodeGeneration)
   const aiHistory = useAIHistory(currentProject?.id || null);
 
+  // Context management (extracted to hook) - needs to be before useCodeGeneration for sessionId
+  const { sessionId, contextManager } = useContextSync({
+    projectId: currentProject?.id,
+    messages,
+  });
+
   // Code generation hook (handles main generation logic)
   const { generateCode } = useCodeGeneration({
     files,
     selectedModel,
+    sessionId,  // Pass sessionId for auto-compaction
     generateSystemInstruction,
     setStreamingStatus,
     setStreamingChars,
@@ -216,12 +224,6 @@ export const ControlPanel = forwardRef<ControlPanelRef, ControlPanelProps>(({
     updateFileProgress,
     initFileProgressFromPlan,
     setFileProgress,
-  });
-
-  // Context management (extracted to hook)
-  const { sessionId, contextManager } = useContextSync({
-    projectId: currentProject?.id,
-    messages,
   });
 
   const existingApp = files['src/App.tsx'];

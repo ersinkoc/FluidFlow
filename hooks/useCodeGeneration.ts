@@ -18,6 +18,7 @@ import {
   CONTINUATION_SYSTEM_INSTRUCTION,
   CONTINUATION_SYSTEM_INSTRUCTION_MARKER,
 } from '../components/ControlPanel/prompts';
+import { checkAndAutoCompact } from '../services/contextCompaction';
 import { FilePlan, TruncatedContent, ContinuationState, FileProgress } from './useGenerationState';
 import { useStreamingResponse } from './useStreamingResponse';
 import { useResponseParser } from './useResponseParser';
@@ -69,6 +70,7 @@ export interface AIHistoryEntry {
 export interface UseCodeGenerationOptions {
   files: FileSystem;
   selectedModel: string;
+  sessionId?: string;  // For context compaction
   generateSystemInstruction: () => string;
   setStreamingStatus: (status: string) => void;
   setStreamingChars: (chars: number) => void;
@@ -98,6 +100,7 @@ export function useCodeGeneration(options: UseCodeGenerationOptions): UseCodeGen
   const {
     files,
     selectedModel,
+    sessionId,
     generateSystemInstruction,
     setStreamingStatus,
     setStreamingChars,
@@ -169,6 +172,25 @@ export function useCodeGeneration(options: UseCodeGenerationOptions): UseCodeGen
 
       setMessages((prev) => [...prev, assistantMessage]);
 
+      // Check if context needs compaction and trigger based on settings
+      if (sessionId) {
+        checkAndAutoCompact(sessionId).then(result => {
+          if (result) {
+            if (result.compacted) {
+              console.log('[useCodeGeneration] Context compacted:', result);
+              setMessages((prev) => [...prev, {
+                id: crypto.randomUUID(),
+                role: 'assistant',
+                timestamp: Date.now(),
+                content: `📦 Context compacted: ${result.beforeTokens.toLocaleString()} → ${result.afterTokens.toLocaleString()} tokens`,
+              }]);
+            }
+          }
+        }).catch(err => {
+          console.error('[useCodeGeneration] Compaction check failed:', err);
+        });
+      }
+
       // Show warning if there are incomplete files
       if (incompleteFiles && incompleteFiles.length > 0) {
         setStreamingStatus(`⚠️ Generated ${generatedFileList.length} files (${incompleteFiles.length} incomplete, excluded)`);
@@ -191,7 +213,7 @@ export function useCodeGeneration(options: UseCodeGenerationOptions): UseCodeGen
         );
       }, 150);
     },
-    [files, existingApp, setMessages, setStreamingStatus, setFilePlan, reviewChange]
+    [files, existingApp, setMessages, setStreamingStatus, setFilePlan, reviewChange, sessionId]
   );
 
   /**
