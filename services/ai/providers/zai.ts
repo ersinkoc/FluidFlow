@@ -2,14 +2,14 @@ import OpenAI from 'openai';
 import { AIProvider, ProviderConfig, GenerationRequest, GenerationResponse, StreamChunk } from '../types';
 import { prepareJsonRequest } from '../utils/jsonOutput';
 
-// Z.AI Coding API endpoint (for GLM-4.6 coding plan)
+// Z.AI Coding API endpoint (for GLM-4.7 coding plan)
 const ZAI_CODING_BASE_URL = 'https://api.z.ai/api/coding/paas/v4';
 
 // Default model
-const DEFAULT_MODEL = 'glm-4.6';
+const DEFAULT_MODEL = 'glm-4.7';
 
 // Max output tokens (128K supported)
-const DEFAULT_MAX_TOKENS = 65536; // Use 64K as safe default, can go up to 128K
+const DEFAULT_MAX_TOKENS = 131072; // 128K for GLM-4.7
 
 export class ZAIProvider implements AIProvider {
   readonly config: ProviderConfig;
@@ -18,7 +18,7 @@ export class ZAIProvider implements AIProvider {
   constructor(config: ProviderConfig) {
     this.config = config;
 
-    // Use coding endpoint for GLM-4.6
+    // Use coding endpoint for GLM-4.7
     const baseURL = config.baseUrl || ZAI_CODING_BASE_URL;
 
     this.client = new OpenAI({

@@ -183,10 +183,20 @@ export class ProviderManager {
           if (isMaskedKey && existingConfig?.apiKey && !existingConfig.apiKey.includes('****')) {
             newProviders.set(backendConfig.id, {
               ...backendConfig,
-              apiKey: existingConfig.apiKey // Preserve real key from memory/localStorage
+              apiKey: existingConfig.apiKey, // Preserve real key from memory/localStorage
+              defaultModel: existingConfig.defaultModel || backendConfig.defaultModel, // Preserve user's defaultModel selection
             });
           } else {
-            newProviders.set(backendConfig.id, backendConfig);
+            // Always preserve existing defaultModel if it exists in the models list
+            const models = backendConfig.models || [];
+            const defaultModelId = existingConfig?.defaultModel && models.some(m => m.id === existingConfig.defaultModel)
+              ? existingConfig.defaultModel
+              : backendConfig.defaultModel;
+
+            newProviders.set(backendConfig.id, {
+              ...backendConfig,
+              defaultModel: defaultModelId,
+            });
           }
         });
 

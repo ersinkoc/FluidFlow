@@ -193,11 +193,10 @@ export const DEFAULT_PROVIDERS: Record<ProviderType, Omit<ProviderConfig, 'id' |
     name: 'Z.AI (GLM)',
     baseUrl: 'https://api.z.ai/api/coding/paas/v4',
     models: [
-      { id: 'GLM-4.6', name: 'GLM-4.6', description: 'Latest flagship', supportsVision: true, supportsStreaming: true, contextWindow: 128000 },
-      { id: 'GLM-4.5', name: 'GLM-4.5', description: 'Powerful model', supportsVision: true, supportsStreaming: true, contextWindow: 128000 },
-      { id: 'GLM-4.5-air', name: 'GLM-4.5 Air', description: 'Fast & efficient', supportsVision: true, supportsStreaming: true, contextWindow: 128000 },
+      { id: 'glm-4.7', name: 'GLM-4.7', description: 'Latest flagship', supportsVision: true, supportsStreaming: true, contextWindow: 200000 },
+      { id: 'glm-4.6', name: 'GLM-4.6', description: 'Previous generation', supportsVision: true, supportsStreaming: true, contextWindow: 200000 },
     ],
-    defaultModel: 'GLM-4.6',
+    defaultModel: 'glm-4.7',
   },
   cerebras: {
     type: 'cerebras',
