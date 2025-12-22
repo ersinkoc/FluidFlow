@@ -21,6 +21,7 @@ import { useContextSync } from './useContextSync';
 import { useAIHistory } from '../../../hooks/useAIHistory';
 import { getProviderManager, GenerationRequest } from '../../../services/ai';
 import { getFluidFlowConfig } from '../../../services/fluidflowConfig';
+import { ensureTokenSpace } from '../../../services/contextCompaction';
 import { executeConsultantMode } from '../utils/consultantMode';
 import { InspectedElement, EditScope } from '../../PreviewPanel/ComponentInspector';
 
@@ -184,6 +185,30 @@ export function useChatOrchestrator({
     setMessages(prev => [...prev, userMessage]);
     setIsGenerating(true);
     setSuggestions(null);
+
+    // Check token space before processing
+    const estimatedTokens = Math.ceil((prompt?.length || 0) / 4) + 500; // Rough estimate
+    const spaceCheck = await ensureTokenSpace(sessionId, estimatedTokens);
+
+    if (!spaceCheck.canProceed) {
+      setMessages(prev => [...prev, {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        timestamp: Date.now(),
+        error: spaceCheck.reason || 'Insufficient token space. Please compact the context.',
+      }]);
+      setIsGenerating(false);
+      return;
+    }
+
+    if (spaceCheck.compacted) {
+      setMessages(prev => [...prev, {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        timestamp: Date.now(),
+        content: `📦 Context auto-compacted to make space for your request.`,
+      }]);
+    }
 
     try {
       if (inspectContext) {

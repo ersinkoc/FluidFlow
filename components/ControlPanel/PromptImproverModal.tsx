@@ -7,7 +7,7 @@ import { FileSystem } from '../../types';
 import { getProviderManager } from '../../services/ai';
 import { getContextManager, CONTEXT_IDS } from '../../services/conversationContext';
 import { getFluidFlowConfig } from '../../services/fluidflowConfig';
-import { checkAndAutoCompact } from '../../services/contextCompaction';
+import { ensureTokenSpace, checkAndAutoCompact } from '../../services/contextCompaction';
 import { ContextIndicator } from '../ContextIndicator';
 import { PROMPT_ENGINEER_SYSTEM } from './prompts';
 
@@ -247,6 +247,30 @@ Remember: Maximum 3 questions total. You have asked ${currentQuestionCount} ques
 
 Ask direct questions without providing options or checkboxes. Let users respond naturally.`;
         }
+      }
+
+      // Check token space before sending
+      const estimatedTokens = Math.ceil(prompt.length / 4) + 500; // Rough estimate
+      const spaceCheck = await ensureTokenSpace(sessionId, estimatedTokens);
+
+      if (!spaceCheck.canProceed) {
+        setMessages(prev => [...prev, {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          timestamp: Date.now(),
+          content: spaceCheck.reason || 'Insufficient token space. Please compact the context.',
+        }]);
+        setIsLoading(false);
+        return;
+      }
+
+      if (spaceCheck.compacted) {
+        setMessages(prev => [...prev, {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          timestamp: Date.now(),
+          content: `📦 Context auto-compacted to make space for your request.`,
+        }]);
       }
 
       let fullResponse = '';

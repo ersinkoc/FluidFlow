@@ -165,3 +165,71 @@ export async function checkAndAutoCompact(contextId: string): Promise<Compaction
     messagesSummarized: 0
   };
 }
+
+/**
+ * Check if there's enough token space for a new prompt and compact if needed
+ * Call this BEFORE sending a prompt to ensure we don't exceed context limits
+ * @param contextId - The context ID to check
+ * @param estimatedPromptTokens - Estimated tokens for the new prompt (optional, defaults to 1000)
+ * @returns Promise<{canProceed: boolean, compacted: boolean, reason?: string}>
+ */
+export async function ensureTokenSpace(
+  contextId: string,
+  estimatedPromptTokens: number = 1000
+): Promise<{ canProceed: boolean; compacted: boolean; reason?: string }> {
+  const contextManager = getContextManager();
+  const config = getFluidFlowConfig();
+  const settings = config.getContextSettings();
+
+  const context = contextManager.getContext(contextId);
+  const currentTokens = context.estimatedTokens;
+  const maxTokens = settings.maxTokensBeforeCompact;
+
+  // Reserve space for prompt + response (estimate 2x prompt tokens for response)
+  const totalEstimatedTokens = currentTokens + estimatedPromptTokens + (estimatedPromptTokens * 2);
+
+  if (totalEstimatedTokens <= maxTokens) {
+    // Enough space, no compaction needed
+    return { canProceed: true, compacted: false };
+  }
+
+  // Not enough space - need to compact
+  const overBy = totalEstimatedTokens - maxTokens;
+
+  if (settings.autoCompact) {
+    // Auto-compact and proceed
+    try {
+      const result = await triggerCompaction(contextId, true);
+      if (result.compacted) {
+        const newContext = contextManager.getContext(contextId);
+        const newTotal = newContext.estimatedTokens + estimatedPromptTokens + (estimatedPromptTokens * 2);
+
+        if (newTotal <= maxTokens) {
+          console.log(`[ContextCompaction] Auto-compacted: ${currentTokens} -> ${newContext.estimatedTokens} tokens`);
+          return { canProceed: true, compacted: true };
+        } else {
+          // Still not enough space even after compaction
+          return {
+            canProceed: false,
+            compacted: true,
+            reason: `Context still too large after compaction. Try clearing the conversation.`
+          };
+        }
+      }
+    } catch (error) {
+      console.error('[ContextCompaction] Auto-compact failed:', error);
+      return {
+        canProceed: false,
+        compacted: false,
+        reason: `Failed to compact context: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    }
+  }
+
+  // Auto-compact is off - warn user
+  return {
+    canProceed: false,
+    compacted: false,
+    reason: `Context is ${currentTokens.toLocaleString()} tokens (${(currentTokens / maxTokens * 100).toFixed(0)}% full). Adding this prompt would exceed the limit. Please compact the context first.`
+  };
+}
