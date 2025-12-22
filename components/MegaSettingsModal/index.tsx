@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Settings2, Download, Upload, RotateCcw } from 'lucide-react';
+import { ConfirmModal } from '../ContextIndicator/ConfirmModal';
 import { SettingsSidebar } from './SettingsSidebar';
 import { AIProvidersPanel } from './panels/AIProvidersPanel';
 import { ContextManagerPanel } from './panels/ContextManagerPanel';
@@ -9,7 +10,6 @@ import { ProjectsPanel } from './panels/ProjectsPanel';
 import { EditorPanel } from './panels/EditorPanel';
 import { AppearancePanel } from './panels/AppearancePanel';
 import { DebugPanel } from './panels/DebugPanel';
-import { ShortcutsPanel } from './panels/ShortcutsPanel';
 import { AdvancedPanel } from './panels/AdvancedPanel';
 import {
   MegaSettingsModalProps,
@@ -27,6 +27,7 @@ export const MegaSettingsModal: React.FC<MegaSettingsModalProps> = ({
 }) => {
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>(initialCategory);
   const [importExportMessage, setImportExportMessage] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   // Update active category when initialCategory changes
   useEffect(() => {
@@ -134,8 +135,10 @@ export const MegaSettingsModal: React.FC<MegaSettingsModalProps> = ({
       return;
     }
 
-    if (!confirm(`Reset ${activeCategory} settings to defaults?`)) return;
+    setShowResetConfirm(true);
+  };
 
+  const performReset = () => {
     switch (activeCategory) {
       case 'editor':
         localStorage.setItem(STORAGE_KEYS.EDITOR_SETTINGS, JSON.stringify(DEFAULT_EDITOR_SETTINGS));
@@ -153,6 +156,7 @@ export const MegaSettingsModal: React.FC<MegaSettingsModalProps> = ({
     // Force re-render by toggling category
     setActiveCategory('ai-providers');
     setTimeout(() => setActiveCategory(activeCategory), 0);
+    setShowResetConfirm(false);
   };
 
   // Check if current panel has resettable settings
@@ -174,8 +178,6 @@ export const MegaSettingsModal: React.FC<MegaSettingsModalProps> = ({
         return <AppearancePanel />;
       case 'debug':
         return <DebugPanel />;
-      case 'shortcuts':
-        return <ShortcutsPanel />;
       case 'advanced':
         return <AdvancedPanel />;
       default:
@@ -268,6 +270,17 @@ export const MegaSettingsModal: React.FC<MegaSettingsModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Reset Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showResetConfirm}
+        onClose={() => setShowResetConfirm(false)}
+        onConfirm={performReset}
+        title={`Reset ${activeCategory} settings`}
+        message="This will reset all settings in this section to their default values. This action cannot be undone."
+        confirmText="Reset"
+        confirmVariant="danger"
+      />
     </div>
   );
 

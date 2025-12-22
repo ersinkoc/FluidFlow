@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, memo } from 'react';
 import {
   Monitor, Smartphone, Tablet, RefreshCw, Eye, Code2, Copy, Check, Download, Database,
   ShieldCheck, FileText, Wrench, Package, Loader2,
-  SplitSquareVertical, X, Zap, ZapOff, MousePointer2, Bug, Settings, ChevronDown, Shield,
+  SplitSquareVertical, X, Zap, ZapOff, MousePointer2, Bug, Settings, ChevronDown,
   Play, Box, Bot, Map, GitBranch
 } from 'lucide-react';
 import { getProviderManager } from '../../services/ai';
@@ -36,6 +36,7 @@ import { WebContainerPanel } from './WebContainerPanel';
 import { ErrorFixPanel } from './ErrorFixPanel';
 import { DocsPanel } from './DocsPanel';
 import { PreviewContent } from './PreviewContent';
+import { CodeQualityPanel } from './CodeQualityPanel';
 import { GitStatus, runnerApi } from '../../services/projectApi';
 
 interface PreviewPanelProps {
@@ -358,8 +359,9 @@ export const PreviewPanel = memo(function PreviewPanel({
               { id: 'git', icon: GitBranch, label: 'Git' },
               { id: 'webcontainer', icon: Box, label: 'WebContainer' },
               { id: 'database', icon: Database, label: 'DB Studio' },
+              { id: 'quality', icon: ShieldCheck, label: 'Quality' },
               { id: 'docs', icon: FileText, label: 'Docs' },
-              { id: 'env', icon: Shield, label: 'Env' },
+              { id: 'env', icon: ShieldCheck, label: 'Env' },
               { id: 'debug', icon: Bug, label: 'Debug' },
               { id: 'errorfix', icon: Bot, label: 'Error Fix' }
             ].map(({ id, icon: Icon, label, hasIndicator }) => (
@@ -591,6 +593,14 @@ export const PreviewPanel = memo(function PreviewPanel({
               }}
               onUndo={onUndo}
               canUndo={canUndo}
+            />
+          </div>
+        ) : activeTab === 'quality' ? (
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+            <CodeQualityPanel
+              files={files}
+              activeFile={activeFile}
+              onRunLint={() => {}}
             />
           </div>
         ) : activeTab === 'database' || activeTab === 'codemap' || activeTab === 'docs' ? (

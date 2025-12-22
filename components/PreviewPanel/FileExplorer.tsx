@@ -5,6 +5,8 @@ import {
   File as FileIcon, Trash2, Pencil, X, Check, FilePlus
 } from 'lucide-react';
 import { FileSystem } from '../../types';
+import { useFileContextMenu } from '../ContextMenu';
+import { InputDialog } from '../InputDialog';
 
 interface FileExplorerProps {
   files: FileSystem;
@@ -187,14 +189,24 @@ function treeNodeAreEqual(prev: TreeNodeProps, next: TreeNodeProps): boolean {
 
 // Tree Node Component - using simpler memo for folder toggle reliability
 const TreeNodeComponent = memo(function TreeNodeComponent({
-  node, depth, activeFile, onFileSelect, expandedFolders, toggleFolder, onDelete, onRename, onCreateInFolder
-}: TreeNodeProps) {
+  node, depth, activeFile, onFileSelect, expandedFolders, toggleFolder, onDelete, onRename, onCreateInFolder, files,
+  onRequestRenameDialog
+}: TreeNodeProps & { files: FileSystem; onRequestRenameDialog?: (filePath: string, currentName: string) => void }) {
   const isExpanded = expandedFolders.has(node.path);
   const isActive = activeFile === node.path;
   const paddingLeft = 8 + depth * 12;
   const [isRenaming, setIsRenaming] = useState(false);
   const [newName, setNewName] = useState(node.name);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Call hook unconditionally at the top level
+  const handleContextMenu = useFileContextMenu(
+    node.path,
+    files[node.path] || '',
+    onDelete || (() => {}),
+    onRename || undefined,
+    onRequestRenameDialog
+  );
 
   useEffect(() => {
     if (isRenaming && inputRef.current) {
@@ -296,6 +308,8 @@ const TreeNodeComponent = memo(function TreeNodeComponent({
                 onDelete={onDelete}
                 onRename={onRename}
                 onCreateInFolder={onCreateInFolder}
+                files={files}
+                onRequestRenameDialog={onRequestRenameDialog}
               />
             ))}
           </div>
@@ -313,6 +327,7 @@ const TreeNodeComponent = memo(function TreeNodeComponent({
           : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
       }`}
       style={{ paddingLeft }}
+      onContextMenu={handleContextMenu}
     >
       <button onClick={() => onFileSelect(node.path)} className="flex items-center gap-2 flex-1 min-w-0">
         {getFileIcon(node.name)}
@@ -398,6 +413,7 @@ export const FileExplorer = memo(function FileExplorer({
   const [newFileName, setNewFileName] = useState('');
   const [createInFolder, setCreateInFolder] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [renameDialogPath, setRenameDialogPath] = useState<{ filePath: string; currentName: string } | null>(null);
   const newFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -485,9 +501,26 @@ export const FileExplorer = memo(function FileExplorer({
   };
 
   const handleRename = (oldPath: string, newPath: string) => {
+    // If newPath is empty, this is from the context menu - show dialog
+    if (newPath === '') {
+      const currentName = oldPath.split('/').pop() || '';
+      setRenameDialogPath({ filePath: oldPath, currentName });
+      return;
+    }
+    // Normal rename (e.g., from inline editing)
     if (onRenameFile) {
       onRenameFile(oldPath, newPath);
     }
+  };
+
+  const handleRenameDialogConfirm = (newName: string) => {
+    if (renameDialogPath && newName.trim() && onRenameFile) {
+      const pathParts = renameDialogPath.filePath.split('/');
+      pathParts[pathParts.length - 1] = newName.trim();
+      const newPath = pathParts.join('/');
+      onRenameFile(renameDialogPath.filePath, newPath);
+    }
+    setRenameDialogPath(null);
   };
 
   const handleCreateInFolder = (folderPath: string) => {
@@ -591,6 +624,8 @@ export const FileExplorer = memo(function FileExplorer({
             onDelete={onDeleteFile ? handleDelete : undefined}
             onRename={onRenameFile ? handleRename : undefined}
             onCreateInFolder={onCreateFile ? handleCreateInFolder : undefined}
+            files={files}
+            onRequestRenameDialog={onRenameFile ? (filePath, currentName) => setRenameDialogPath({ filePath, currentName }) : undefined}
           />
         ))}
       </div>
@@ -623,6 +658,25 @@ export const FileExplorer = memo(function FileExplorer({
           <span>{fileCount} files</span>
         </div>
       </div>
+
+      {/* Rename Dialog */}
+      {renameDialogPath && (
+        <InputDialog
+          isOpen={!!renameDialogPath}
+          onClose={() => setRenameDialogPath(null)}
+          onConfirm={handleRenameDialogConfirm}
+          title={`Rename ${renameDialogPath.currentName}`}
+          message="Enter the new name for this file/folder:"
+          placeholder={renameDialogPath.currentName}
+          defaultValue={renameDialogPath.currentName}
+          confirmText="Rename"
+          validate={(value) => {
+            if (!value.trim()) return 'Name cannot be empty';
+            if (value === renameDialogPath.currentName) return 'Name must be different';
+            return null;
+          }}
+        />
+      )}
     </div>
   );
 });

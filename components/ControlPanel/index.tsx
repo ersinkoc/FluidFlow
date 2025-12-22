@@ -19,6 +19,7 @@ import { PromptEngineerModal } from './PromptEngineerModal';
 import { BatchGenerationModal } from './BatchGenerationModal';
 import { ContextIndicator } from '../ContextIndicator';
 import { getFluidFlowConfig } from '../../services/fluidflowConfig';
+import { addPromptToHistory } from '@/services/promptHistory';
 
 // Sub-components
 import { ChatPanel } from './ChatPanel';
@@ -92,6 +93,9 @@ interface ControlPanelProps {
   onSaveCheckpoint?: (name: string) => void;
   // Runner state for reset modal
   hasRunningServer?: boolean;
+  // Prompt History
+  historyPrompt?: string;
+  onOpenPromptHistory?: () => void;
 }
 
 export const ControlPanel = forwardRef<ControlPanelRef, ControlPanelProps>(({
@@ -135,7 +139,10 @@ export const ControlPanel = forwardRef<ControlPanelRef, ControlPanelProps>(({
   // History Timeline checkpoint
   onSaveCheckpoint,
   // Runner state for reset modal
-  hasRunningServer
+  hasRunningServer,
+  // Prompt History
+  historyPrompt,
+  onOpenPromptHistory
 }, ref) => {
   // Chat state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -298,6 +305,16 @@ export const ControlPanel = forwardRef<ControlPanelRef, ControlPanelProps>(({
     setMessages(prev => [...prev, userMessage]);
     setIsGenerating(true);
     setSuggestions(null);
+
+    // Save to prompt history
+    addPromptToHistory({
+      prompt: prompt || (attachments.length > 0 ? 'Generate from uploaded sketch' : ''),
+      model: selectedModel,
+      projectContext: {
+        projectId: currentProject?.id,
+        fileCount: Object.keys(files).length,
+      },
+    });
 
     try {
       if (inspectContext) {
@@ -655,7 +672,9 @@ Fix the error in src/App.tsx.`;
         placeholder={isConsultantMode ? "Describe what to analyze..." : undefined}
         files={files}
         onOpenPromptEngineer={modals.openPromptEngineer}
+        onOpenHistory={onOpenPromptHistory}
         externalPrompt={externalPrompt}
+        historyPrompt={historyPrompt}
       />
 
       {/* Settings Panel */}

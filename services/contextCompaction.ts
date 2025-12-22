@@ -16,6 +16,14 @@ export interface CompactionResult {
   summary?: string;
 }
 
+export interface CompactionInfo {
+  currentTokens: number;
+  utilizationPercent: number;
+  messageCount: number;
+  targetTokens: number;
+  message: string;
+}
+
 /**
  * Check if a context needs compaction based on current settings
  */
@@ -48,14 +56,37 @@ export function getContextStats(contextId: string) {
 }
 
 /**
- * Trigger compaction with confirmation if needed
+ * Get compaction information for showing in a confirmation dialog
+ */
+export function getCompactionInfo(contextId: string): CompactionInfo {
+  const stats = getContextStats(contextId);
+  const config = getFluidFlowConfig();
+  const settings = config.getContextSettings();
+
+  return {
+    currentTokens: stats.currentTokens,
+    utilizationPercent: stats.utilizationPercent,
+    messageCount: stats.messageCount,
+    targetTokens: settings.compactToTokens,
+    message: `Context is ${stats.currentTokens.toLocaleString()} tokens (${stats.utilizationPercent.toFixed(0)}% full).\n\n` +
+      `Compacting will summarize older messages to free up space.\n\n` +
+      `Messages: ${stats.messageCount}\n` +
+      `Target: ~${settings.compactToTokens.toLocaleString()} tokens\n\n` +
+      `Continue with compaction?`
+  };
+}
+
+/**
+ * Trigger compaction with optional confirmation callback
  * @param contextId - The context ID to compact
  * @param autoCompact - If true, skip confirmation. If false/undefined, check settings
+ * @param onConfirm - Optional callback for showing confirmation dialog. Returns true if confirmed.
  * @returns Promise<CompactionResult>
  */
 export async function triggerCompaction(
   contextId: string,
-  autoCompact?: boolean
+  autoCompact?: boolean,
+  onConfirm?: (info: CompactionInfo) => Promise<boolean> | boolean
 ): Promise<CompactionResult> {
   const contextManager = getContextManager();
   const config = getFluidFlowConfig();
@@ -68,24 +99,40 @@ export async function triggerCompaction(
   // Check if auto-compact is enabled
   const shouldAutoCompact = autoCompact ?? settings.autoCompact;
 
-  // If not auto-compact, confirm with user
+  // If not auto-compact and onConfirm callback provided, use it
   if (!shouldAutoCompact) {
-    const stats = getContextStats(contextId);
-    const confirmed = confirm(
-      `Context is ${stats.currentTokens.toLocaleString()} tokens (${stats.utilizationPercent.toFixed(0)}% full).\n\n` +
-      `Compacting will summarize older messages to free up space.\n\n` +
-      `Messages: ${stats.messageCount}\n` +
-      `Target: ~${settings.compactToTokens.toLocaleString()} tokens\n\n` +
-      `Continue with compaction?`
-    );
+    if (onConfirm) {
+      const info = getCompactionInfo(contextId);
+      const confirmed = await onConfirm(info);
 
-    if (!confirmed) {
-      return {
-        compacted: false,
-        beforeTokens,
-        afterTokens: beforeTokens,
-        messagesSummarized: 0
-      };
+      if (!confirmed) {
+        return {
+          compacted: false,
+          beforeTokens,
+          afterTokens: beforeTokens,
+          messagesSummarized: 0
+        };
+      }
+    } else {
+      // Legacy behavior: use window.confirm if no callback provided
+      // This should ideally be removed in favor of always using the callback
+      const stats = getContextStats(contextId);
+      const confirmed = confirm(
+        `Context is ${stats.currentTokens.toLocaleString()} tokens (${stats.utilizationPercent.toFixed(0)}% full).\n\n` +
+          `Compacting will summarize older messages to free up space.\n\n` +
+          `Messages: ${stats.messageCount}\n` +
+          `Target: ~${settings.compactToTokens.toLocaleString()} tokens\n\n` +
+          `Continue with compaction?`
+      );
+
+      if (!confirmed) {
+        return {
+          compacted: false,
+          beforeTokens,
+          afterTokens: beforeTokens,
+          messagesSummarized: 0
+        };
+      }
     }
   }
 

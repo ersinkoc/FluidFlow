@@ -5,5 +5,4 @@ export { ProjectsPanel } from './ProjectsPanel';
 export { EditorPanel } from './EditorPanel';
 export { AppearancePanel } from './AppearancePanel';
 export { DebugPanel } from './DebugPanel';
-export { ShortcutsPanel } from './ShortcutsPanel';
 export { AdvancedPanel } from './AdvancedPanel';

@@ -15,7 +15,6 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { CREDITS_MODAL_DELAY_MS } from '@/constants';
 import { ControlPanel, ControlPanelRef } from './components/ControlPanel';
 import { PreviewPanel } from './components/PreviewPanel';
-import { CommandPalette } from './components/CommandPalette';
 import { SnippetsPanel } from './components/SnippetsPanel';
 import { DeployModal } from './components/DeployModal';
 import { ShareModal, loadProjectFromUrl } from './components/ShareModal';
@@ -23,12 +22,15 @@ import { HistoryPanel } from './components/HistoryPanel';
 import { ProjectManager } from './components/ProjectManager';
 import { SyncConfirmationDialog } from './components/SyncConfirmationDialog';
 import { DiffModal } from './components/DiffModal';
+import { PromptHistoryModal } from './components/PromptHistoryModal';
 import { useModalManager } from './hooks/useModalManager';
 import { useAppContext } from './contexts/AppContext';
 import { useAutoCommit } from './hooks/useAutoCommit';
 import { Undo2, Redo2, History, ChevronLeft, ChevronRight, Info } from 'lucide-react';
 import { InspectedElement, EditScope } from './components/PreviewPanel/ComponentInspector';
 import { getContextManager } from './services/conversationContext';
+import { ToastProvider } from './components/Toast';
+import { ContextMenuProvider } from './components/ContextMenu';
 
 // Lazy-loaded modals for better initial bundle size (~80KB savings)
 import {
@@ -56,6 +58,10 @@ export default function App() {
 
   // Runner status for Start Fresh modal
   const [hasRunningServer, setHasRunningServer] = useState(false);
+
+  // Prompt History state
+  const [showPromptHistory, setShowPromptHistory] = useState(false);
+  const [historyPrompt, setHistoryPrompt] = useState<string | undefined>();
 
   // Auto-commit feature: commits when preview is error-free
   const { isAutoCommitting } = useAutoCommit({
@@ -139,59 +145,10 @@ export default function App() {
     setResetKey(prev => prev + 1);
   }, [ctx]);
 
-  // Command Palette actions
-  const handleCommandAction = useCallback((action: string) => {
-    switch (action) {
-      case 'toggle-preview':
-        ctx.setActiveTab(ctx.activeTab === 'preview' ? 'code' : 'preview');
-        break;
-      case 'reset':
-        handleResetApp();
-        break;
-      case 'snippets':
-        modals.open('snippetsPanel');
-        break;
-      case 'tailwind':
-        modals.open('tailwindPalette');
-        break;
-      case 'component-tree':
-        modals.open('componentTree');
-        break;
-      case 'deploy':
-        modals.open('deploy');
-        break;
-      case 'share':
-        modals.open('share');
-        break;
-      case 'ai-settings':
-        modals.open('aiSettings');
-        break;
-      case 'settings':
-        modals.open('megaSettings');
-        break;
-      case 'undo':
-        if (ctx.canUndo) ctx.undo();
-        break;
-      case 'redo':
-        if (ctx.canRedo) ctx.redo();
-        break;
-      case 'history':
-        modals.open('history');
-        break;
-      case 'projects':
-        modals.open('projectManager');
-        break;
-      case 'git':
-        ctx.setActiveTab('git');
-        break;
-      case 'save-project':
-        ctx.syncFiles();
-        break;
-    }
-  }, [ctx, modals, handleResetApp]);
-
   return (
-    <div className="fixed inset-0 flex flex-col bg-[#020617] text-white overflow-hidden selection:bg-blue-500/30 selection:text-blue-50">
+    <ContextMenuProvider>
+      <ToastProvider>
+        <div className="fixed inset-0 flex flex-col bg-[#020617] text-white overflow-hidden selection:bg-blue-500/30 selection:text-blue-50">
       {/* Background Ambient Effects */}
       <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-blue-600/10 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none" />
@@ -246,6 +203,9 @@ export default function App() {
           onRefreshProjects={ctx.refreshProjects}
           onCloseProject={ctx.closeProject}
           hasRunningServer={hasRunningServer}
+          // Prompt History
+          historyPrompt={historyPrompt}
+          onOpenPromptHistory={() => setShowPromptHistory(true)}
         />
         <PreviewPanel
           files={ctx.files}
@@ -303,19 +263,6 @@ export default function App() {
           isLoading={ctx.isSyncing}
         />
       )}
-
-      {/* Command Palette */}
-      <CommandPalette
-        isOpen={modals.state.commandPalette}
-        onClose={() => modals.close('commandPalette')}
-        files={ctx.files}
-        activeFile={ctx.activeFile}
-        onFileSelect={(file: string) => {
-          ctx.setActiveFile(file);
-          ctx.setActiveTab('code');
-        }}
-        onAction={handleCommandAction}
-      />
 
       {/* Snippets Panel */}
       <SnippetsPanel
@@ -501,6 +448,17 @@ export default function App() {
         onClose={() => modals.close('codeMap')}
         files={ctx.files}
       />
-    </div>
+
+      {/* Prompt History Modal */}
+      <PromptHistoryModal
+        isOpen={showPromptHistory}
+        onClose={() => setShowPromptHistory(false)}
+        onSelectPrompt={(selectedPrompt) => {
+          setHistoryPrompt(selectedPrompt);
+        }}
+      />
+      </div>
+    </ToastProvider>
+    </ContextMenuProvider>
   );
 }

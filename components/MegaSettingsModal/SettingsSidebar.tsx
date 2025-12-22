@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Cpu, MessageSquare, Package, FolderOpen, Code,
-  Palette, Bug, Keyboard, Settings2
+  Palette, Bug, Settings2
 } from 'lucide-react';
 import { SettingsCategory, SettingsCategoryConfig } from './types';
 
@@ -52,12 +52,6 @@ const SETTINGS_CATEGORIES: SettingsCategoryConfig[] = [
     label: 'Debug',
     icon: Bug,
     description: 'Debugging and monitoring'
-  },
-  {
-    id: 'shortcuts',
-    label: 'Shortcuts',
-    icon: Keyboard,
-    description: 'Keyboard shortcuts'
   },
   {
     id: 'advanced',

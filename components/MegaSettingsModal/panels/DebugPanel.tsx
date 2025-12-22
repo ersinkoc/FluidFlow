@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Bug, Trash2, AlertTriangle, Info } from 'lucide-react';
+import { ConfirmModal } from '../../ContextIndicator/ConfirmModal';
 import { SettingsSection, SettingsToggle, SettingsSelect, SettingsSlider } from '../shared';
 import { DebugSettings, DEFAULT_DEBUG_SETTINGS, STORAGE_KEYS } from '../types';
 import { useDebugStore } from '../../../hooks/useDebugStore';
@@ -7,6 +8,7 @@ import { useDebugStore } from '../../../hooks/useDebugStore';
 export const DebugPanel: React.FC = () => {
   const [settings, setSettings] = useState<DebugSettings>(DEFAULT_DEBUG_SETTINGS);
   const debugState = useDebugStore();
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.DEBUG_SETTINGS);
@@ -38,8 +40,12 @@ export const DebugPanel: React.FC = () => {
   };
 
   const clearLogs = () => {
-    if (!confirm('Clear all debug logs?')) return;
+    setShowClearConfirm(true);
+  };
+
+  const performClearLogs = () => {
     debugState.clearLogs();
+    setShowClearConfirm(false);
   };
 
   return (
@@ -186,6 +192,17 @@ export const DebugPanel: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Clear Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showClearConfirm}
+        onClose={() => setShowClearConfirm(false)}
+        onConfirm={performClearLogs}
+        title="Clear Debug Logs"
+        message="This will permanently delete all debug logs. This action cannot be undone."
+        confirmText="Clear Logs"
+        confirmVariant="danger"
+      />
     </div>
   );
 };

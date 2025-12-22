@@ -1,9 +1,11 @@
 import React, { useCallback, useState, useEffect, useRef } from 'react';
 import Editor, { OnMount, BeforeMount } from '@monaco-editor/react';
 import type * as Monaco from 'monaco-editor';
-import { FileCode, Check, Circle } from 'lucide-react';
+import { FileCode, Check, Circle, BookOpen } from 'lucide-react';
 import { FileSystem } from '../../types';
 import { useEditorSettings } from '../../hooks/useEditorSettings';
+import { useCodeContextMenu } from '../ContextMenu';
+import { SnippetLibraryModal } from '../SnippetLibraryModal';
 
 interface CodeEditorProps {
   files: FileSystem;
@@ -37,6 +39,31 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ files, setFiles, activeF
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { settings: editorSettings } = useEditorSettings();
+
+  // Snippet library modal state
+  const [showSnippetLibrary, setShowSnippetLibrary] = useState(false);
+
+  // Handle snippet insertion - insert at cursor position
+  const handleInsertSnippet = useCallback((code: string) => {
+    if (editorRef.current) {
+      const position = editorRef.current.getPosition();
+      if (position) {
+        editorRef.current.trigger('keyboard', 'type', { text: code });
+      }
+    }
+  }, []);
+
+  // Code editor context menu
+  const handleFormatCode = useCallback(() => {
+    if (editorRef.current) {
+      editorRef.current.getAction('editor.action.formatDocument')?.run();
+    }
+  }, []);
+
+  const handleContextMenu = useCodeContextMenu(
+    content,
+    handleFormatCode
+  );
 
   // Track if file has been modified
   const isModified = originalFiles ? files[activeFile] !== originalFiles[activeFile] : false;
@@ -135,11 +162,18 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ files, setFiles, activeF
           <span className="text-[10px] text-slate-600 font-mono pr-2">
             {content.split('\n').length} lines
           </span>
+          <button
+            onClick={() => setShowSnippetLibrary(true)}
+            className="p-1.5 hover:bg-white/5 rounded-lg text-slate-500 hover:text-blue-400 transition-colors"
+            title="Snippet Library"
+          >
+            <BookOpen className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
       {/* Monaco Editor */}
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0" onContextMenu={handleContextMenu}>
         <Editor
           height="100%"
           language={language}
@@ -185,6 +219,13 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ files, setFiles, activeF
           }
         />
       </div>
+
+      {/* Snippet Library Modal */}
+      <SnippetLibraryModal
+        isOpen={showSnippetLibrary}
+        onClose={() => setShowSnippetLibrary(false)}
+        onInsertSnippet={handleInsertSnippet}
+      />
     </div>
   );
 };

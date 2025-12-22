@@ -60,6 +60,35 @@ export default tseslint.config(
     files: ['tests/**/*.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-non-null-assertion': 'off',
+    },
+  },
+  // Context providers need to export hooks alongside components
+  {
+    files: ['components/Toast/ToastContext.tsx'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
+  // Error boundaries export utilities alongside the component
+  {
+    files: ['components/ErrorBoundary/index.tsx'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
+  // Context menu exports provider, hooks, and utilities
+  {
+    files: ['components/ContextMenu/index.tsx'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
+  // ConfirmDialog exports re-exported components and types
+  {
+    files: ['components/ConfirmDialog/index.tsx'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
     },
   }
 );

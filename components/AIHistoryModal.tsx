@@ -20,6 +20,7 @@ import {
   Bookmark
 } from 'lucide-react';
 import { AIHistoryEntry } from '../services/projectApi';
+import { ConfirmModal } from './ContextIndicator/ConfirmModal';
 
 interface EntryCardProps {
   entry: AIHistoryEntry;
@@ -59,6 +60,7 @@ export const AIHistoryModal: React.FC<AIHistoryModalProps> = ({
   const [showRawResponse, setShowRawResponse] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Cleanup timeout on unmount
@@ -348,11 +350,7 @@ export const AIHistoryModal: React.FC<AIHistoryModalProps> = ({
             </button>
             {history.length > 0 && (
               <button
-                onClick={() => {
-                  if (confirm('Clear all AI history? This cannot be undone.')) {
-                    onClearHistory();
-                  }
-                }}
+                onClick={() => setShowClearConfirm(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
               >
                 <Trash2 size={14} />
@@ -497,6 +495,17 @@ export const AIHistoryModal: React.FC<AIHistoryModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Clear History Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showClearConfirm}
+        onClose={() => setShowClearConfirm(false)}
+        onConfirm={onClearHistory}
+        title="Clear All AI History"
+        message="This will permanently delete all AI generation history. This action cannot be undone."
+        confirmText="Clear All"
+        confirmVariant="danger"
+      />
     </div>
   );
 

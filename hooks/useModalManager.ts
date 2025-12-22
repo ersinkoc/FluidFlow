@@ -11,7 +11,6 @@ import { useState, useCallback, useMemo } from 'react';
  * All modal types in the application
  */
 export type ModalType =
-  | 'commandPalette'
   | 'snippetsPanel'
   | 'tailwindPalette'
   | 'componentTree'
@@ -34,7 +33,6 @@ export type ModalState = Record<ModalType, boolean>;
  * Initial modal state - all closed
  */
 const INITIAL_STATE: ModalState = {
-  commandPalette: false,
   snippetsPanel: false,
   tailwindPalette: false,
   componentTree: false,
@@ -118,7 +116,6 @@ export function useModalManager(): ModalManager {
   const setters = useMemo(() => {
     const result = {} as Record<ModalType, (isOpen: boolean) => void>;
     const modalTypes: ModalType[] = [
-      'commandPalette',
       'snippetsPanel',
       'tailwindPalette',
       'componentTree',
@@ -175,7 +172,6 @@ export function createModalProps(manager: ModalManager, modal: ModalType) {
  * Mapping from old state names to new modal types (for migration)
  */
 export const LEGACY_STATE_MAPPING: Record<string, ModalType> = {
-  isCommandPaletteOpen: 'commandPalette',
   isSnippetsPanelOpen: 'snippetsPanel',
   isTailwindPaletteOpen: 'tailwindPalette',
   isComponentTreeOpen: 'componentTree',

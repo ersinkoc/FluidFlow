@@ -4,6 +4,7 @@ import DOMPurify from 'dompurify';
 import { ChatMessage, FileChange, FileSystem } from '../../types';
 import { TextExpandModal } from './TextExpandModal';
 import { ChatTimeline } from './ChatTimeline';
+import { useChatContextMenu } from '../ContextMenu';
 
 // Truncation limits
 const TRUNCATE_PROMPT_LENGTH = 200;
@@ -267,6 +268,14 @@ const MessageItem = memo(function MessageItem({
     title: string;
   } | null>(null);
 
+  // Context menu for chat messages
+  const handleContextMenu = useChatContextMenu(
+    message.id,
+    message.prompt || message.explanation || '',
+    message.role === 'assistant' && onRetry ? () => onRetry(message.id) : undefined,
+    message.snapshotFiles ? () => onRevert(message.id) : undefined
+  );
+
   return (
     <>
     {/* Text expand modal */}
@@ -279,7 +288,10 @@ const MessageItem = memo(function MessageItem({
         type={expandedModal.type}
       />
     )}
-    <div className={`flex gap-3 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}>
+    <div
+      className={`flex gap-3 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
+      onContextMenu={handleContextMenu}
+    >
       {/* Avatar */}
       <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${
         message.role === 'user'

@@ -26,6 +26,7 @@ export function useControlPanelModals() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showAIHistory, setShowAIHistory] = useState(false);
   const [showCodebaseSync, setShowCodebaseSync] = useState(false);
+  const [showPromptHistory, setShowPromptHistory] = useState(false);
 
   // Batch generation modal state (with payload)
   const [batchGenModal, setBatchGenModal] = useState<BatchGenModalState | null>(null);
@@ -76,6 +77,9 @@ export function useControlPanelModals() {
   const openCodebaseSync = useCallback(() => setShowCodebaseSync(true), []);
   const closeCodebaseSync = useCallback(() => setShowCodebaseSync(false), []);
 
+  const openPromptHistory = useCallback(() => setShowPromptHistory(true), []);
+  const closePromptHistory = useCallback(() => setShowPromptHistory(false), []);
+
   return {
     // Exclusive modal state
     openModal,
@@ -123,5 +127,10 @@ export function useControlPanelModals() {
     showCodebaseSync,
     openCodebaseSync,
     closeCodebaseSync,
+
+    // Prompt history
+    showPromptHistory,
+    openPromptHistory,
+    closePromptHistory,
   };
 }

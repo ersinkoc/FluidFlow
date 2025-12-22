@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Mic, MicOff, Loader2, Wand2, Paperclip, Image, Palette, X, Maximize2, Sparkles, Brain } from 'lucide-react';
+import { Send, Mic, MicOff, Loader2, Wand2, Paperclip, Image, Palette, X, Maximize2, Sparkles, Brain, Clock } from 'lucide-react';
 import { ChatAttachment, FileSystem } from '../../types';
 import { PromptLibrary, PromptDropdown } from './PromptLibrary';
 import { UploadCards } from './UploadCards';
@@ -8,6 +8,7 @@ import { PromptImproverModal } from './PromptImproverModal';
 import { QuickLevelToggle } from './PromptLevelModal';
 import { usePromptLevel } from './hooks';
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
+import { useToast } from '../Toast/ToastContext';
 
 interface ChatInputProps {
   onSend: (prompt: string, attachments: ChatAttachment[], fileContext?: string[]) => void;
@@ -16,7 +17,9 @@ interface ChatInputProps {
   placeholder?: string;
   files?: FileSystem;
   onOpenPromptEngineer?: () => void;
+  onOpenHistory?: () => void;
   externalPrompt?: string; // For auto-filling from continuation
+  historyPrompt?: string; // For auto-filling from prompt history
 }
 
 export const ChatInput: React.FC<ChatInputProps> = ({
@@ -26,7 +29,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   placeholder,
   files = {},
   onOpenPromptEngineer,
-  externalPrompt
+  onOpenHistory,
+  externalPrompt,
+  historyPrompt
 }) => {
   const [prompt, setPrompt] = useState('');
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
@@ -37,9 +42,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const [showImproverModal, setShowImproverModal] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [defaultLevel, setDefaultLevel] = usePromptLevel();
+  const { error: showError } = useToast();
 
   // BUG-028 FIX: Track last applied external prompt to avoid dependency loop
   const lastExternalPromptRef = useRef<string | undefined>(undefined);
+  const lastHistoryPromptRef = useRef<string | undefined>(undefined);
 
   // Handle external prompt from continuation
   // BUG-028 FIX: Only depend on externalPrompt, use ref to avoid circular dependency
@@ -49,6 +56,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       setPrompt(externalPrompt);
     }
   }, [externalPrompt]);
+
+  // Handle history prompt selection
+  useEffect(() => {
+    if (historyPrompt && historyPrompt !== lastHistoryPromptRef.current) {
+      lastHistoryPromptRef.current = historyPrompt;
+      setPrompt(historyPrompt);
+    }
+  }, [historyPrompt]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachTypeRef = useRef<'sketch' | 'brand'>('sketch');
@@ -162,6 +177,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           attachments={attachments}
           onAttach={handleAttach}
           onRemove={handleRemove}
+          onError={showError}
           disabled={isGenerating}
         />
       )}
@@ -263,6 +279,17 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               onOpenLibrary={() => setShowPromptLibrary(true)}
             />
           </div>
+
+          {/* Prompt History button */}
+          {onOpenHistory && (
+            <button
+              onClick={onOpenHistory}
+              className="p-1.5 rounded-md hover:bg-white/5 text-slate-400 hover:text-white transition-colors"
+              title="Prompt History"
+            >
+              <Clock className="w-4 h-4" />
+            </button>
+          )}
 
           {/* Prompt Level Toggle */}
           <QuickLevelToggle value={defaultLevel} onChange={setDefaultLevel} size="sm" />

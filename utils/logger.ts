@@ -76,7 +76,7 @@ export function createLogger(moduleName: string) {
 
     info(...args: unknown[]) {
       if (isEnabled('info')) {
-        console.info(...formatMessage(prefix, args));
+        console.log(...formatMessage(prefix, args));
       }
     },
 

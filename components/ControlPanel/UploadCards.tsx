@@ -6,6 +6,7 @@ interface UploadCardsProps {
   attachments: ChatAttachment[];
   onAttach: (type: 'sketch' | 'brand', file: File, preview: string) => void;
   onRemove: (type: 'sketch' | 'brand') => void;
+  onError?: (message: string) => void;
   disabled?: boolean;
 }
 
@@ -15,6 +16,7 @@ export const UploadCards: React.FC<UploadCardsProps> = ({
   attachments,
   onAttach,
   onRemove,
+  onError,
   disabled
 }) => {
   const sketchInputRef = useRef<HTMLInputElement>(null);
@@ -29,14 +31,14 @@ export const UploadCards: React.FC<UploadCardsProps> = ({
 
     // Validate size
     if (file.size > MAX_FILE_SIZE) {
-      alert('File too large. Max 10MB.');
+      onError?.('File too large. Max 10MB.');
       return;
     }
 
     // Validate type
     const validTypes = ['image/png', 'image/jpeg', 'image/webp'];
     if (!validTypes.includes(file.type)) {
-      alert('Invalid file type. Use PNG, JPEG, or WebP.');
+      onError?.('Invalid file type. Use PNG, JPEG, or WebP.');
       return;
     }
 
@@ -63,13 +65,13 @@ export const UploadCards: React.FC<UploadCardsProps> = ({
 
     // Validate
     if (file.size > MAX_FILE_SIZE) {
-      alert('File too large. Max 10MB.');
+      onError?.('File too large. Max 10MB.');
       return;
     }
 
     const validTypes = ['image/png', 'image/jpeg', 'image/webp'];
     if (!validTypes.includes(file.type)) {
-      alert('Invalid file type. Use PNG, JPEG, or WebP.');
+      onError?.('Invalid file type. Use PNG, JPEG, or WebP.');
       return;
     }
 

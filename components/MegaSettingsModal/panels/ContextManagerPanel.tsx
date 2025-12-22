@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MessageSquare, Trash2, RefreshCw, AlertCircle, Info } from 'lucide-react';
+import { ConfirmModal } from '../../ContextIndicator/ConfirmModal';
 import { SettingsSection, SettingsToggle, SettingsSlider } from '../shared';
 import { getFluidFlowConfig, ContextSettings, CompactionLog } from '../../../services/fluidflowConfig';
 
@@ -12,6 +13,7 @@ export const ContextManagerPanel: React.FC = () => {
   });
   const [compactionLogs, setCompactionLogs] = useState<CompactionLog[]>([]);
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   useEffect(() => {
     const config = getFluidFlowConfig();
@@ -26,10 +28,14 @@ export const ContextManagerPanel: React.FC = () => {
   };
 
   const clearCompactionLogs = () => {
-    if (!confirm('Clear all compaction logs?')) return;
+    setShowClearConfirm(true);
+  };
+
+  const performClearLogs = () => {
     const config = getFluidFlowConfig();
     config.clearCompactionLogs();
     setCompactionLogs([]);
+    setShowClearConfirm(false);
   };
 
   const formatDate = (timestamp: number) => {
@@ -204,6 +210,17 @@ export const ContextManagerPanel: React.FC = () => {
           ))}
         </div>
       </SettingsSection>
+
+      {/* Clear Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showClearConfirm}
+        onClose={() => setShowClearConfirm(false)}
+        onConfirm={performClearLogs}
+        title="Clear Compaction Logs"
+        message="This will permanently delete all compaction history. This action cannot be undone."
+        confirmText="Clear All"
+        confirmVariant="danger"
+      />
     </div>
   );
 };
