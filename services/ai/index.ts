@@ -1,6 +1,6 @@
 // AI Service - Provider Management
 import { AIProvider, ProviderConfig, DEFAULT_PROVIDERS, GenerationRequest, GenerationResponse, StreamChunk } from './types';
-import { GeminiProvider, OpenAIProvider, AnthropicProvider, OllamaProvider, LMStudioProvider, ZAIProvider, CerebrasProvider } from './providers';
+import { GeminiProvider, OpenAIProvider, AnthropicProvider, OllamaProvider, LMStudioProvider, ZAIProvider, CerebrasProvider, MiniMaxProvider } from './providers';
 import { settingsApi } from '../projectApi';
 import { encryptProviderConfigs, decryptProviderConfigs } from '../../utils/clientEncryption';
 import { debugLog } from '../../hooks/useDebugStore';
@@ -32,6 +32,9 @@ export function createProvider(config: ProviderConfig): AIProvider {
       return new OllamaProvider(config);
     case 'lmstudio':
       return new LMStudioProvider(config);
+    case 'minimax':
+      // MiniMax - OpenAI-compatible with reasoning support
+      return new MiniMaxProvider(config);
     default:
       throw new Error(`Unknown provider type: ${config.type}`);
   }

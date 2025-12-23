@@ -82,6 +82,22 @@ export function getJsonCapability(
         needsPromptGuidance: !!schema,
       };
 
+    case 'minimax':
+      // MiniMax supports json_object but not strict schema enforcement
+      return {
+        supportsNativeSchema: false,
+        supportsJsonObject: true,
+        needsPromptGuidance: !!schema,
+      };
+
+    case 'cerebras':
+      // Cerebras supports json_object mode
+      return {
+        supportsNativeSchema: false,
+        supportsJsonObject: true,
+        needsPromptGuidance: !!schema,
+      };
+
     case 'ollama':
     case 'lmstudio':
       // Local models vary - assume basic JSON object support

@@ -1,6 +1,6 @@
 // AI Provider Types and Interfaces
 
-export type ProviderType = 'gemini' | 'openai' | 'anthropic' | 'zai' | 'cerebras' | 'ollama' | 'lmstudio' | 'openrouter' | 'custom';
+export type ProviderType = 'gemini' | 'openai' | 'anthropic' | 'zai' | 'cerebras' | 'ollama' | 'lmstudio' | 'openrouter' | 'minimax' | 'custom';
 
 /**
  * Retry utility with exponential backoff for transient errors
@@ -232,6 +232,15 @@ export const DEFAULT_PROVIDERS: Record<ProviderType, Omit<ProviderConfig, 'id' |
     baseUrl: 'https://openrouter.ai/api/v1',
     models: [], // Fetch from API
     defaultModel: '',
+  },
+  minimax: {
+    type: 'minimax',
+    name: 'MiniMax',
+    baseUrl: 'https://api.minimax.io/v1',
+    models: [
+      { id: 'MiniMax-M2.1', name: 'MiniMax M2.1', description: 'Flagship with reasoning', supportsVision: false, supportsStreaming: true, contextWindow: 200000 },
+    ],
+    defaultModel: 'MiniMax-M2.1',
   },
   custom: {
     type: 'custom',

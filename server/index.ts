@@ -5,6 +5,7 @@ import { gitRouter } from './api/git.js';
 import { githubRouter } from './api/github.js';
 import { settingsRouter } from './api/settings.js';
 import { runnerRouter } from './api/runner.js';
+import { aiRouter } from './api/ai.js';
 import { apiLimiter, requestLogger } from './middleware/security.js';
 import path from 'path';
 import fs from 'fs';
@@ -61,6 +62,7 @@ app.use('/api/git', gitRouter);
 app.use('/api/github', githubRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/runner', runnerRouter);
+app.use('/api/ai', aiRouter);
 
 // Error handling middleware (must be after all routes)
 app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
