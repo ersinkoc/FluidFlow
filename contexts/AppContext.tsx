@@ -21,6 +21,8 @@ import { gitApi, projectApi } from '../services/projectApi';
 import { getWIP, saveWIP, clearWIP, WIPData } from '../services/wipStorage';
 import { isIgnoredPath } from '../utils/filePathUtils';
 import { useUI } from './UIContext';
+// Note: UIContext is used internally for operations that need UI state,
+// but UI state is NOT re-exported. Components should use useUI() directly.
 
 // ============ Types ============
 
@@ -76,22 +78,6 @@ export interface AppContextValue {
   discardChanges: () => Promise<void>;
   revertToCommit: (commitHash: string) => Promise<boolean>;
 
-  // UI state
-  activeTab: TabType;
-  setActiveTab: (tab: TabType) => void;
-  isGenerating: boolean;
-  setIsGenerating: (generating: boolean) => void;
-  suggestions: string[] | null;
-  setSuggestions: (suggestions: string[] | null) => void;
-  selectedModel: string;
-  setSelectedModel: (model: string) => void;
-  autoAcceptChanges: boolean;
-  setAutoAcceptChanges: (accept: boolean) => void;
-  diffModeEnabled: boolean;
-  setDiffModeEnabled: (enabled: boolean) => void;
-  autoCommitEnabled: boolean;
-  setAutoCommitEnabled: (enabled: boolean) => void;
-
   // Diff/Review
   pendingReview: { label: string; newFiles: FileSystem; skipHistory?: boolean; incompleteFiles?: string[] } | null;
   reviewChange: (label: string, newFiles: FileSystem, options?: { skipHistory?: boolean; incompleteFiles?: string[] }) => void;
@@ -131,18 +117,13 @@ export function AppProvider({ children, defaultFiles }: AppProviderProps) {
   // Backend project management
   const project = useProject();
 
-  // UI state from UIContext (for backwards compatibility)
-  const ui = useUI();
+  // UI state from UIContext - only destructure what's needed internally
   const {
-    activeTab, setActiveTab,
-    isGenerating, setIsGenerating,
-    suggestions, setSuggestions,
-    selectedModel, setSelectedModel,
-    autoAcceptChanges, setAutoAcceptChanges,
-    diffModeEnabled, setDiffModeEnabled,
-    autoCommitEnabled, setAutoCommitEnabled,
-    resetUIState,
-  } = ui;
+    activeTab, setActiveTab,  // For WIP save/restore
+    setSuggestions,           // For openProject
+    autoAcceptChanges,        // For reviewChange
+    resetUIState,             // For resetApp
+  } = useUI();
 
   // Local version history
   const {
@@ -552,22 +533,6 @@ export function AppProvider({ children, defaultFiles }: AppProviderProps) {
     discardChanges,
     revertToCommit,
 
-    // UI state
-    activeTab,
-    setActiveTab,
-    isGenerating,
-    setIsGenerating,
-    suggestions,
-    setSuggestions,
-    selectedModel,
-    setSelectedModel,
-    autoAcceptChanges,
-    setAutoAcceptChanges,
-    diffModeEnabled,
-    setDiffModeEnabled,
-    autoCommitEnabled,
-    setAutoCommitEnabled,
-
     // Diff/Review
     pendingReview,
     reviewChange,
@@ -587,11 +552,6 @@ export function AppProvider({ children, defaultFiles }: AppProviderProps) {
     resetFiles, exportHistory, restoreHistory,
     project, createProject, openProject, initGit, commit, discardChanges, revertToCommit,
     hasUncommittedChanges, localChanges,
-    // UI state from UIContext
-    activeTab, setActiveTab, isGenerating, setIsGenerating,
-    suggestions, setSuggestions, selectedModel, setSelectedModel,
-    autoAcceptChanges, setAutoAcceptChanges, diffModeEnabled, setDiffModeEnabled,
-    autoCommitEnabled, setAutoCommitEnabled,
     pendingReview, reviewChange, confirmChange, cancelReview, resetApp
   ]);
 
@@ -656,20 +616,24 @@ export function useGit() {
   };
 }
 
+/**
+ * @deprecated Use useUI() from UIContext instead for better performance
+ */
 // eslint-disable-next-line react-refresh/only-export-components -- Context hook pattern
 export function useUIState() {
-  const ctx = useAppContext();
+  // Redirect to UIContext for backwards compatibility
+  const ui = useUI();
   return {
-    activeTab: ctx.activeTab,
-    setActiveTab: ctx.setActiveTab,
-    isGenerating: ctx.isGenerating,
-    setIsGenerating: ctx.setIsGenerating,
-    suggestions: ctx.suggestions,
-    setSuggestions: ctx.setSuggestions,
-    selectedModel: ctx.selectedModel,
-    setSelectedModel: ctx.setSelectedModel,
-    autoAcceptChanges: ctx.autoAcceptChanges,
-    setAutoAcceptChanges: ctx.setAutoAcceptChanges,
+    activeTab: ui.activeTab,
+    setActiveTab: ui.setActiveTab,
+    isGenerating: ui.isGenerating,
+    setIsGenerating: ui.setIsGenerating,
+    suggestions: ui.suggestions,
+    setSuggestions: ui.setSuggestions,
+    selectedModel: ui.selectedModel,
+    setSelectedModel: ui.setSelectedModel,
+    autoAcceptChanges: ui.autoAcceptChanges,
+    setAutoAcceptChanges: ui.setAutoAcceptChanges,
   };
 }
 

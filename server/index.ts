@@ -5,6 +5,7 @@ import { gitRouter } from './api/git.js';
 import { githubRouter } from './api/github.js';
 import { settingsRouter } from './api/settings.js';
 import { runnerRouter } from './api/runner.js';
+import { apiLimiter, requestLogger } from './middleware/security.js';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -40,6 +41,14 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json({ limit: '50mb' }));
+
+// Rate limiting for all API endpoints (100 requests per 15 minutes)
+app.use('/api', apiLimiter);
+
+// Request logging (development only)
+if (process.env.NODE_ENV !== 'production') {
+  app.use(requestLogger);
+}
 
 // Health check
 app.get('/api/health', (req, res) => {

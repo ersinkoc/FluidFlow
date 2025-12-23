@@ -8,8 +8,8 @@
  * - Undefined variables with obvious imports
  */
 
-import { FileSystem } from '../types';
-import { COMMON_IMPORTS } from './errorFix/commonImports';
+import { FileSystem } from '../../types';
+import { COMMON_IMPORTS } from './commonImports';
 
 export interface LocalFixResult {
   success: boolean;

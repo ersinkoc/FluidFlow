@@ -8,7 +8,7 @@
 import { getProviderManager } from './ai';
 import { FileSystem } from '../types';
 import { parseMultiFileResponse } from '../utils/cleanCode';
-import { localFixEngine } from './localFixEngine';
+import { localFixEngine } from './errorFix/localFixEngine';
 import { errorAnalyzer, ParsedError } from './errorAnalyzer';
 import { FILE_GENERATION_SCHEMA, supportsAdditionalProperties } from './ai/utils/schemas';
 import { ERROR_FIX_SYSTEM_PROMPT } from '../components/ControlPanel/prompts';

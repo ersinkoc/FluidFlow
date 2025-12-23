@@ -13,7 +13,7 @@ import { useCodeGeneration } from '../../hooks/useCodeGeneration';
 import { getProviderManager, GenerationRequest } from '../../services/ai';
 import { InspectedElement, EditScope } from '../PreviewPanel/ComponentInspector';
 import { useAIHistory } from '../../hooks/useAIHistory';
-import { LazyAIHistoryModal } from '../LazyModals';
+import { LazyAIHistoryModal, LazyCodebaseSyncModal } from '../LazyModals';
 import { TechStackModal } from './TechStackModal';
 import { PromptEngineerModal } from './PromptEngineerModal';
 import { BatchGenerationModal } from './BatchGenerationModal';
@@ -24,7 +24,6 @@ import { addPromptToHistory } from '@/services/promptHistory';
 // Sub-components
 import { ChatPanel } from './ChatPanel';
 import { ChatInput } from './ChatInput';
-import { LazyCodebaseSyncModal } from '../LazyModals';
 import { SettingsPanel } from './SettingsPanel';
 import { ModeToggle } from './ModeToggle';
 import { ProjectPanel } from './ProjectPanel';
@@ -802,9 +801,6 @@ Fix the error in src/App.tsx.`;
               additions: content.split('\n').length,
               deletions: files[path] ? files[path].split('\n').length : 0
             }));
-
-            // Create file list for display
-            const _generatedFileList = Object.keys(generatedFiles);
 
             // Create a message for the batch generation completion
             const batchMessage: ChatMessage = {

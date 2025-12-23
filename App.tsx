@@ -25,6 +25,7 @@ import { DiffModal } from './components/DiffModal';
 import { PromptHistoryModal } from './components/PromptHistoryModal';
 import { useModalManager } from './hooks/useModalManager';
 import { useAppContext } from './contexts/AppContext';
+import { useUI } from './contexts/UIContext';
 import { useAutoCommit } from './hooks/useAutoCommit';
 import { Undo2, Redo2, History, ChevronLeft, ChevronRight, Info } from 'lucide-react';
 import { InspectedElement, EditScope } from './components/PreviewPanel/ComponentInspector';
@@ -46,8 +47,9 @@ import {
 export type { FileSystem } from './types';
 
 export default function App() {
-  // Get all state from context
+  // Get state from contexts
   const ctx = useAppContext();
+  const ui = useUI();
 
   // Centralized modal state management
   const modals = useModalManager();
@@ -65,7 +67,7 @@ export default function App() {
 
   // Auto-commit feature: commits when preview is error-free
   const { isAutoCommitting } = useAutoCommit({
-    enabled: ctx.autoCommitEnabled,
+    enabled: ui.autoCommitEnabled,
     files: ctx.files,
     hasUncommittedChanges: ctx.hasUncommittedChanges,
     previewHasErrors,
@@ -76,8 +78,8 @@ export default function App() {
 
   // Toggle auto-commit
   const handleToggleAutoCommit = useCallback(() => {
-    ctx.setAutoCommitEnabled(!ctx.autoCommitEnabled);
-  }, [ctx]);
+    ui.setAutoCommitEnabled(!ui.autoCommitEnabled);
+  }, [ui]);
 
   // Reset key for ControlPanel re-mount
   const [resetKey, setResetKey] = useState(0);
@@ -92,10 +94,10 @@ export default function App() {
   }, [ctx.activeFile]);
 
   // Track selected model in ref for stale closure handling
-  const selectedModelRef = useRef(ctx.selectedModel);
+  const selectedModelRef = useRef(ui.selectedModel);
   useEffect(() => {
-    selectedModelRef.current = ctx.selectedModel;
-  }, [ctx.selectedModel]);
+    selectedModelRef.current = ui.selectedModel;
+  }, [ui.selectedModel]);
 
   // Handler for inspect edit from PreviewPanel
   const handleInspectEdit = useCallback(async (prompt: string, element: InspectedElement, scope: EditScope) => {
@@ -107,13 +109,13 @@ export default function App() {
   // Handle model/provider change - also clears conversation context
   const handleModelChange = useCallback((newModel: string) => {
     if (newModel !== selectedModelRef.current) {
-      ctx.setSelectedModel(newModel);
+      ui.setSelectedModel(newModel);
       // Clear the main chat context when model changes
       const contextManager = getContextManager();
       contextManager.clearContext('main-chat');
       console.log('[App] Model changed, context cleared:', newModel);
     }
-  }, [ctx]);
+  }, [ui]);
 
   // Load project from URL if present (for shared projects)
   useEffect(() => {
@@ -163,19 +165,19 @@ export default function App() {
           setFiles={ctx.setFiles}
           activeFile={ctx.activeFile}
           setActiveFile={ctx.setActiveFile}
-          setSuggestions={ctx.setSuggestions}
-          isGenerating={ctx.isGenerating}
-          setIsGenerating={ctx.setIsGenerating}
+          setSuggestions={ui.setSuggestions}
+          isGenerating={ui.isGenerating}
+          setIsGenerating={ui.setIsGenerating}
           reviewChange={ctx.reviewChange}
-          selectedModel={ctx.selectedModel}
+          selectedModel={ui.selectedModel}
           onModelChange={handleModelChange}
           onOpenAISettings={() => modals.open('aiSettings')}
           onOpenMegaSettings={() => modals.open('megaSettings')}
           onOpenCodeMap={() => modals.open('codeMap')}
-          autoAcceptChanges={ctx.autoAcceptChanges}
-          onAutoAcceptChangesChange={ctx.setAutoAcceptChanges}
-          diffModeEnabled={ctx.diffModeEnabled}
-          onDiffModeChange={ctx.setDiffModeEnabled}
+          autoAcceptChanges={ui.autoAcceptChanges}
+          onAutoAcceptChangesChange={ui.setAutoAcceptChanges}
+          diffModeEnabled={ui.diffModeEnabled}
+          onDiffModeChange={ui.setDiffModeEnabled}
           // Project props
           currentProject={ctx.currentProject}
           projects={ctx.projects}
@@ -186,9 +188,9 @@ export default function App() {
           // Git status props
           gitStatus={ctx.gitStatus}
           hasUncommittedChanges={ctx.hasUncommittedChanges}
-          onOpenGitTab={() => ctx.setActiveTab('git')}
+          onOpenGitTab={() => ui.setActiveTab('git')}
           // Auto-commit feature
-          autoCommitEnabled={ctx.autoCommitEnabled}
+          autoCommitEnabled={ui.autoCommitEnabled}
           onToggleAutoCommit={handleToggleAutoCommit}
           isAutoCommitting={isAutoCommitting}
           // History Timeline checkpoint
@@ -212,13 +214,13 @@ export default function App() {
           setFiles={ctx.setFiles}
           activeFile={ctx.activeFile}
           setActiveFile={ctx.setActiveFile}
-          suggestions={ctx.suggestions}
-          setSuggestions={ctx.setSuggestions}
-          isGenerating={ctx.isGenerating}
+          suggestions={ui.suggestions}
+          setSuggestions={ui.setSuggestions}
+          isGenerating={ui.isGenerating}
           reviewChange={ctx.reviewChange}
-          selectedModel={ctx.selectedModel}
-          activeTab={ctx.activeTab}
-          setActiveTab={ctx.setActiveTab}
+          selectedModel={ui.selectedModel}
+          activeTab={ui.activeTab}
+          setActiveTab={ui.setActiveTab}
           onInspectEdit={handleInspectEdit}
           // Git props
           projectId={ctx.currentProject?.id}
@@ -272,7 +274,7 @@ export default function App() {
           if (ctx.activeFile && ctx.files[ctx.activeFile]) {
             const newContent = ctx.files[ctx.activeFile] + '\n\n' + code;
             ctx.setFiles({ ...ctx.files, [ctx.activeFile]: newContent });
-            ctx.setActiveTab('code');
+            ui.setActiveTab('code');
           }
         }}
       />
@@ -293,7 +295,7 @@ export default function App() {
         files={ctx.files}
         onFileSelect={(file: string) => {
           ctx.setActiveFile(file);
-          ctx.setActiveTab('code');
+          ui.setActiveTab('code');
         }}
       />
 

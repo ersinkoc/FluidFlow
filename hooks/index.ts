@@ -71,3 +71,19 @@ export type {
 // Other hooks
 export { useVersionHistory } from './useVersionHistory';
 export { useDebugStore } from './useDebugStore';
+
+// Speech recognition hook
+export { useSpeechRecognition } from './useSpeechRecognition';
+
+// Preview AI hook
+export { usePreviewAI } from './usePreviewAI';
+
+// Export hook
+export { useExport } from './useExport';
+
+// Log stream hook
+export { useLogStream } from './useLogStream';
+export type { LogEntry } from './useLogStream';
+
+// Tech stack hook
+export { useTechStack } from './useTechStack';

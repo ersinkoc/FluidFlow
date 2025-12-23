@@ -184,5 +184,3 @@ export function useLogStream({
     clearLogs
   };
 }
-
-export default useLogStream;

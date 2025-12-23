@@ -146,18 +146,27 @@ export const PreviewPanel = memo(function PreviewPanel({
       return;
     }
 
+    let mounted = true;
+
     const checkStatus = async () => {
       try {
         const status = await runnerApi.status(projectId);
-        setIsRunnerActive(status.running || status.status === 'installing' || status.status === 'starting');
+        if (mounted) {
+          setIsRunnerActive(status.running || status.status === 'installing' || status.status === 'starting');
+        }
       } catch {
-        setIsRunnerActive(false);
+        if (mounted) {
+          setIsRunnerActive(false);
+        }
       }
     };
 
     checkStatus();
     const interval = setInterval(checkStatus, 5000);
-    return () => clearInterval(interval);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
   }, [projectId]);
 
   // App code reference
