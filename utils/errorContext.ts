@@ -6,7 +6,7 @@
  */
 
 import { FileSystem, LogEntry } from '@/types';
-import { classifyError, ErrorCategory, ErrorClassification } from '@/services/autoFixService';
+import { errorAnalyzer, ErrorCategory, ParsedError } from '@/services/errorFix';
 
 /**
  * Parse stack trace to identify error location
@@ -183,6 +183,7 @@ const CATEGORY_HINTS: Record<ErrorCategory, string> = {
 - Ensure Promise chains are properly handled
 - Use try-catch for async error handling`,
   transient: '',
+  network: '',
   unknown: '',
 };
 
@@ -201,11 +202,11 @@ export interface AutoFixPromptContext {
 export function buildAutoFixPrompt(context: AutoFixPromptContext): string {
   const { errorMessage, targetFile, targetFileContent, files, techStackContext, logs } = context;
 
-  const errorClassification = classifyError(errorMessage);
+  const parsed = errorAnalyzer.analyze(errorMessage);
   const relatedFiles = getRelatedFiles(errorMessage, targetFileContent, files);
   const recentLogsContext = getRecentLogsContext(logs);
   const stackInfo = parseStackTrace(errorMessage);
-  const categoryHint = CATEGORY_HINTS[errorClassification.category] || '';
+  const categoryHint = CATEGORY_HINTS[parsed.category] || '';
 
   // Build related files section with smart truncation
   let relatedFilesSection = '';
@@ -222,10 +223,10 @@ export function buildAutoFixPrompt(context: AutoFixPromptContext): string {
 
   // Build suggested fix section if available
   let suggestedFixSection = '';
-  if (errorClassification.suggestedFix) {
-    suggestedFixSection = `\n## Suggested Fix\n${errorClassification.suggestedFix}`;
-    if (errorClassification.affectedIdentifier) {
-      suggestedFixSection += ` (identifier: \`${errorClassification.affectedIdentifier}\`)`;
+  if (parsed.suggestedFix) {
+    suggestedFixSection = `\n## Suggested Fix\n${parsed.suggestedFix}`;
+    if (parsed.identifier) {
+      suggestedFixSection += ` (identifier: \`${parsed.identifier}\`)`;
     }
     suggestedFixSection += '\n';
   }
@@ -245,8 +246,8 @@ ${techStackContext}
 
 ## Error Information
 - **Error Message**: ${errorMessage}
-- **Error Category**: ${errorClassification.category}
-- **Priority**: ${errorClassification.priority}/5
+- **Error Category**: ${parsed.category}
+- **Priority**: ${parsed.priority}/5
 - **Location**: ${errorLocation}
 ${suggestedFixSection}
 ${recentLogsContext}
@@ -288,12 +289,12 @@ Return ONLY the complete fixed ${targetFile} code.
 export function buildMinimalFixPrompt(
   errorMessage: string,
   code: string,
-  classification: ErrorClassification
+  parsed: ParsedError
 ): string {
-  return `Fix this ${classification.category} error in React/TypeScript:
+  return `Fix this ${parsed.category} error in React/TypeScript:
 
 Error: ${errorMessage}
-${classification.suggestedFix ? `Hint: ${classification.suggestedFix}` : ''}
+${parsed.suggestedFix ? `Hint: ${parsed.suggestedFix}` : ''}
 
 Code:
 \`\`\`tsx

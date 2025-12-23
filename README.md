@@ -31,7 +31,8 @@ Transform wireframes and sketches into functional React applications using AI.
 | **Google Gemini** | Gemini 3 Flash, Gemini 3 Pro Preview, Gemini 2.5 Flash, Gemini 2.5 Pro |
 | **OpenAI** | GPT-5.1 Codex, GPT-5.1, GPT-4o, GPT-4o Mini |
 | **Anthropic** | Claude 4.5 Sonnet, Claude 4.5 Opus |
-| **ZAI (GLM)** | GLM-4.6, GLM-4.5, GLM-4.5-air [Coding Plans](https://z.ai/subscribe?ic=JQZ7TPPRA6) |
+| **MiniMax** | MiniMax M2.1 |
+| **ZAI (GLM)** | GLM-4.7, GLM-4.6, GLM-4.5-air [Coding Plans](https://z.ai/subscribe?ic=JQZ7TPPRA6) |
 | **OpenRouter** | Access to 100+ models |
 | **Ollama** | Local LLMs (Llama, Mistral, etc.) |
 | **LMStudio** | Local LLM inference |
@@ -114,6 +115,7 @@ OPENAI_API_KEY=your_openai_api_key
 ANTHROPIC_API_KEY=your_anthropic_api_key
 OPENROUTER_API_KEY=your_openrouter_api_key
 ZAI_API_KEY=your_zai_api_key
+MINIMAX_API_KEY=your_minimax_api_key
 
 # Backend API (optional)
 VITE_API_URL=http://localhost:3200/api
@@ -182,74 +184,16 @@ Configure your preferred AI provider in the Settings modal (gear icon). Each pro
 
 ```
 fluidflow/
-├── server/                    # Backend API (Express.js)
-│   ├── index.ts               # Main server with CORS
-│   └── api/
-│       ├── projects.ts        # Project CRUD operations
-│       ├── git.ts             # Git operations
-│       ├── github.ts          # GitHub integration
-│       ├── settings.ts        # Settings persistence
-│       └── runner.ts          # Project execution server
-│
-├── components/
-│   ├── ControlPanel/          # Left sidebar
-│   │   ├── index.tsx          # Main orchestrator + AI calls
-│   │   ├── ChatPanel.tsx      # Message display
-│   │   ├── ChatInput.tsx      # Input with attachments
-│   │   ├── SettingsPanel.tsx  # Model & mode settings
-│   │   ├── ModeToggle.tsx     # Engineer/Consultant toggle
-│   │   ├── ProjectPanel.tsx   # Project management UI
-│   │   └── PromptImproverModal.tsx  # Interactive prompt enhancement
-│   │
-│   ├── PreviewPanel/          # Right panel
-│   │   ├── index.tsx          # Preview + AI features
-│   │   ├── CodeEditor.tsx     # Monaco editor
-│   │   ├── ConsolePanel.tsx   # DevTools console
-│   │   ├── FileExplorer.tsx   # Virtual file tree
-│   │   ├── DebugPanel.tsx     # API call inspector
-│   │   ├── GitPanel.tsx       # Git integration UI
-│   │   ├── RunnerPanel.tsx    # Project execution
-│   │   └── ComponentInspector.tsx  # Element inspection
-│   │
-│   ├── ContextIndicator.tsx   # Token usage & context management
-│   └── ...                    # Other modals and utilities
-│
-├── hooks/
-│   ├── useVersionHistory.ts   # Undo/redo state
-│   ├── useDebugStore.ts       # Debug logging state
-│   ├── useProject.ts          # Project & git management
-│   ├── useAIHistory.ts        # AI interaction history
-│   ├── useKeyboardShortcuts.ts
-│   └── useDebounce.ts
-│
-├── services/
-│   ├── ai/                    # Multi-provider AI abstraction
-│   │   ├── index.ts           # Provider manager
-│   │   ├── types.ts           # Provider interfaces
-│   │   └── providers/         # Individual provider implementations
-│   ├── conversationContext.ts # Context management & compaction
-│   ├── fluidflowConfig.ts     # App configuration & logs
-│   └── projectApi.ts          # Backend API client
-│
-├── utils/
-│   ├── cleanCode.ts           # AI response cleaning
-│   ├── codemap.ts             # Project structure analysis
-│   ├── validation.ts          # Security validation
-│   └── safeJson.ts            # Safe JSON parsing
-│
-├── types/
-│   └── index.ts               # TypeScript definitions
-│
-├── tests/                     # Test files (75 tests)
-│   ├── setup.ts               # Test configuration
-│   ├── utils/                 # Utility tests
-│   ├── security/              # Security tests
-│   ├── integration/           # API integration tests
-│   └── services/              # Service tests
-│
-├── projects/                  # Local project storage (auto-generated)
-├── App.tsx                    # Main app + diff modal
-└── index.tsx                  # Entry point
+├── server/           # Express.js backend API
+├── components/       # React components (ControlPanel, PreviewPanel, GitPanel, etc.)
+├── contexts/         # React context providers (AppContext)
+├── hooks/            # Custom hooks (useProject, useVersionHistory, etc.)
+├── services/         # Business logic (AI providers, context management)
+├── utils/            # Utilities (validation, parsing, security)
+├── types/            # TypeScript definitions
+├── tests/            # Vitest test suites
+├── App.tsx           # Main application
+└── index.tsx         # Entry point
 ```
 
 ### Data Flow
@@ -318,10 +262,11 @@ When context exceeds limits:
 
 | Model | Context Window |
 |-------|----------------|
-| Gemini 2.5 | 1,000,000 tokens |
-| GPT-4o | 128,000 tokens |
+| Gemini 3 | 1,000,000 tokens |
+| GPT-5.1 | 256,000 tokens |
 | Claude 4.5 | 200,000 tokens |
-| GLM-4 | 128,000 tokens |
+| GLM-4.7 | 200,000 tokens |
+| MiniMax M2.1 | 200,000 tokens |
 
 ---
 
@@ -366,15 +311,10 @@ Monitor all AI API interactions in real-time.
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl/Cmd + K` | Open command palette |
-| `Ctrl/Cmd + O` | Open project manager |
 | `Ctrl/Cmd + Z` | Undo |
 | `Ctrl/Cmd + Y` | Redo |
-| `Ctrl/Cmd + S` | Save to server |
-| `Ctrl/Cmd + Shift + G` | Toggle Git tab |
 | `Ctrl/Cmd + Shift + H` | Toggle History panel |
-| `Ctrl/Cmd + 1` | Switch to Preview |
-| `Ctrl/Cmd + 2` | Switch to Code |
+| `Escape` | Close modals |
 
 ---
 
@@ -385,7 +325,7 @@ Monitor all AI API interactions in real-time.
 | Framework | React 19 |
 | Language | TypeScript 5.9 |
 | Build Tool | Vite 7 |
-| AI | Multi-provider (Gemini, OpenAI, Claude, GLM, Ollama, OpenRouter) |
+| AI | Multi-provider (Gemini, OpenAI, Claude, GLM, MiniMax, Ollama, OpenRouter) |
 | Styling | Tailwind CSS 4 |
 | Icons | Lucide React |
 | Editor | Monaco Editor |
@@ -440,7 +380,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
 
-- [Google Gemini](https://ai.google.dev/), [OpenAI](https://openai.com/), [Anthropic](https://anthropic.com/), [Z.AI](https://z.ai/) for AI capabilities
+- [Google Gemini](https://ai.google.dev/), [OpenAI](https://openai.com/), [Anthropic](https://anthropic.com/), [MiniMax](https://www.minimax.io/), [Z.AI](https://z.ai/) for AI capabilities
 - [Tailwind CSS](https://tailwindcss.com/) for styling
 - [Monaco Editor](https://microsoft.github.io/monaco-editor/) for code editing
 - [Lucide](https://lucide.dev/) for icons

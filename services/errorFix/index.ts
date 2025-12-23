@@ -1,104 +1,164 @@
 /**
  * Error Fix Module
  *
- * Centralized exports for the error fixing system.
- * Import from this module for all error-related functionality.
+ * Unified exports for the error fixing system.
  *
- * ## Architecture Overview
- *
- * The error fix system has 3 main layers:
- *
- * 1. **Analysis Layer** (errorAnalyzer)
- *    - Parses error messages and stack traces
- *    - Extracts file, line, identifier info
- *    - Returns ParsedError with fix suggestions
- *
- * 2. **Fix Engine Layer** (ErrorFixEngine)
- *    - Multi-strategy fix pipeline
- *    - Tries: local-simple → local-multifile → ai-quick → ai-full
- *    - Used by useAutoFix hook
- *
- * 3. **Agent Layer** (errorFixAgent)
- *    - Stateful orchestration with logging
- *    - Used by ErrorFixPanel UI component
- *    - Provides progress callbacks and state management
- *
- * ## Recommended Usage
- *
- * For hooks/services:
- * ```ts
- * import { ErrorFixEngine, errorAnalyzer, classifyError } from '@/services/errorFix';
- * ```
- *
- * For UI components:
- * ```ts
- * import { errorFixAgent, AgentState, AgentLogEntry } from '@/services/errorFix';
- * ```
- *
- * For local pattern-based fixes:
- * ```ts
- * import { localFixEngine, COMMON_IMPORTS } from '@/services/errorFix';
- * ```
+ * Architecture:
+ * 1. analyzer.ts    - Error parsing and classification
+ * 2. localFixes.ts  - Pattern-based fixes (no AI)
+ * 3. fixEngine.ts   - Multi-strategy fix pipeline
+ * 4. fixAgent.ts    - Stateful UI agent
+ * 5. validation.ts  - Code validation
+ * 6. state.ts       - Fix history and deduplication
+ * 7. analytics.ts   - Success rate tracking
  */
 
 // ============================================================================
-// Local Fix Engine (Pattern-based fixes)
+// Types
 // ============================================================================
-export { localFixEngine, type LocalFixResult } from './localFixEngine';
-export { COMMON_IMPORTS, type ImportInfo } from './commonImports';
+export type {
+  ErrorType,
+  ErrorCategory,
+  ParsedError,
+  FixStrategy,
+  LocalFixType,
+  LocalFixResult,
+  FixResult,
+  FixEngineOptions,
+  AgentState,
+  AgentLogEntry,
+  AgentConfig,
+  VerificationResult,
+  VerificationIssue,
+  VerificationOptions,
+  FixAttempt,
+  FixAnalytics,
+  ImportInfo,
+  CodeIssue,
+} from './types';
 
 // ============================================================================
-// Error Analysis (Parsing and classification)
+// Error Analyzer
 // ============================================================================
-export {
-  errorAnalyzer,
-  type ParsedError,
-  type ErrorType,
-  type ErrorCategory,
-} from '../errorAnalyzer';
-
-// Re-export classification from autoFixService (for backward compatibility)
-export {
-  classifyError,
-  canAutoFix,
-  wasRecentlyFixed,
-  recordFixAttempt,
-  getFixAnalytics,
-  type ErrorClassification,
-  type AutoFixResult,
-  type FixAttempt,
-  type FixAnalytics,
-} from '../autoFixService';
+export { errorAnalyzer, ErrorAnalyzer } from './analyzer';
 
 // ============================================================================
-// Fix Engine (Multi-strategy pipeline)
+// Local Fixes
 // ============================================================================
 export {
+  tryLocalFix,
+  tryFixBareSpecifierMultiFile,
+  COMMON_IMPORTS,
+} from './localFixes';
+
+// Legacy export for localFixEngine compatibility
+export { tryLocalFix as localFixEngine } from './localFixes';
+
+// ============================================================================
+// Fix Engine
+// ============================================================================
+export {
+  FixEngine,
   ErrorFixEngine,
-  type FixResult,
-  type FixStrategy,
-  type FixEngineOptions,
-} from '../errorFixEngine';
+  quickFix,
+  fixWithProgress,
+} from './fixEngine';
 
 // ============================================================================
-// Fix Agent (Stateful orchestration with UI callbacks)
+// Fix Agent
 // ============================================================================
 export {
-  errorFixAgent,
-  type AgentState,
-  type AgentLogEntry,
-  type AgentConfig,
-} from '../errorFixAgent';
+  fixAgent,
+  FixAgent,
+  ErrorFixAgent,
+} from './fixAgent';
+
+// Legacy export name
+export { fixAgent as errorFixAgent } from './fixAgent';
 
 // ============================================================================
-// Fix Verification
+// Validation
 // ============================================================================
 export {
-  verifyFix,
   isCodeValid,
-  getCodeIssues,
+  validateSyntax,
+  validateJSX,
+  verifyFix,
   doesFixResolveError,
-  type VerificationResult,
-  type VerificationOptions,
-  type VerificationIssue,
-} from '../fixVerification';
+} from './validation';
+
+// ============================================================================
+// State Management
+// ============================================================================
+export {
+  fixState,
+  FixState,
+  getErrorSignature,
+} from './state';
+
+// ============================================================================
+// Analytics
+// ============================================================================
+export {
+  fixAnalytics,
+  FixAnalyticsTracker,
+} from './analytics';
+
+// ============================================================================
+// Backward Compatibility Aliases
+// ============================================================================
+
+// Re-export analyzer functions with old names
+export { errorAnalyzer as classifyError } from './analyzer';
+
+// Import singletons for backward compatibility functions
+import { errorAnalyzer as _errorAnalyzer } from './analyzer';
+import { fixState as _fixState } from './state';
+import { fixAnalytics as _fixAnalytics } from './analytics';
+import type { ErrorCategory, LocalFixType, FixStrategy } from './types';
+
+// Export helper functions with old signatures
+export function canAutoFix(errorMessage: string): boolean {
+  const parsed = _errorAnalyzer.analyze(errorMessage);
+  return parsed.isAutoFixable;
+}
+
+export function wasRecentlyFixed(errorMessage: string): boolean {
+  return _fixState.wasRecentlyFixed(errorMessage);
+}
+
+export function recordFixAttempt(
+  errorMessage: string,
+  category: string,
+  fixType: string,
+  success: boolean,
+  timeMs: number
+): void {
+  _fixState.recordAttempt(errorMessage, success ? fixType : null, success);
+  _fixAnalytics.record(
+    errorMessage,
+    category as ErrorCategory,
+    fixType as LocalFixType | FixStrategy,
+    success,
+    timeMs
+  );
+}
+
+export function getFixAnalytics() {
+  return _fixAnalytics.getAnalytics();
+}
+
+// Legacy type exports
+export type ErrorClassification = {
+  category: string;
+  isFixable: boolean;
+  priority: number;
+  suggestedFix?: string;
+};
+
+export type AutoFixResult = {
+  fixed: boolean;
+  newCode?: string;
+  description?: string;
+  multiFileChanges?: Record<string, string>;
+};

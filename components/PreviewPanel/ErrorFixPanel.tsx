@@ -27,7 +27,7 @@ import {
   FileCode,
   Undo2
 } from 'lucide-react';
-import { AgentState, AgentLogEntry, errorFixAgent, AgentConfig } from '../../services/errorFixAgent';
+import { AgentState, AgentLogEntry, fixAgent, AgentConfig } from '../../services/errorFix';
 import { FileSystem } from '../../types';
 
 interface ErrorFixPanelProps {
@@ -90,11 +90,11 @@ export const ErrorFixPanel: React.FC<ErrorFixPanelProps> = ({
   // We intentionally only run on mount to restore state, callbacks are passed by ref
   useEffect(() => {
     // Check if agent has stored state to restore
-    const agentIsRunning = errorFixAgent.getIsRunning();
-    const storedLogs = errorFixAgent.getLogs();
-    const storedState = errorFixAgent.getState();
-    const storedCompletionMessage = errorFixAgent.getCompletionMessage();
-    const storedMaxAttempts = errorFixAgent.getMaxAttempts();
+    const agentIsRunning = fixAgent.getIsRunning();
+    const storedLogs = fixAgent.getLogs();
+    const storedState = fixAgent.getState();
+    const storedCompletionMessage = fixAgent.getCompletionMessage();
+    const storedMaxAttempts = fixAgent.getMaxAttempts();
 
     // Restore state if there's something to restore
     if (storedLogs.length > 0 || storedState !== 'idle') {
@@ -106,7 +106,7 @@ export const ErrorFixPanel: React.FC<ErrorFixPanelProps> = ({
 
       // Reconnect callbacks if agent is still running
       if (agentIsRunning) {
-        errorFixAgent.reconnect({
+        fixAgent.reconnect({
           onStateChange: setAgentState,
           onLog: (entry) => setLogs(prev => [...prev, entry]),
           onFileUpdate,
@@ -150,7 +150,7 @@ export const ErrorFixPanel: React.FC<ErrorFixPanelProps> = ({
       }
     };
 
-    errorFixAgent.start(
+    fixAgent.start(
       currentError,
       currentErrorStack,
       targetFile,
@@ -160,7 +160,7 @@ export const ErrorFixPanel: React.FC<ErrorFixPanelProps> = ({
   };
 
   const handleStop = () => {
-    errorFixAgent.stop();
+    fixAgent.stop();
     setIsRunning(false);
   };
 
