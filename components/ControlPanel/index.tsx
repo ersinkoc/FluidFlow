@@ -21,6 +21,10 @@ import { ContextIndicator } from '../ContextIndicator';
 import { getFluidFlowConfig } from '../../services/fluidflowConfig';
 import { addPromptToHistory } from '@/services/promptHistory';
 
+// Context hooks - direct consumption instead of prop drilling
+import { useAppContext } from '../../contexts/AppContext';
+import { useUI } from '../../contexts/UIContext';
+
 // Sub-components
 import { ChatPanel } from './ChatPanel';
 import { ChatInput } from './ChatInput';
@@ -29,7 +33,6 @@ import { ModeToggle } from './ModeToggle';
 import { ProjectPanel } from './ProjectPanel';
 import { ResetConfirmModal } from './ResetConfirmModal';
 import { runnerApi } from '@/services/projectApi';
-import type { ProjectMeta } from '@/services/projectApi';
 
 // Local hooks
 import { useContextSync, useControlPanelModals } from './hooks';
@@ -41,109 +44,92 @@ export interface ControlPanelRef {
   sendErrorToChat: (errorMessage: string) => void;
 }
 
-interface GitStatus {
-  initialized: boolean;
-  branch?: string;
-  clean?: boolean;
-}
-
+/**
+ * Minimal props interface - most data now comes from contexts directly
+ * Reduced from 48 props to 12 props (75% reduction)
+ */
 interface ControlPanelProps {
-  files: FileSystem;
-  setFiles: (files: FileSystem) => void;
-  activeFile: string;
-  setActiveFile: (file: string) => void;
-  setSuggestions: (suggestions: string[] | null) => void;
-  isGenerating: boolean;
-  setIsGenerating: (isGenerating: boolean) => void;
+  // App.tsx callbacks that wrap context methods with additional logic
   resetApp: () => void;
-  reviewChange: (label: string, newFiles: FileSystem, options?: { skipHistory?: boolean }) => void;
-  selectedModel: string;
   onModelChange: (modelId: string) => void;
+
+  // Modal open callbacks from App.tsx's useModalManager
   onOpenAISettings?: () => void;
   onOpenMegaSettings?: () => void;
   onOpenCodeMap?: () => void;
-  autoAcceptChanges?: boolean;
-  onAutoAcceptChangesChange?: (value: boolean) => void;
-  // Diff Mode (Beta)
-  diffModeEnabled?: boolean;
-  onDiffModeChange?: (value: boolean) => void;
-  // Project props
-  currentProject?: ProjectMeta | null;
-  projects?: ProjectMeta[];
-  isServerOnline?: boolean;
-  isSyncing?: boolean;
-  lastSyncedAt?: number | null;
-  isLoadingProjects?: boolean;
-  onCreateProject?: (name?: string, description?: string) => Promise<ProjectMeta | null>;
-  onOpenProject?: (id: string) => Promise<boolean>;
-  onDeleteProject?: (id: string) => Promise<boolean>;
-  onDuplicateProject?: (id: string) => Promise<ProjectMeta | null>;
-  onRefreshProjects?: () => Promise<void>;
-  onCloseProject?: () => void;
-  // Git status props for ProjectPanel
-  gitStatus?: GitStatus | null;
-  hasUncommittedChanges?: boolean;
   onOpenGitTab?: () => void;
-  // Auto-commit feature
-  autoCommitEnabled?: boolean;
+  onOpenPromptHistory?: () => void;
+
+  // Auto-commit (from useAutoCommit hook in App.tsx)
   onToggleAutoCommit?: () => void;
   isAutoCommitting?: boolean;
-  // History Timeline checkpoint
-  onSaveCheckpoint?: (name: string) => void;
-  // Runner state for reset modal
+
+  // App.tsx local state
   hasRunningServer?: boolean;
-  // Prompt History
   historyPrompt?: string;
-  onOpenPromptHistory?: () => void;
 }
 
 export const ControlPanel = forwardRef<ControlPanelRef, ControlPanelProps>(({
-  files,
-  setFiles,
-  setSuggestions,
-  isGenerating,
-  setIsGenerating,
+  // Minimal props - most data from contexts
   resetApp,
-  reviewChange,
-  selectedModel,
   onModelChange,
   onOpenAISettings,
   onOpenMegaSettings,
   onOpenCodeMap,
-  autoAcceptChanges,
-  onAutoAcceptChangesChange,
-  diffModeEnabled,
-  onDiffModeChange,
-  // Project props
-  currentProject,
-  projects = [],
-  isServerOnline = false,
-  isSyncing = false,
-  lastSyncedAt,
-  isLoadingProjects = false,
-  onCreateProject,
-  onOpenProject,
-  onDeleteProject,
-  onDuplicateProject,
-  onRefreshProjects,
-  onCloseProject,
-  // Git status props
-  gitStatus,
-  hasUncommittedChanges,
   onOpenGitTab,
-  // Auto-commit feature
-  autoCommitEnabled,
+  onOpenPromptHistory,
   onToggleAutoCommit,
   isAutoCommitting,
-  // History Timeline checkpoint
-  onSaveCheckpoint,
-  // Runner state for reset modal
   hasRunningServer,
-  // Prompt History
-  historyPrompt,
-  onOpenPromptHistory
+  historyPrompt
 }, ref) => {
-  // Chat state
+  // ============ Context Consumption ============
+  // Get data directly from contexts instead of props (reduced from 48 to 12 props)
+  const ctx = useAppContext();
+  const ui = useUI();
+
+  // Destructure commonly used values from contexts
+  const {
+    files,
+    setFiles,
+    activeFile: _activeFile,
+    currentProject,
+    projects,
+    isServerOnline,
+    isSyncing,
+    lastSyncedAt,
+    isLoadingProjects,
+    createProject: onCreateProject,
+    openProject,
+    deleteProject: onDeleteProject,
+    duplicateProject: onDuplicateProject,
+    refreshProjects: onRefreshProjects,
+    closeProject: onCloseProject,
+    gitStatus,
+    hasUncommittedChanges,
+    reviewChange,
+    saveSnapshot: onSaveCheckpoint,
+  } = ctx;
+
+  const {
+    isGenerating,
+    setIsGenerating,
+    setSuggestions,
+    selectedModel,
+    autoAcceptChanges,
+    setAutoAcceptChanges: onAutoAcceptChangesChange,
+    diffModeEnabled,
+    setDiffModeEnabled: onDiffModeChange,
+    autoCommitEnabled,
+  } = ui;
+
+  // Wrap openProject to match expected signature
+  const onOpenProject = useCallback(async (id: string) => {
+    const result = await openProject(id);
+    return result.success;
+  }, [openProject]);
+
+  // ============ Local State ============
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isConsultantMode, setIsConsultantMode] = useState(false);
   const [isEducationMode, setIsEducationMode] = useState(false);

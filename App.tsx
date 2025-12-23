@@ -157,57 +157,25 @@ export default function App() {
       <div className="absolute top-[40%] left-[40%] w-[30%] h-[30%] bg-purple-600/5 rounded-full blur-[100px] pointer-events-none" />
 
       <main className="flex flex-col md:flex-row flex-1 min-h-0 w-full p-4 gap-4 z-10 overflow-hidden">
+        {/* ControlPanel - now consumes contexts directly, minimal props */}
         <ControlPanel
           ref={controlPanelRef}
           key={resetKey}
+          // App.tsx callbacks
           resetApp={handleResetApp}
-          files={ctx.files}
-          setFiles={ctx.setFiles}
-          activeFile={ctx.activeFile}
-          setActiveFile={ctx.setActiveFile}
-          setSuggestions={ui.setSuggestions}
-          isGenerating={ui.isGenerating}
-          setIsGenerating={ui.setIsGenerating}
-          reviewChange={ctx.reviewChange}
-          selectedModel={ui.selectedModel}
           onModelChange={handleModelChange}
+          // Modal open handlers
           onOpenAISettings={() => modals.open('aiSettings')}
           onOpenMegaSettings={() => modals.open('megaSettings')}
           onOpenCodeMap={() => modals.open('codeMap')}
-          autoAcceptChanges={ui.autoAcceptChanges}
-          onAutoAcceptChangesChange={ui.setAutoAcceptChanges}
-          diffModeEnabled={ui.diffModeEnabled}
-          onDiffModeChange={ui.setDiffModeEnabled}
-          // Project props
-          currentProject={ctx.currentProject}
-          projects={ctx.projects}
-          isServerOnline={ctx.isServerOnline}
-          isSyncing={ctx.isSyncing}
-          lastSyncedAt={ctx.lastSyncedAt}
-          isLoadingProjects={ctx.isLoadingProjects}
-          // Git status props
-          gitStatus={ctx.gitStatus}
-          hasUncommittedChanges={ctx.hasUncommittedChanges}
           onOpenGitTab={() => ui.setActiveTab('git')}
-          // Auto-commit feature
-          autoCommitEnabled={ui.autoCommitEnabled}
+          onOpenPromptHistory={() => setShowPromptHistory(true)}
+          // Auto-commit
           onToggleAutoCommit={handleToggleAutoCommit}
           isAutoCommitting={isAutoCommitting}
-          // History Timeline checkpoint
-          onSaveCheckpoint={ctx.saveSnapshot}
-          onCreateProject={ctx.createProject}
-          onOpenProject={async (id) => {
-            const result = await ctx.openProject(id);
-            return result.success;
-          }}
-          onDeleteProject={ctx.deleteProject}
-          onDuplicateProject={ctx.duplicateProject}
-          onRefreshProjects={ctx.refreshProjects}
-          onCloseProject={ctx.closeProject}
+          // Local state
           hasRunningServer={hasRunningServer}
-          // Prompt History
           historyPrompt={historyPrompt}
-          onOpenPromptHistory={() => setShowPromptHistory(true)}
         />
         <PreviewPanel
           files={ctx.files}
