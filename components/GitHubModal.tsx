@@ -99,6 +99,7 @@ export const GitHubModal: React.FC<GitHubModalProps> = ({
   // Push options
   const [forcePush, setForcePush] = useState(false);
   const [pushMode, setPushMode] = useState<'new' | 'existing'>(hasExistingRemote ? 'existing' : 'new');
+  const [includeContext, setIncludeContext] = useState(false); // Default false for safety
 
   // Initialize new repo name from project name
   useEffect(() => {
@@ -207,7 +208,7 @@ export const GitHubModal: React.FC<GitHubModalProps> = ({
       await githubApi.setRemote(projectId, repo.cloneUrl, 'origin');
 
       // Push with token for authentication
-      await githubApi.push(projectId, { force: forcePush, token });
+      await githubApi.push(projectId, { force: forcePush, token, includeContext });
 
       setResult({
         success: true,
@@ -248,7 +249,7 @@ export const GitHubModal: React.FC<GitHubModalProps> = ({
       });
 
       // Push to the new repo with token for authentication
-      await githubApi.push(projectId, { force: false, token });
+      await githubApi.push(projectId, { force: false, token, includeContext });
 
       setResult({
         success: true,
@@ -281,7 +282,7 @@ export const GitHubModal: React.FC<GitHubModalProps> = ({
     setError(null);
 
     try {
-      await githubApi.push(projectId, { force: forcePush, token });
+      await githubApi.push(projectId, { force: forcePush, token, includeContext });
 
       setResult({
         success: true,
@@ -520,6 +521,22 @@ export const GitHubModal: React.FC<GitHubModalProps> = ({
                       </div>
                     </label>
                   )}
+
+                  {/* Include Context Option */}
+                  <label className="mt-3 flex items-center gap-3 p-3 bg-slate-800/50 border border-slate-700 rounded-lg cursor-pointer hover:bg-slate-800 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={includeContext}
+                      onChange={(e) => setIncludeContext(e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500/50"
+                    />
+                    <div>
+                      <span className="text-sm text-slate-300 font-medium">Include Conversation History</span>
+                      <p className="text-[10px] text-slate-500">
+                        Include AI chat history in .fluidflow/ folder. Useful for backup/restore.
+                      </p>
+                    </div>
+                  </label>
                 </div>
               )}
 
@@ -577,6 +594,22 @@ export const GitHubModal: React.FC<GitHubModalProps> = ({
                       <span className="text-sm font-medium">Public</span>
                     </button>
                   </div>
+
+                  {/* Include Context Option */}
+                  <label className="flex items-center gap-3 p-3 bg-slate-800/50 border border-slate-700 rounded-lg cursor-pointer hover:bg-slate-800 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={includeContext}
+                      onChange={(e) => setIncludeContext(e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500/50"
+                    />
+                    <div>
+                      <span className="text-sm text-slate-300 font-medium">Include Conversation History</span>
+                      <p className="text-[10px] text-slate-500">
+                        Include AI chat history in .fluidflow/ folder. {!isPrivate && <span className="text-amber-400">⚠ Public repo!</span>}
+                      </p>
+                    </div>
+                  </label>
 
                   <button
                     onClick={handleCreateAndPush}

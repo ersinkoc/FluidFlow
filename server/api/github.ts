@@ -293,10 +293,11 @@ router.post('/:id/backup-push', rateLimitMiddleware, async (req, res) => {
 // Push to remote (GH-002 fix: rate limited)
 router.post('/:id/push', rateLimitMiddleware, async (req, res) => {
   const { id } = req.params;
-  const { remote = 'origin', branch, force = false, setUpstream = true, token } = req.body;
+  const { remote = 'origin', branch, force = false, setUpstream = true, token, includeContext = false } = req.body;
+  const projectDir = getProjectPath(id);
   const filesDir = getFilesDir(id);
 
-  console.log(`[Push] Project: ${id}, Remote: ${remote}, Force: ${force}, HasToken: ${!!token}`);
+  console.log(`[Push] Project: ${id}, Remote: ${remote}, Force: ${force}, HasToken: ${!!token}, IncludeContext: ${includeContext}`);
 
   if (!existsSync(filesDir)) {
     console.log(`[Push] Project not found: ${filesDir}`);
@@ -312,6 +313,40 @@ router.post('/:id/push', rateLimitMiddleware, async (req, res) => {
   let originalRemoteUrl: string | null = null;
 
   try {
+    // === Sync metadata files to .fluidflow/ for portability ===
+    const fluidflowDir = path.join(filesDir, '.fluidflow');
+    try {
+      // Create .fluidflow directory if it doesn't exist
+      if (!existsSync(fluidflowDir)) {
+        await fs.mkdir(fluidflowDir, { recursive: true });
+      }
+
+      // Copy project.json and context.json from project root
+      const projectJsonPath = path.join(projectDir, 'project.json');
+      const contextJsonPath = path.join(projectDir, 'context.json');
+
+      if (existsSync(projectJsonPath)) {
+        await fs.copyFile(projectJsonPath, path.join(fluidflowDir, 'project.json'));
+        console.log(`[Push] Synced project.json to .fluidflow/`);
+      }
+      // Only include context.json if explicitly requested (for privacy)
+      if (includeContext && existsSync(contextJsonPath)) {
+        await fs.copyFile(contextJsonPath, path.join(fluidflowDir, 'context.json'));
+        console.log(`[Push] Synced context.json to .fluidflow/`);
+      }
+
+      // Stage metadata changes
+      await git.add('.fluidflow/*');
+      const status = await git.status();
+      if (status.staged.length > 0) {
+        await git.commit('chore: sync FluidFlow metadata');
+        console.log(`[Push] Committed metadata sync`);
+      }
+    } catch (metaError) {
+      console.warn('[Push] Warning: Could not sync metadata files:', metaError);
+      // Continue with push even if metadata sync fails
+    }
+
     // Get current branch if not specified
     const branchInfo = await git.branchLocal();
     let currentBranch = branch || branchInfo.current;

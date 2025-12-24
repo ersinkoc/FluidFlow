@@ -44,7 +44,7 @@ export const githubApi = {
   /**
    * Push to remote
    */
-  push: (projectId: string, options?: { remote?: string; branch?: string; force?: boolean; token?: string }) =>
+  push: (projectId: string, options?: { remote?: string; branch?: string; force?: boolean; token?: string; includeContext?: boolean }) =>
     apiCall<{ message: string; remote: string; branch: string }>(`/github/${projectId}/push`, {
       method: 'POST',
       body: JSON.stringify(options || {}),
