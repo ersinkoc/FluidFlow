@@ -95,7 +95,6 @@ export const PreviewPanel = memo(function PreviewPanel({
     isGenerating,
     selectedModel,
     activeTab: externalActiveTab,
-    setActiveTab: externalSetActiveTab,
     resetCounter,
   } = ui;
 
@@ -107,11 +106,10 @@ export const PreviewPanel = memo(function PreviewPanel({
   // State
   const [iframeSrc, setIframeSrc] = useState<string>('');
   const [key, setKey] = useState(0);
-  const [internalActiveTab, setInternalActiveTab] = useState<TabType>('preview');
+  const [internalActiveTab] = useState<TabType>('preview');
 
   // Use external state if provided, otherwise use internal
   const activeTab = externalActiveTab ?? internalActiveTab;
-  const setActiveTab = externalSetActiveTab ?? setInternalActiveTab;
   const [isCopied, setIsCopied] = useState(false);
   const [previewDevice, setPreviewDevice] = useState<PreviewDevice>('desktop');
 
@@ -654,17 +652,14 @@ export const PreviewPanel = memo(function PreviewPanel({
     document.body.removeChild(element);
   };
 
-  const handleTabChange = (tab: TabType) => {
-    setActiveTab(tab);
-  };
-
   return (
     <section className="flex-1 min-w-0 min-h-0 h-full self-stretch flex flex-col bg-slate-900/60 backdrop-blur-xl overflow-hidden transition-all duration-300">
       {/* Toolbar */}
       <div className="h-12 flex-none border-b border-white/10 flex items-center justify-between px-4 bg-slate-950/50">
         <div className="flex items-center gap-4">
-          <div className="flex p-1 bg-slate-900/80 rounded-md border border-white/5">
-            {[
+          {/* Active Panel Title */}
+          {(() => {
+            const tabs = [
               { id: 'run', icon: Play, label: 'Run', hasIndicator: true },
               { id: 'preview', icon: Eye, label: 'Preview' },
               { id: 'code', icon: Code2, label: 'Code' },
@@ -678,25 +673,56 @@ export const PreviewPanel = memo(function PreviewPanel({
               { id: 'env', icon: ShieldCheck, label: 'Env' },
               { id: 'debug', icon: Bug, label: 'Debug' },
               { id: 'errorfix', icon: Bot, label: 'Error Fix' }
-            ].map(({ id, icon: Icon, label, hasIndicator }) => (
-              <button
-                key={id}
-                onClick={() => handleTabChange(id as TabType)}
-                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition-all ${
-                  activeTab === id ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-                } ${hasIndicator && isRunnerActive ? 'ring-1 ring-emerald-500/50' : ''}`}
-                title={label}
-              >
-                <div className="relative">
-                  <Icon className={`w-3.5 h-3.5 ${hasIndicator && isRunnerActive ? 'text-emerald-400' : ''}`} />
-                  {hasIndicator && isRunnerActive && (
-                    <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                  )}
-                </div>
-                {activeTab === id && <span>{label}</span>}
-              </button>
-            ))}
-          </div>
+            ];
+            const activeTabConfig = tabs.find(t => t.id === activeTab);
+            if (!activeTabConfig) return null;
+            const Icon = activeTabConfig.icon;
+            const isRunner = activeTabConfig.hasIndicator && isRunnerActive;
+            return (
+              <div className="flex items-center gap-1">
+                {/* Quick Access Buttons - Preview & Code always visible */}
+                <button
+                  onClick={() => ui.setActiveTab('preview')}
+                  className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md transition-colors ${
+                    activeTab === 'preview'
+                      ? 'bg-slate-800 text-white'
+                      : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  }`}
+                  title="Preview"
+                >
+                  <Eye className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => ui.setActiveTab('code')}
+                  className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md transition-colors ${
+                    activeTab === 'code'
+                      ? 'bg-slate-800 text-white'
+                      : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  }`}
+                  title="Code"
+                >
+                  <Code2 className="w-4 h-4" />
+                </button>
+
+                {/* Separator if not on preview/code */}
+                {activeTab !== 'preview' && activeTab !== 'code' && (
+                  <>
+                    <div className="h-4 w-px bg-white/10 mx-1" />
+                    {/* Current Tab */}
+                    <div className="flex items-center gap-2 px-2 py-1.5">
+                      <div className="relative">
+                        <Icon className={`w-4 h-4 ${isRunner ? 'text-emerald-400' : 'text-slate-300'}`} />
+                        {isRunner && (
+                          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                        )}
+                      </div>
+                      <span className="text-sm font-medium text-white">{activeTabConfig.label}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })()}
 
           {activeTab === 'preview' && (
             <>
