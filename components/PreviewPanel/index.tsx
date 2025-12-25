@@ -600,16 +600,17 @@ export const PreviewPanel = memo(function PreviewPanel({
 
   // Handle inspect mode toggle with iframe refresh
   const handleToggleInspectMode = useCallback(() => {
-    // If turning OFF inspect mode, clear all selections
+    // If turning OFF inspect mode, clear all selections AND close inspector panel
     if (isInspectMode) {
       selectElement(null);
       handleSelectNode('');
       lastSyncedElementRef.current = null;
+      closeInspectorPanel(); // Close the inspector panel when exiting inspect mode
     }
     toggleInspectMode();
     // Force iframe refresh to apply new event listeners
     setKey(prev => prev + 1);
-  }, [isInspectMode, selectElement, handleSelectNode, toggleInspectMode]);
+  }, [isInspectMode, selectElement, handleSelectNode, toggleInspectMode, closeInspectorPanel]);
 
   // Fix error from console
   const fixError = async (logId: string, message: string) => {
@@ -799,8 +800,8 @@ export const PreviewPanel = memo(function PreviewPanel({
                             )}
                             <span className="text-sm text-slate-200">Auto-fix Errors</span>
                           </div>
-                          <div className={`w-8 h-4 rounded-full transition-colors ${autoFixEnabled ? 'bg-emerald-500' : 'bg-slate-600'}`}>
-                            <div className={`w-3 h-3 rounded-full bg-white mt-0.5 transition-transform ${autoFixEnabled ? 'translate-x-4.5 ml-0.5' : 'translate-x-0.5'}`} style={{ marginLeft: autoFixEnabled ? '17px' : '2px' }} />
+                          <div className={`relative w-9 h-5 rounded-full transition-colors ${autoFixEnabled ? 'bg-emerald-500' : 'bg-slate-600'}`}>
+                            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all duration-200 ${autoFixEnabled ? 'left-[18px]' : 'left-0.5'}`} />
                           </div>
                         </button>
 
@@ -867,7 +868,7 @@ export const PreviewPanel = memo(function PreviewPanel({
       </div>
 
       {/* Content */}
-      <div className="flex-1 min-h-0 overflow-hidden bg-[#050811] group flex flex-col">
+      <div className="flex-1 min-h-0 overflow-hidden bg-[#050811] group flex flex-col relative">
         {/* DBStudio - always rendered but hidden when not active to preserve state */}
         <div className={activeTab === 'database' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'}>
           <DBStudio files={files} setFiles={setFiles} />
