@@ -2,20 +2,20 @@
  * TitleBar - IDE title bar with traffic lights and breadcrumb navigation
  */
 import React, { memo } from 'react';
-import { ChevronRight, FolderOpen, Circle } from 'lucide-react';
+import { ChevronRight, FolderOpen, Circle, Info } from 'lucide-react';
 import { TrafficLights } from './TrafficLights';
 import { useAppContext } from '../../contexts/AppContext';
+import { useUI } from '../../contexts/UIContext';
 
 interface TitleBarProps {
-  showSearch?: boolean;
-  onSearchClick?: () => void;
+  onInfoClick?: () => void;
 }
 
 export const TitleBar = memo(function TitleBar({
-  showSearch = true,
-  onSearchClick,
+  onInfoClick,
 }: TitleBarProps) {
   const ctx = useAppContext();
+  const ui = useUI();
 
   // Get project name and active file for breadcrumb
   const projectName = ctx.currentProject?.name || 'FluidFlow';
@@ -24,6 +24,13 @@ export const TitleBar = memo(function TitleBar({
 
   // Split file path into parts for breadcrumb
   const pathParts = activeFile.split('/').filter(Boolean);
+
+  // Click on file path opens Code tab
+  const handleFileClick = () => {
+    if (activeFile) {
+      ui.setActiveTab('code');
+    }
+  };
 
   return (
     <header className="h-10 bg-slate-950 border-b border-white/5 flex items-center px-4 justify-between select-none shrink-0">
@@ -41,15 +48,17 @@ export const TitleBar = memo(function TitleBar({
           {pathParts.map((part, index) => (
             <React.Fragment key={index}>
               <ChevronRight className="w-3 h-3 text-slate-600" />
-              <span
+              <button
+                onClick={handleFileClick}
                 className={`${
                   index === pathParts.length - 1
-                    ? 'text-slate-300'
-                    : 'text-slate-500 hover:text-slate-300 cursor-pointer'
-                } transition-colors`}
+                    ? 'text-slate-300 hover:text-blue-400'
+                    : 'text-slate-500 hover:text-slate-300'
+                } transition-colors cursor-pointer`}
+                title="Open in Code Editor"
               >
                 {part}
-              </span>
+              </button>
             </React.Fragment>
           ))}
 
@@ -60,26 +69,27 @@ export const TitleBar = memo(function TitleBar({
         </div>
       </div>
 
-      {/* Center: App name */}
-      <div className="absolute left-1/2 -translate-x-1/2 hidden md:flex items-center gap-2">
+      {/* Center: App name - clickable for info */}
+      <button
+        onClick={onInfoClick}
+        className="absolute left-1/2 -translate-x-1/2 hidden md:flex items-center gap-2 hover:opacity-80 transition-opacity"
+        title="About FluidFlow"
+      >
         <span className="text-[10px] text-slate-600 uppercase tracking-widest font-medium">
           FluidFlow
         </span>
-      </div>
+      </button>
 
-      {/* Right section: Search */}
+      {/* Right section: Info */}
       <div className="flex items-center gap-2">
-        {showSearch && (
-          <button
-            onClick={onSearchClick}
-            className="flex items-center gap-2 px-2 py-1 text-[10px] text-slate-500 hover:text-slate-300 border border-transparent hover:border-white/10 rounded transition-all"
-          >
-            <span>Search</span>
-            <kbd className="bg-slate-800 px-1.5 py-0.5 rounded text-[9px] text-slate-400">
-              Ctrl+P
-            </kbd>
-          </button>
-        )}
+        <button
+          onClick={onInfoClick}
+          className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-slate-500 hover:text-blue-400 border border-transparent hover:border-blue-500/20 hover:bg-blue-500/5 rounded transition-all"
+          title="About FluidFlow"
+        >
+          <Info className="w-3 h-3" />
+          <span>About</span>
+        </button>
       </div>
     </header>
   );

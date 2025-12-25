@@ -220,6 +220,7 @@ export default function App() {
         <IDEFrame
           onChatClick={ui.toggleLeftPanel}
           onSettingsClick={() => modals.open('megaSettings')}
+          onInfoClick={() => modals.open('credits')}
           onOpenGitTab={() => ui.setActiveTab('git')}
           onOpenProjectsTab={() => ui.setActiveTab('projects')}
           showActivityBar={true}

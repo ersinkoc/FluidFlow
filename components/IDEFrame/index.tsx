@@ -19,7 +19,7 @@ interface IDEFrameProps {
   showStatusBar?: boolean;
   onChatClick?: () => void;
   onSettingsClick?: () => void;
-  onSearchClick?: () => void;
+  onInfoClick?: () => void;
   onOpenGitTab?: () => void;
   onOpenProjectsTab?: () => void;
   chatUnread?: number;
@@ -32,7 +32,7 @@ export const IDEFrame = memo(function IDEFrame({
   showStatusBar = true,
   onChatClick,
   onSettingsClick,
-  onSearchClick,
+  onInfoClick,
   onOpenGitTab,
   onOpenProjectsTab,
   chatUnread = 0,
@@ -42,8 +42,7 @@ export const IDEFrame = memo(function IDEFrame({
       {/* Title Bar */}
       {showTitleBar && (
         <TitleBar
-          showSearch={true}
-          onSearchClick={onSearchClick}
+          onInfoClick={onInfoClick}
         />
       )}
 
