@@ -6,8 +6,6 @@ import { PromptTemplateSelector } from './PromptTemplateSelector';
 import { UploadCards } from './UploadCards';
 import { ExpandedPromptModal } from './ExpandedPromptModal';
 import { PromptImproverModal } from './PromptImproverModal';
-import { QuickLevelToggle } from './PromptLevelModal';
-import { usePromptLevel } from './hooks';
 import { useToast } from '../Toast/ToastContext';
 
 interface ChatInputProps {
@@ -44,7 +42,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const [showImproverModal, setShowImproverModal] = useState(false);
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
-  const [defaultLevel, setDefaultLevel] = usePromptLevel();
   const { error: showError } = useToast();
 
   // BUG-028 FIX: Track last applied external prompt to avoid dependency loop
@@ -303,9 +300,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               <Clock className="w-4 h-4" />
             </button>
           )}
-
-          {/* Prompt Level Toggle */}
-          <QuickLevelToggle value={defaultLevel} onChange={setDefaultLevel} size="sm" />
 
           {/* AI Prompt Engineer button */}
           {onOpenPromptEngineer && (

@@ -113,7 +113,7 @@ export const CREATOR: Promotion = {
   title: 'Made with love',
   description: 'FluidFlow is crafted by passionate developers who believe in the power of AI-assisted development.',
   icon: 'Heart',
-  link: 'https://github.com/anthropics/claude-code',
+  link: 'https://github.com/ersinkoc/FluidFlow',
   linkText: 'Star on GitHub',
 };
 

@@ -211,7 +211,7 @@ interface PromptDropdownProps {
 }
 
 export const PromptDropdown: React.FC<PromptDropdownProps> = ({ isOpen, onClose, onSelectPrompt, onOpenLibrary }) => {
-  const [defaultLevel] = usePromptLevel();
+  const [defaultLevel, setDefaultLevel] = usePromptLevel();
 
   if (!isOpen) return null;
 
@@ -224,6 +224,14 @@ export const PromptDropdown: React.FC<PromptDropdownProps> = ({ isOpen, onClose,
         className="absolute bottom-full left-0 mb-2 w-72 bg-slate-900 border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-2 duration-150 z-50"
         onClick={e => e.stopPropagation()}
       >
+        {/* Prompt Level Toggle */}
+        <div className="p-3 border-b border-white/5 bg-slate-950/30">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-slate-500 uppercase tracking-wide">Prompt Level</span>
+            <QuickLevelToggle value={defaultLevel} onChange={setDefaultLevel} size="sm" />
+          </div>
+        </div>
+
         <div className="p-2 max-h-64 overflow-y-auto custom-scrollbar">
           <p className="text-[10px] text-slate-600 px-2 py-1 font-medium uppercase tracking-wide">Quick Prompts</p>
           {quickPrompts.map(qp => (
