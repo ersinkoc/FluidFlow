@@ -46,6 +46,11 @@ export interface UIContextValue {
   resetUIState: () => void;
   /** Counter that increments on each reset - components can listen to clear their state */
   resetCounter: number;
+
+  // Left panel visibility
+  leftPanelVisible: boolean;
+  setLeftPanelVisible: (visible: boolean) => void;
+  toggleLeftPanel: () => void;
 }
 
 // ============ Context ============
@@ -83,6 +88,12 @@ export function UIProvider({ children }: UIProviderProps) {
   // Reset counter - increments on each reset, components can listen to this
   const [resetCounter, setResetCounter] = useState(0);
 
+  // Left panel visibility - default visible
+  const [leftPanelVisible, setLeftPanelVisible] = useState(true);
+  const toggleLeftPanel = useCallback(() => {
+    setLeftPanelVisible(prev => !prev);
+  }, []);
+
   // Persist diffModeEnabled to localStorage
   useEffect(() => {
     localStorage.setItem('diffModeEnabled', String(diffModeEnabled));
@@ -92,6 +103,13 @@ export function UIProvider({ children }: UIProviderProps) {
   useEffect(() => {
     localStorage.setItem('autoCommitEnabled', String(autoCommitEnabled));
   }, [autoCommitEnabled]);
+
+  // Auto-open left panel when generation starts
+  useEffect(() => {
+    if (isGenerating && !leftPanelVisible) {
+      setLeftPanelVisible(true);
+    }
+  }, [isGenerating, leftPanelVisible]);
 
   // Reset function - also increments resetCounter to signal components
   const resetUIState = useCallback(() => {
@@ -118,6 +136,9 @@ export function UIProvider({ children }: UIProviderProps) {
     setAutoCommitEnabled,
     resetUIState,
     resetCounter,
+    leftPanelVisible,
+    setLeftPanelVisible,
+    toggleLeftPanel,
   }), [
     activeTab,
     isGenerating,
@@ -128,6 +149,8 @@ export function UIProvider({ children }: UIProviderProps) {
     autoCommitEnabled,
     resetUIState,
     resetCounter,
+    leftPanelVisible,
+    toggleLeftPanel,
   ]);
 
   return (

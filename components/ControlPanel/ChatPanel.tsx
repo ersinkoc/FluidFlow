@@ -1,10 +1,11 @@
 import React, { useRef, useEffect, useState, useCallback, memo } from 'react';
-import { User, Bot, Image, Palette, RotateCcw, FileCode, Plus, Minus, Loader2, AlertCircle, RefreshCw, Zap, Clock, Layers, Bookmark } from 'lucide-react';
+import { User, Bot, Image, Palette, RotateCcw, FileCode, Plus, Minus, Loader2, AlertCircle, RefreshCw, Zap, Clock, Layers, Bookmark, Bug } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { ChatMessage, FileChange, FileSystem } from '../../types';
 import { TextExpandModal } from './TextExpandModal';
 import { ChatTimeline } from './ChatTimeline';
 import { useChatContextMenu } from '../ContextMenu';
+import { useUI } from '../../contexts/UIContext';
 
 // Truncation limits
 const TRUNCATE_PROMPT_LENGTH = 200;
@@ -539,6 +540,7 @@ export const ChatPanel = memo(function ChatPanel({
   onSaveCheckpoint,
   onTimeTravel
 }: ChatPanelProps) {
+  const ui = useUI();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoContinueCountdown, setAutoContinueCountdown] = useState<number>(0);
   const [viewingSnapshotIndex, setViewingSnapshotIndex] = useState<number | null>(null);
@@ -687,9 +689,18 @@ export const ChatPanel = memo(function ChatPanel({
             <Bot className="w-4 h-4" />
           </div>
           <div className="bg-slate-800/50 border border-white/5 rounded-xl rounded-tl-sm p-3 flex-1">
-            <div className="flex items-center gap-2 text-blue-400 mb-2">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span className="text-sm font-medium">Generating your app...</span>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2 text-blue-400">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-sm font-medium">Generating your app...</span>
+              </div>
+              <button
+                onClick={() => ui.setActiveTab('debug')}
+                className="p-1.5 rounded-md text-slate-500 hover:text-purple-400 hover:bg-purple-500/10 transition-colors"
+                title="View Debug Logs"
+              >
+                <Bug className="w-3.5 h-3.5" />
+              </button>
             </div>
 
             {/* Streaming Status */}

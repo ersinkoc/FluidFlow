@@ -41,33 +41,37 @@ interface ActivityBarProps {
   chatUnread?: number;
 }
 
-// Main navigation items - matches PreviewPanel tabs
-const MAIN_ITEMS: ActivityBarItem[] = [
-  { id: 'run', icon: Play, label: 'Run Dev Server', tab: 'run', hasIndicator: true },
+// Development Core - Main workflow
+const DEV_ITEMS: ActivityBarItem[] = [
   { id: 'preview', icon: Eye, label: 'Preview', tab: 'preview' },
   { id: 'code', icon: Code2, label: 'Code Editor', tab: 'code' },
+  { id: 'run', icon: Play, label: 'Run Dev Server', tab: 'run', hasIndicator: true },
 ];
 
-// Project & Files
+// Project & Version Control
 const PROJECT_ITEMS: ActivityBarItem[] = [
   { id: 'projects', icon: FolderOpen, label: 'Projects', tab: 'projects' },
-  { id: 'codemap', icon: Map, label: 'CodeMap', tab: 'codemap' },
   { id: 'git', icon: GitBranch, label: 'Git', tab: 'git' },
+  { id: 'activity', icon: Activity, label: 'Activity Log', tab: 'activity' },
 ];
 
-// Tools & Analysis
-const TOOLS_ITEMS: ActivityBarItem[] = [
+// Code Analysis & Quality
+const ANALYSIS_ITEMS: ActivityBarItem[] = [
+  { id: 'codemap', icon: Map, label: 'CodeMap', tab: 'codemap' },
   { id: 'quality', icon: ShieldCheck, label: 'Code Quality', tab: 'quality' },
-  { id: 'activity', icon: Activity, label: 'Activity Log', tab: 'activity' },
+  { id: 'errorfix', icon: Wrench, label: 'Error Fix', tab: 'errorfix' },
+];
+
+// Data & Documentation
+const DATA_ITEMS: ActivityBarItem[] = [
   { id: 'database', icon: Database, label: 'DB Studio', tab: 'database' },
   { id: 'docs', icon: FileText, label: 'Documentation', tab: 'docs' },
 ];
 
-// Advanced & Debug
-const ADVANCED_ITEMS: ActivityBarItem[] = [
+// Debug & Configuration
+const DEBUG_ITEMS: ActivityBarItem[] = [
   { id: 'env', icon: Lock, label: 'Environment', tab: 'env' },
   { id: 'debug', icon: Bug, label: 'Debug', tab: 'debug' },
-  { id: 'errorfix', icon: Wrench, label: 'Error Fix', tab: 'errorfix' },
 ];
 
 // Bottom settings
@@ -84,6 +88,7 @@ export const ActivityBar = memo(function ActivityBar({
   const ui = useUI();
   const { isRunnerActive } = useStatusBar();
   const activeTab = ui.activeTab;
+  const leftPanelVisible = ui.leftPanelVisible;
 
   const handleClick = (item: ActivityBarItem) => {
     if (item.action === 'chat') {
@@ -140,13 +145,21 @@ export const ActivityBar = memo(function ActivityBar({
 
   return (
     <aside className="w-11 bg-slate-950 border-r border-white/10 flex flex-col items-center py-2 shrink-0">
-      {/* Chat - Special top item */}
+      {/* Chat - Toggle left panel */}
       <button
         onClick={onChatClick}
-        className={`relative p-2 rounded-md transition-all text-slate-500 hover:text-slate-300 hover:bg-white/5 mb-1`}
-        title="Chat"
+        className={`relative p-2 rounded-md transition-all mb-1 ${
+          leftPanelVisible
+            ? 'text-white bg-white/10'
+            : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+        }`}
+        title={leftPanelVisible ? 'Hide Chat Panel' : 'Show Chat Panel'}
       >
         <MessageSquare className="w-[18px] h-[18px]" />
+        {/* Active indicator */}
+        {leftPanelVisible && (
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-blue-500 rounded-r" />
+        )}
         {chatUnread > 0 && (
           <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-blue-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
             {chatUnread > 9 ? '9+' : chatUnread}
@@ -156,30 +169,37 @@ export const ActivityBar = memo(function ActivityBar({
 
       {renderDivider()}
 
-      {/* Main items */}
+      {/* Development Core */}
       <div className="flex flex-col items-center gap-0.5">
-        {MAIN_ITEMS.map(renderItem)}
+        {DEV_ITEMS.map(renderItem)}
       </div>
 
       {renderDivider()}
 
-      {/* Project items */}
+      {/* Project & Version Control */}
       <div className="flex flex-col items-center gap-0.5">
         {PROJECT_ITEMS.map(renderItem)}
       </div>
 
       {renderDivider()}
 
-      {/* Tools items */}
+      {/* Code Analysis & Quality */}
       <div className="flex flex-col items-center gap-0.5">
-        {TOOLS_ITEMS.map(renderItem)}
+        {ANALYSIS_ITEMS.map(renderItem)}
       </div>
 
       {renderDivider()}
 
-      {/* Advanced items */}
+      {/* Data & Documentation */}
       <div className="flex flex-col items-center gap-0.5">
-        {ADVANCED_ITEMS.map(renderItem)}
+        {DATA_ITEMS.map(renderItem)}
+      </div>
+
+      {renderDivider()}
+
+      {/* Debug & Configuration */}
+      <div className="flex flex-col items-center gap-0.5">
+        {DEBUG_ITEMS.map(renderItem)}
       </div>
 
       {/* Spacer */}

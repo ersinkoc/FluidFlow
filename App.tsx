@@ -155,10 +155,16 @@ export default function App() {
 
   // Handler for inspect edit from PreviewPanel
   const handleInspectEdit = useCallback(async (prompt: string, element: InspectedElement, scope: EditScope) => {
+    // Ensure left panel is visible before sending inspect edit
+    if (!ui.leftPanelVisible) {
+      ui.setLeftPanelVisible(true);
+      // Wait for panel to mount before calling
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
     if (controlPanelRef.current) {
       await controlPanelRef.current.handleInspectEdit(prompt, element, scope);
     }
-  }, []);
+  }, [ui]);
 
   // Handle model/provider change - also clears conversation context
   const handleModelChange = useCallback((newModel: string) => {
@@ -213,6 +219,7 @@ export default function App() {
       {/* IDE Frame wrapper */}
       <div className="flex-1 min-h-0 z-10 relative">
         <IDEFrame
+          onChatClick={ui.toggleLeftPanel}
           onSettingsClick={() => modals.open('megaSettings')}
           onOpenGitTab={() => ui.setActiveTab('git')}
           onOpenProjectsTab={() => ui.setActiveTab('projects')}
@@ -222,7 +229,7 @@ export default function App() {
         >
           <div className="flex flex-col md:flex-row h-full w-full overflow-hidden">
           {/* ControlPanel - now consumes contexts directly, minimal props */}
-          <ControlPanel
+          {ui.leftPanelVisible && <ControlPanel
             ref={controlPanelRef}
             key={resetKey}
             // App.tsx callbacks
@@ -240,7 +247,7 @@ export default function App() {
             // Local state
             hasRunningServer={hasRunningServer}
             historyPrompt={historyPrompt}
-          />
+          />}
           {/* PreviewPanel - now consumes contexts directly, minimal props */}
           <PreviewPanel
             // Only App.tsx-specific callbacks remain
