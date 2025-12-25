@@ -23,6 +23,8 @@ import {
   Sparkles,
   Zap,
   Code2,
+  ChevronLeft,
+  ChevronRight,
   type LucideIcon,
 } from 'lucide-react';
 import { getPromotionCycle, type Promotion } from '../../data/promotions';
@@ -60,13 +62,37 @@ export const GeneratingOverlay = memo(function GeneratingOverlay({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [promotions] = useState(() => getPromotionCycle());
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [autoPlay, setAutoPlay] = useState(true);
 
-  // Cycle through promotions
+  // Navigate to previous
+  const goToPrev = () => {
+    setAutoPlay(false); // Stop auto-play when user navigates
+    setIsTransitioning(true);
+    setTimeout(() => {
+      setCurrentIndex((prev) => (prev - 1 + promotions.length) % promotions.length);
+      setIsTransitioning(false);
+    }, 150);
+  };
+
+  // Navigate to next
+  const goToNext = () => {
+    setAutoPlay(false); // Stop auto-play when user navigates
+    setIsTransitioning(true);
+    setTimeout(() => {
+      setCurrentIndex((prev) => (prev + 1) % promotions.length);
+      setIsTransitioning(false);
+    }, 150);
+  };
+
+  // Cycle through promotions (only if autoPlay is enabled)
   useEffect(() => {
     if (!isGenerating) {
       setCurrentIndex(0);
+      setAutoPlay(true);
       return;
     }
+
+    if (!autoPlay) return;
 
     const interval = setInterval(() => {
       setIsTransitioning(true);
@@ -77,7 +103,7 @@ export const GeneratingOverlay = memo(function GeneratingOverlay({
     }, 4000); // Change every 4 seconds
 
     return () => clearInterval(interval);
-  }, [isGenerating, promotions.length]);
+  }, [isGenerating, promotions.length, autoPlay]);
 
   if (!isGenerating) return null;
 
@@ -155,12 +181,23 @@ export const GeneratingOverlay = memo(function GeneratingOverlay({
         {isFixing ? 'Adapting Layout...' : 'Constructing Interface...'}
       </p>
 
-      {/* Promotion card */}
-      <div
-        className={`max-w-md mx-4 p-5 rounded-xl border ${styles.bg} ${styles.border} transition-all duration-300 ${
-          isTransitioning ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
-        }`}
-      >
+      {/* Promotion card with navigation */}
+      <div className="flex items-center gap-3 max-w-lg mx-4">
+        {/* Previous button */}
+        <button
+          onClick={goToPrev}
+          className="p-2 rounded-full bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all shrink-0"
+          title="Previous"
+        >
+          <ChevronLeft className="w-5 h-5" />
+        </button>
+
+        {/* Card */}
+        <div
+          className={`flex-1 p-5 rounded-xl border ${styles.bg} ${styles.border} transition-all duration-300 ${
+            isTransitioning ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
+          }`}
+        >
         {/* Badge */}
         <div className="flex items-center justify-between mb-3">
           <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${styles.badge}`}>
@@ -199,6 +236,16 @@ export const GeneratingOverlay = memo(function GeneratingOverlay({
             )}
           </div>
         </div>
+        </div>
+
+        {/* Next button */}
+        <button
+          onClick={goToNext}
+          className="p-2 rounded-full bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all shrink-0"
+          title="Next"
+        >
+          <ChevronRight className="w-5 h-5" />
+        </button>
       </div>
 
       {/* Progress hint */}
