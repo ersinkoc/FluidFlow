@@ -6,8 +6,8 @@
 
 /**
  * AI Response format type
- * - json: Structured JSON response (default, more reliable)
- * - marker: Marker-based format (experimental)
+ * - json: Structured JSON response (more reliable for complex schemas)
+ * - marker: Marker-based format (default, better streaming support)
  */
 export type AIResponseFormat = 'json' | 'marker';
 

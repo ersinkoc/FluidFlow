@@ -75,6 +75,7 @@ export const DEFAULT_CONFIG: FluidFlowConfig = {
   rules: DEFAULT_RULES,
   agents: DEFAULT_AGENTS,
   contextSettings: DEFAULT_CONTEXT_SETTINGS,
+  responseFormat: 'marker', // Default to marker format for better streaming
 };
 
 /**

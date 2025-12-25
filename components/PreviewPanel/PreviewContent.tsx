@@ -21,6 +21,7 @@ import {
 import { LogEntry, NetworkRequest, PreviewDevice, TerminalTab } from '../../types';
 import { DevToolsPanel } from './DevToolsPanel';
 import { InspectorPanel } from './InspectorPanel';
+import { GeneratingOverlay } from './GeneratingOverlay';
 import type { InspectorTab } from './InspectorPanel/types';
 import type { ComponentTreeNode, ComputedStylesResult } from '../../utils/sandboxHtml/scripts';
 import type { TailwindClassInfo } from '../../utils/tailwindParser';
@@ -370,19 +371,11 @@ export const PreviewContent: React.FC<PreviewContentProps> = (props) => {
               </form>
             </div>
 
-            {(isGenerating || isFixingResp) && (
-              <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/60 backdrop-blur-sm">
-                <div className="relative">
-                  <div className="w-16 h-16 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Loader2 className="w-6 h-6 text-blue-400 animate-pulse" />
-                  </div>
-                </div>
-                <p className="mt-4 text-sm font-medium text-blue-300 animate-pulse">
-                  {isFixingResp ? 'Adapting Layout...' : 'Constructing Interface...'}
-                </p>
-              </div>
-            )}
+            {/* Generating Overlay with promotional content */}
+            <GeneratingOverlay
+              isGenerating={isGenerating || isFixingResp}
+              isFixing={isFixingResp}
+            />
 
             {/* iframe container with inspect overlay */}
             <div className="flex-1 relative overflow-hidden">

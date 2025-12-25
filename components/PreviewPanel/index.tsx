@@ -106,7 +106,7 @@ export const PreviewPanel = memo(function PreviewPanel({
   // State
   const [iframeSrc, setIframeSrc] = useState<string>('');
   const [key, setKey] = useState(0);
-  const [internalActiveTab] = useState<TabType>('preview');
+  const [internalActiveTab] = useState<TabType>('debug');
 
   // Use external state if provided, otherwise use internal
   const activeTab = externalActiveTab ?? internalActiveTab;

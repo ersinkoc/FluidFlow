@@ -64,8 +64,8 @@ interface UIProviderProps {
 }
 
 export function UIProvider({ children }: UIProviderProps) {
-  // Tab state
-  const [activeTab, setActiveTab] = useState<TabType>('preview');
+  // Tab state - default to debug panel for visibility during development
+  const [activeTab, setActiveTab] = useState<TabType>('debug');
 
   // Generation state
   const [isGenerating, setIsGenerating] = useState(false);

@@ -9,8 +9,8 @@ export const AdvancedPanel: React.FC = () => {
   const [rulesInput, setRulesInput] = useState('');
   const [savedRules, setSavedRules] = useState('');
 
-  // AI Response Format
-  const [responseFormat, setResponseFormat] = useState<AIResponseFormat>('json');
+  // AI Response Format - default to marker
+  const [responseFormat, setResponseFormat] = useState<AIResponseFormat>('marker');
 
   useEffect(() => {
     const config = getFluidFlowConfig();

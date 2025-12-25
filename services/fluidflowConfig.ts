@@ -152,7 +152,7 @@ class FluidFlowConfigManager {
   // ============================================================================
 
   getResponseFormat(): AIResponseFormat {
-    return this.config.responseFormat || 'json';
+    return this.config.responseFormat || 'marker';
   }
 
   setResponseFormat(format: AIResponseFormat): void {
