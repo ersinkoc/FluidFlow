@@ -30,7 +30,7 @@ export { CONTEXT_IDS };
 // ============================================================================
 
 const DEFAULT_CONFIG: ContextManagerConfig = {
-  maxTokensPerContext: DEFAULT_MAX_TOKENS, // ~8k tokens before compaction
+  minRemainingTokens: DEFAULT_MAX_TOKENS, // Compact when less than 8k tokens remaining
   compactToTokens: COMPACTION_THRESHOLD_TOKENS, // Compact to ~2k tokens
   persistToStorage: true,
   storageKey: STORAGE_KEYS.CONTEXTS,
@@ -171,11 +171,8 @@ class ConversationContextManager {
       `[ContextManager] addMessage to "${contextId}": role=${role}, contentLen=${content.length}, tokens=${tokenCount}, totalMessages=${context.messages.length}, totalTokens=${context.estimatedTokens}`
     );
 
-    // Check if compaction needed
-    if (context.estimatedTokens > this.config.maxTokensPerContext) {
-      console.log(`[ContextManager] Context "${contextId}" exceeds token limit, needs compaction`);
-      // do not auto-compact - let the caller decide
-    }
+    // Note: Compaction check is now based on remaining context space
+    // The caller should use needsCompaction(contextId, modelContextSize) to check
 
     this.saveToStorage();
     return message;
@@ -267,9 +264,50 @@ class ConversationContextManager {
   // Token Management & Compaction
   // ============================================================================
 
-  needsCompaction(contextId: string): boolean {
+  /**
+   * Check if context needs compaction based on REMAINING context space.
+   * Compaction is triggered when remaining context falls below minRemainingTokens.
+   *
+   * @param contextId - The context to check
+   * @param modelContextSize - The total context window size of the current model
+   * @returns true if compaction is needed
+   */
+  needsCompaction(contextId: string, modelContextSize?: number): boolean {
     const context = this.contexts.get(contextId);
-    return context ? context.estimatedTokens > this.config.maxTokensPerContext : false;
+    if (!context) return false;
+
+    // If no model context size provided, use a reasonable default (128K)
+    const contextWindow = modelContextSize || 128000;
+    const remainingTokens = contextWindow - context.estimatedTokens;
+
+    // Trigger compaction when remaining space is less than minimum required
+    const needsCompact = remainingTokens < this.config.minRemainingTokens;
+
+    if (needsCompact) {
+      console.log(
+        `[ContextManager] Context "${contextId}" needs compaction: ` +
+          `remaining=${remainingTokens}, minRequired=${this.config.minRemainingTokens}, ` +
+          `current=${context.estimatedTokens}, modelLimit=${contextWindow}`
+      );
+    }
+
+    return needsCompact;
+  }
+
+  /**
+   * Get remaining context space for a given context
+   */
+  getRemainingTokens(contextId: string, modelContextSize: number): number {
+    const context = this.contexts.get(contextId);
+    if (!context) return modelContextSize;
+    return Math.max(0, modelContextSize - context.estimatedTokens);
+  }
+
+  /**
+   * Get minimum remaining tokens threshold
+   */
+  getMinRemainingTokens(): number {
+    return this.config.minRemainingTokens;
   }
 
   async compactContext(contextId: string, summarizer: (text: string) => Promise<string>): Promise<void> {

@@ -33,8 +33,8 @@ export interface ConversationContext {
  * Configuration for the context manager
  */
 export interface ContextManagerConfig {
-  /** When to trigger compaction (token limit) */
-  maxTokensPerContext: number;
+  /** Minimum remaining tokens before compaction is triggered */
+  minRemainingTokens: number;
   /** Target tokens after compaction */
   compactToTokens: number;
   /** Whether to save to localStorage */

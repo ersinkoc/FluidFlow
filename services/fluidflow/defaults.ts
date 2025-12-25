@@ -58,9 +58,11 @@ export const DEFAULT_AGENTS = [
 
 /**
  * Default context settings
+ * minRemainingTokens: Trigger compaction when remaining context space falls below this value
+ * This ensures we always have room for the AI to generate a meaningful response
  */
 export const DEFAULT_CONTEXT_SETTINGS: ContextSettings = {
-  maxTokensBeforeCompact: 8000,
+  minRemainingTokens: 8000, // Compact when less than 8K tokens remaining
   compactToTokens: 2000,
   autoCompact: false, // Require confirmation
   saveCompactionLogs: true,

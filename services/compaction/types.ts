@@ -42,15 +42,19 @@ export interface CompactionInfo {
 export interface ContextStats {
   /** Current token count */
   currentTokens: number;
-  /** Token threshold before compaction is triggered */
-  threshold: number;
+  /** Remaining tokens before compaction is needed */
+  remainingTokens: number;
+  /** Minimum remaining tokens threshold */
+  minRemainingTokens: number;
+  /** Model's total context window size */
+  modelContextSize: number;
   /** Target token count after compaction */
   target: number;
   /** Number of messages in context */
   messageCount: number;
   /** Whether compaction is needed */
   needsCompaction: boolean;
-  /** Percentage of token limit used */
+  /** Percentage of context used */
   utilizationPercent: number;
 }
 

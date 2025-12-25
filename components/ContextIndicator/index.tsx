@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { getContextManager } from '@/services/conversationContext';
 import { ContextIndicatorProps } from './types';
-import { getCompactionThreshold, getModelContextSize } from './utils';
+import { getMinRemainingTokens, getModelContextSize, getRemainingContext, needsCompaction } from './utils';
 import { ContextManagerModal } from './ContextManagerModal';
 
 export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
@@ -20,7 +20,7 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
   const [stats, setStats] = useState<{ messages: number; tokens: number } | null>(null);
 
   const contextManager = getContextManager();
-  const compactThreshold = getCompactionThreshold();
+  const minRemainingTokens = getMinRemainingTokens();
   const modelContextSize = getModelContextSize();
 
   useEffect(() => {
@@ -68,13 +68,16 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
     );
   }
 
-  // Calculate percentage based on actual model context size, not compaction threshold
+  // Calculate usage and remaining context
   const usagePercent = Math.min(100, (stats.tokens / modelContextSize) * 100);
-  // Compaction warning/critical based on threshold percentage
-  const thresholdPercent = (stats.tokens / compactThreshold) * 100;
-  // Color based on actual model context usage, not compaction threshold
-  const isWarning = usagePercent > 60;
-  const isCritical = usagePercent > 80;
+  const remainingTokens = getRemainingContext(stats.tokens);
+  const needsCompact = needsCompaction(stats.tokens);
+
+  // Warning levels based on remaining context (not usage percentage)
+  // Warning when remaining is less than 2x minimum
+  // Critical when remaining is less than minimum (needs compaction)
+  const isWarning = remainingTokens < minRemainingTokens * 2;
+  const isCritical = needsCompact;
 
   const getColor = () => {
     if (isCritical) return 'text-red-400';
@@ -93,7 +96,7 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
       {/* Compact Indicator */}
       <div
         className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors ${className}`}
-        title={`${stats.tokens.toLocaleString()} tokens / ${modelContextSize.toLocaleString()} context (${Math.round(usagePercent)}%) - Compaction at ${compactThreshold.toLocaleString()} (${Math.round(thresholdPercent)}%) - Click for details`}
+        title={`${stats.tokens.toLocaleString()} tokens used • ${remainingTokens.toLocaleString()} remaining (min: ${minRemainingTokens.toLocaleString()}) • ${modelContextSize.toLocaleString()} total context - Click for details`}
       >
         {/* Mini progress bar */}
         <button
@@ -132,8 +135,8 @@ export const ContextIndicator: React.FC<ContextIndicatorProps> = ({
 
         {/* Action Buttons */}
         <div className="flex items-center gap-1">
-          {/* Quick Compact Button - show when near or over compaction threshold */}
-          {thresholdPercent > 70 && onCompact && (
+          {/* Quick Compact Button - show when remaining context is low */}
+          {isWarning && onCompact && (
             <button
               onClick={(e) => {
                 e.stopPropagation();

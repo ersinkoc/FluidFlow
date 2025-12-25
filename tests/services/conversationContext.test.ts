@@ -20,7 +20,7 @@ describe('ConversationContextManager', () => {
 
     it('should create manager with custom config', () => {
       const customManager = new ConversationContextManager({
-        maxTokensPerContext: 50000,
+        minRemainingTokens: 50000,
         persistToStorage: false
       });
       expect(customManager).toBeDefined();
@@ -138,7 +138,7 @@ describe('ConversationContextManager', () => {
   describe('Compaction', () => {
     it('should compact messages', () => {
       const smallManager = new ConversationContextManager({
-        maxTokensPerContext: 50,
+        minRemainingTokens: 50,
         compactToTokens: 25,
         persistToStorage: false
       });
@@ -159,13 +159,17 @@ describe('ConversationContextManager', () => {
 
     it('should check if context needs compaction', () => {
       const smallManager = new ConversationContextManager({
-        maxTokensPerContext: 10,
+        minRemainingTokens: 100,
         persistToStorage: false
       });
 
-      smallManager.addMessage('test', 'user', 'This is a very long message that exceeds the token limit');
+      // Add a message with tokens (~15 tokens estimated)
+      smallManager.addMessage('test', 'user', 'This is a very long message that uses many tokens');
 
-      expect(smallManager.needsCompaction('test')).toBe(true);
+      // With modelContextSize = 50 and ~15 tokens used:
+      // remaining = 50 - 15 = 35, which is < 100 (minRemainingTokens)
+      // So it should need compaction
+      expect(smallManager.needsCompaction('test', 50)).toBe(true);
     });
 
     it('should not need compaction for small context', () => {

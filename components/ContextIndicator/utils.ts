@@ -18,26 +18,53 @@ export function getModelContextSize(): number {
 }
 
 /**
- * Get compaction threshold for current context
- * This is the token limit at which we trigger compaction
+ * Get minimum remaining tokens threshold for compaction
+ * Compaction is triggered when remaining context falls below this value
+ */
+export function getMinRemainingTokens(): number {
+  const config = getFluidFlowConfig();
+  const settings = config.getContextSettings();
+  // Support both new and legacy field names
+  return settings.minRemainingTokens ?? settings.maxTokensBeforeCompact ?? 8000;
+}
+
+/**
+ * @deprecated Use getMinRemainingTokens instead
  */
 export function getCompactionThreshold(): number {
-  const config = getFluidFlowConfig();
-  return config.getContextSettings().maxTokensBeforeCompact;
+  return getMinRemainingTokens();
 }
 
 /**
  * Get context display info
- * Returns both model context and compaction threshold
+ * Returns model context size and minimum remaining tokens
  */
 export function getContextDisplayInfo() {
   const modelContext = getModelContextSize();
-  const compactThreshold = getCompactionThreshold();
+  const minRemaining = getMinRemainingTokens();
 
   return {
     modelContext,
-    compactThreshold,
-    // We calculate percentage based on compaction threshold, not full model context
-    displayMax: compactThreshold,
+    minRemaining,
+    // Compaction triggers when: modelContext - currentTokens < minRemaining
+    // i.e., when currentTokens > modelContext - minRemaining
+    compactionTriggerAt: modelContext - minRemaining,
   };
+}
+
+/**
+ * Calculate remaining context space
+ */
+export function getRemainingContext(currentTokens: number): number {
+  const modelContext = getModelContextSize();
+  return Math.max(0, modelContext - currentTokens);
+}
+
+/**
+ * Check if context needs compaction based on remaining space
+ */
+export function needsCompaction(currentTokens: number): boolean {
+  const remaining = getRemainingContext(currentTokens);
+  const minRemaining = getMinRemainingTokens();
+  return remaining < minRemaining;
 }

@@ -7,7 +7,7 @@ import { getContextManager } from '../../../services/conversationContext';
 
 export const ContextManagerPanel: React.FC = () => {
   const [contextSettings, setContextSettings] = useState<ContextSettings>({
-    maxTokensBeforeCompact: 8000,
+    minRemainingTokens: 8000,
     compactToTokens: 2000,
     autoCompact: false,
     saveCompactionLogs: true
@@ -94,9 +94,9 @@ export const ContextManagerPanel: React.FC = () => {
         <div className="text-sm text-slate-300">
           <p className="font-medium text-blue-400 mb-1">How Context Management Works</p>
           <p className="text-slate-400">
-            As conversations grow, the context window fills up. When it reaches the threshold,
-            older messages are summarized to save space while preserving important information.
-            This allows for longer, more productive conversations without losing context.
+            As conversations grow, the context window fills up. When the <strong>remaining context space</strong> falls
+            below the minimum threshold, older messages are summarized to free up space while preserving
+            important information. This ensures the AI always has enough room to generate meaningful responses.
           </p>
         </div>
       </div>
@@ -107,10 +107,10 @@ export const ContextManagerPanel: React.FC = () => {
         description="Configure when and how context compaction occurs"
       >
         <SettingsSlider
-          label="Compaction Threshold"
-          description="Start compaction when context reaches this many tokens"
-          value={contextSettings.maxTokensBeforeCompact}
-          onChange={(value) => updateSettings({ maxTokensBeforeCompact: value })}
+          label="Minimum Remaining Context"
+          description="Trigger compaction when remaining context space falls below this value"
+          value={contextSettings.minRemainingTokens ?? contextSettings.maxTokensBeforeCompact ?? 8000}
+          onChange={(value) => updateSettings({ minRemainingTokens: value })}
           min={2000}
           max={32000}
           step={1000}

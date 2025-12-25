@@ -42,14 +42,16 @@ export interface AgentConfig {
  * Context management settings
  */
 export interface ContextSettings {
-  /** Token threshold before compaction is triggered */
-  maxTokensBeforeCompact: number;
+  /** Minimum remaining tokens before compaction is triggered */
+  minRemainingTokens: number;
   /** Target token count after compaction */
   compactToTokens: number;
   /** Whether to auto-compact without confirmation */
   autoCompact: boolean;
   /** Whether to save compaction logs */
   saveCompactionLogs: boolean;
+  /** @deprecated Use minRemainingTokens instead */
+  maxTokensBeforeCompact?: number;
 }
 
 /**

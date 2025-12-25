@@ -4,14 +4,16 @@
  * Provides utilities for checking and triggering context compaction
  * with user confirmation based on settings.
  *
- * @module services/contextCompaction
+ * The compaction logic is based on REMAINING context space:
+ * - Compaction is triggered when remaining tokens fall below minRemainingTokens
+ * - This ensures the AI always has enough room to generate meaningful responses
  *
- * Structure:
- * - services/compaction/types.ts - Type definitions
+ * @module services/contextCompaction
  */
 
 import { getContextManager } from './conversationContext';
 import { getFluidFlowConfig } from './fluidflowConfig';
+import { getProviderManager } from './ai';
 
 // Import and re-export types from compaction module
 import type { CompactionResult, CompactionInfo, ContextStats, TokenSpaceResult } from './compaction/types';
@@ -23,15 +25,33 @@ export type { CompactionResult, CompactionInfo, ContextStats, TokenSpaceResult }
 // ============================================================================
 
 /**
- * Check if a context needs compaction based on current settings
+ * Get the current model's context window size
+ */
+function getModelContextSize(): number {
+  const manager = getProviderManager();
+  const config = manager.getActiveConfig();
+  if (!config) return 128000; // Default
+
+  const model = config.models.find(m => m.id === config.defaultModel);
+  return model?.contextWindow || 128000;
+}
+
+/**
+ * Check if a context needs compaction based on REMAINING context space
+ * Compaction is triggered when remaining tokens fall below minRemainingTokens
  */
 export function checkNeedsCompaction(contextId: string): boolean {
   const contextManager = getContextManager();
   const config = getFluidFlowConfig();
   const context = contextManager.getContext(contextId);
-
   const settings = config.getContextSettings();
-  return context.estimatedTokens >= settings.maxTokensBeforeCompact;
+  const modelContextSize = getModelContextSize();
+
+  // Use new field with fallback to legacy field
+  const minRemaining = settings.minRemainingTokens ?? settings.maxTokensBeforeCompact ?? 8000;
+  const remainingTokens = modelContextSize - context.estimatedTokens;
+
+  return remainingTokens < minRemaining;
 }
 
 /**
@@ -42,14 +62,22 @@ export function getContextStats(contextId: string): ContextStats {
   const context = contextManager.getContext(contextId);
   const config = getFluidFlowConfig();
   const settings = config.getContextSettings();
+  const modelContextSize = getModelContextSize();
+
+  // Use new field with fallback to legacy field
+  const minRemaining = settings.minRemainingTokens ?? settings.maxTokensBeforeCompact ?? 8000;
+  const remainingTokens = modelContextSize - context.estimatedTokens;
+  const needsCompaction = remainingTokens < minRemaining;
 
   return {
     currentTokens: context.estimatedTokens,
-    threshold: settings.maxTokensBeforeCompact,
+    remainingTokens: Math.max(0, remainingTokens),
+    minRemainingTokens: minRemaining,
+    modelContextSize,
     target: settings.compactToTokens,
     messageCount: context.messages.length,
-    needsCompaction: context.estimatedTokens >= settings.maxTokensBeforeCompact,
-    utilizationPercent: (context.estimatedTokens / settings.maxTokensBeforeCompact) * 100,
+    needsCompaction,
+    utilizationPercent: (context.estimatedTokens / modelContextSize) * 100,
   };
 }
 
@@ -61,13 +89,17 @@ export function getCompactionInfo(contextId: string): CompactionInfo {
   const config = getFluidFlowConfig();
   const settings = config.getContextSettings();
 
+  const remainingFormatted = stats.remainingTokens.toLocaleString();
+  const minRequiredFormatted = stats.minRemainingTokens.toLocaleString();
+
   return {
     currentTokens: stats.currentTokens,
     utilizationPercent: stats.utilizationPercent,
     messageCount: stats.messageCount,
     targetTokens: settings.compactToTokens,
     message:
-      `Context is ${stats.currentTokens.toLocaleString()} tokens (${stats.utilizationPercent.toFixed(0)}% full).\n\n` +
+      `Remaining context space: ${remainingFormatted} tokens\n` +
+      `Minimum required: ${minRequiredFormatted} tokens\n\n` +
       `Compacting will summarize older messages to free up space.\n\n` +
       `Messages: ${stats.messageCount}\n` +
       `Target: ~${settings.compactToTokens.toLocaleString()} tokens\n\n` +
@@ -120,7 +152,8 @@ export async function triggerCompaction(
       // Legacy behavior: use window.confirm if no callback provided
       const stats = getContextStats(contextId);
       const confirmed = confirm(
-        `Context is ${stats.currentTokens.toLocaleString()} tokens (${stats.utilizationPercent.toFixed(0)}% full).\n\n` +
+        `Remaining context: ${stats.remainingTokens.toLocaleString()} tokens\n` +
+          `Minimum required: ${stats.minRemainingTokens.toLocaleString()} tokens\n\n` +
           `Compacting will summarize older messages to free up space.\n\n` +
           `Messages: ${stats.messageCount}\n` +
           `Target: ~${settings.compactToTokens.toLocaleString()} tokens\n\n` +
@@ -230,15 +263,19 @@ export async function ensureTokenSpace(
   const contextManager = getContextManager();
   const config = getFluidFlowConfig();
   const settings = config.getContextSettings();
+  const modelContextSize = getModelContextSize();
 
   const context = contextManager.getContext(contextId);
   const currentTokens = context.estimatedTokens;
-  const maxTokens = settings.maxTokensBeforeCompact;
+
+  // Use new field with fallback to legacy field
+  const minRemaining = settings.minRemainingTokens ?? settings.maxTokensBeforeCompact ?? 8000;
 
   // Reserve space for prompt + response (estimate 2x prompt tokens for response)
-  const totalEstimatedTokens = currentTokens + estimatedPromptTokens + estimatedPromptTokens * 2;
+  const estimatedTotalAfterPrompt = currentTokens + estimatedPromptTokens + estimatedPromptTokens * 2;
+  const remainingAfterPrompt = modelContextSize - estimatedTotalAfterPrompt;
 
-  if (totalEstimatedTokens <= maxTokens) {
+  if (remainingAfterPrompt >= minRemaining) {
     // Enough space, no compaction needed
     return { canProceed: true, compacted: false };
   }
@@ -251,8 +288,9 @@ export async function ensureTokenSpace(
       if (result.compacted) {
         const newContext = contextManager.getContext(contextId);
         const newTotal = newContext.estimatedTokens + estimatedPromptTokens + estimatedPromptTokens * 2;
+        const newRemaining = modelContextSize - newTotal;
 
-        if (newTotal <= maxTokens) {
+        if (newRemaining >= minRemaining) {
           console.log(`[ContextCompaction] Auto-compacted: ${currentTokens} -> ${newContext.estimatedTokens} tokens`);
           return { canProceed: true, compacted: true };
         } else {
@@ -275,9 +313,10 @@ export async function ensureTokenSpace(
   }
 
   // Auto-compact is off - warn user
+  const currentRemaining = modelContextSize - currentTokens;
   return {
     canProceed: false,
     compacted: false,
-    reason: `Context is ${currentTokens.toLocaleString()} tokens (${((currentTokens / maxTokens) * 100).toFixed(0)}% full). Adding this prompt would exceed the limit. Please compact the context first.`,
+    reason: `Remaining context space: ${currentRemaining.toLocaleString()} tokens. Adding this prompt would leave less than the minimum ${minRemaining.toLocaleString()} tokens required. Please compact the context first.`,
   };
 }
