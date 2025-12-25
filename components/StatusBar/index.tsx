@@ -178,26 +178,35 @@ export const StatusBar = memo(function StatusBar({
         <div className="w-px h-3 bg-white/10 mx-1" />
 
         {/* Git Branch - clickable to open git tab */}
-        {gitInitialized ? (
-          <button
-            onClick={onOpenGitTab}
-            className="flex items-center gap-1.5 hover:bg-white/5 px-2 h-full cursor-pointer transition-colors rounded"
-            title={`Branch: ${gitBranch}${hasUncommitted ? ' (uncommitted changes)' : ''} - Click to open Git`}
-          >
-            <GitBranch className={`w-3 h-3 ${hasUncommitted ? 'text-amber-400' : 'text-emerald-400'}`} />
-            <span className={`max-w-[80px] truncate ${hasUncommitted ? 'text-amber-400' : ''}`}>
-              {gitBranch}
-            </span>
-            {hasUncommitted && (
-              <Circle className="w-1.5 h-1.5 fill-amber-400 text-amber-400" />
-            )}
-          </button>
-        ) : (
-          <div className="flex items-center gap-1.5 px-2 h-full text-slate-500">
-            <GitBranch className="w-3 h-3" />
+        <button
+          onClick={onOpenGitTab}
+          className={`flex items-center gap-1.5 hover:bg-white/5 px-2 h-full cursor-pointer transition-colors rounded ${
+            gitInitialized ? '' : 'text-slate-500'
+          }`}
+          title={
+            gitInitialized
+              ? `Branch: ${gitBranch}${hasUncommitted ? ' (uncommitted changes)' : ''} - Click to open Git`
+              : 'No Git - Click to initialize'
+          }
+        >
+          <GitBranch className={`w-3 h-3 ${
+            gitInitialized
+              ? hasUncommitted ? 'text-amber-400' : 'text-emerald-400'
+              : ''
+          }`} />
+          {gitInitialized ? (
+            <>
+              <span className={`max-w-[80px] truncate ${hasUncommitted ? 'text-amber-400' : ''}`}>
+                {gitBranch}
+              </span>
+              {hasUncommitted && (
+                <Circle className="w-1.5 h-1.5 fill-amber-400 text-amber-400" />
+              )}
+            </>
+          ) : (
             <span className="italic text-[10px]">no git</span>
-          </div>
-        )}
+          )}
+        </button>
 
         {/* Auto-commit toggle - next to git branch */}
         {gitInitialized && (

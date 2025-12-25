@@ -24,61 +24,32 @@ interface PromptImproverModalProps {
 
 type WizardStep = 1 | 2 | 3 | 'generating' | 'final';
 
-interface WizardState {
-  step: WizardStep;
-  questions: string[];     // AI questions for each step
-  answers: string[];       // User answers for each step
-  finalPrompt: string | null;
-}
-
-const STEP_LABELS = [
-  'Core Intent',
-  'Visual & UX',
-  'Technical Details',
-];
-
-// Predefined options for each step
+// Dynamic option from AI response
 interface StepOption {
   id: string;
   label: string;
   description?: string;
 }
 
-const STEP_OPTIONS: Record<1 | 2 | 3, { options: StepOption[]; multiSelect: boolean }> = {
-  1: {
-    multiSelect: false,
-    options: [
-      { id: 'landing', label: 'Landing Page', description: 'Marketing or product showcase' },
-      { id: 'dashboard', label: 'Dashboard', description: 'Data visualization & analytics' },
-      { id: 'form', label: 'Form / Wizard', description: 'Multi-step forms or data entry' },
-      { id: 'ecommerce', label: 'E-commerce', description: 'Product listings, cart, checkout' },
-      { id: 'settings', label: 'Settings / Profile', description: 'User preferences & account' },
-      { id: 'blog', label: 'Blog / Content', description: 'Articles, posts, media' },
-    ],
-  },
-  2: {
-    multiSelect: false,
-    options: [
-      { id: 'minimal', label: 'Modern Minimal', description: 'Clean lines, lots of whitespace' },
-      { id: 'bold', label: 'Bold & Colorful', description: 'Vibrant gradients, strong CTAs' },
-      { id: 'corporate', label: 'Professional', description: 'Trust-building, conservative' },
-      { id: 'playful', label: 'Playful & Fun', description: 'Rounded corners, illustrations' },
-      { id: 'dark', label: 'Dark Theme', description: 'Dark backgrounds, neon accents' },
-      { id: 'glass', label: 'Glassmorphism', description: 'Frosted glass, blur effects' },
-    ],
-  },
-  3: {
-    multiSelect: true,
-    options: [
-      { id: 'animations', label: 'Smooth Animations', description: 'Hover effects, transitions' },
-      { id: 'darkmode', label: 'Dark/Light Toggle', description: 'Theme switching' },
-      { id: 'search', label: 'Search & Filter', description: 'Find and filter content' },
-      { id: 'modals', label: 'Modals & Dialogs', description: 'Popups, confirmations' },
-      { id: 'tables', label: 'Data Tables', description: 'Sortable, paginated lists' },
-      { id: 'charts', label: 'Charts & Graphs', description: 'Data visualization' },
-    ],
-  },
-};
+// AI response structure for each step
+interface StepData {
+  question: string;
+  options: StepOption[];
+  multiSelect: boolean;
+}
+
+interface WizardState {
+  step: WizardStep;
+  stepData: (StepData | null)[];  // AI-generated data for each step
+  answers: string[];              // User answers for each step
+  finalPrompt: string | null;
+}
+
+const STEP_LABELS = [
+  'Core Intent',
+  'Visual & UX',
+  'Features',
+];
 
 export const PromptImproverModal: React.FC<PromptImproverModalProps> = ({
   isOpen,
@@ -90,7 +61,7 @@ export const PromptImproverModal: React.FC<PromptImproverModalProps> = ({
 }) => {
   const [wizard, setWizard] = useState<WizardState>({
     step: 1,
-    questions: [],
+    stepData: [null, null, null],  // AI-generated data for steps 1, 2, 3
     answers: [],
     finalPrompt: null,
   });
@@ -189,6 +160,44 @@ export const PromptImproverModal: React.FC<PromptImproverModalProps> = ({
     return fullResponse.trim();
   };
 
+  // Parse AI JSON response
+  const parseStepResponse = (response: string): StepData | null => {
+    try {
+      // Clean up response - remove markdown code blocks if present
+      let cleaned = response.trim();
+      if (cleaned.startsWith('```json')) {
+        cleaned = cleaned.slice(7);
+      } else if (cleaned.startsWith('```')) {
+        cleaned = cleaned.slice(3);
+      }
+      if (cleaned.endsWith('```')) {
+        cleaned = cleaned.slice(0, -3);
+      }
+      cleaned = cleaned.trim();
+
+      const parsed = JSON.parse(cleaned);
+
+      // Validate structure
+      if (!parsed.question || !Array.isArray(parsed.options)) {
+        console.error('Invalid step response structure:', parsed);
+        return null;
+      }
+
+      return {
+        question: parsed.question,
+        options: parsed.options.map((opt: { id?: string; label?: string; description?: string }, idx: number) => ({
+          id: opt.id || `opt_${idx}`,
+          label: opt.label || `Option ${idx + 1}`,
+          description: opt.description,
+        })),
+        multiSelect: Boolean(parsed.multiSelect),
+      };
+    } catch (e) {
+      console.error('Failed to parse step response:', e, response);
+      return null;
+    }
+  };
+
   // Generate question for current step
   const generateQuestion = async () => {
     setIsLoading(true);
@@ -196,12 +205,19 @@ export const PromptImproverModal: React.FC<PromptImproverModalProps> = ({
 
     try {
       const prompt = buildStepPrompt(wizard.step as 1 | 2 | 3);
-      const question = await callAI(prompt);
+      const response = await callAI(prompt);
+      const stepData = parseStepResponse(response);
 
-      setWizard(prev => ({
-        ...prev,
-        questions: [...prev.questions, question],
-      }));
+      if (!stepData) {
+        throw new Error('AI response was not in expected format. Please try again.');
+      }
+
+      const stepIndex = (wizard.step as number) - 1;
+      setWizard(prev => {
+        const newStepData = [...prev.stepData];
+        newStepData[stepIndex] = stepData;
+        return { ...prev, stepData: newStepData };
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate question');
     } finally {
@@ -232,12 +248,18 @@ export const PromptImproverModal: React.FC<PromptImproverModalProps> = ({
     }
   };
 
+  // Get current step data
+  const getCurrentStepData = (): StepData | null => {
+    if (typeof wizard.step !== 'number') return null;
+    return wizard.stepData[wizard.step - 1];
+  };
+
   // Toggle option selection
   const handleOptionToggle = (optionId: string) => {
-    const currentStep = wizard.step as 1 | 2 | 3;
-    const stepConfig = STEP_OPTIONS[currentStep];
+    const stepData = getCurrentStepData();
+    if (!stepData) return;
 
-    if (stepConfig.multiSelect) {
+    if (stepData.multiSelect) {
       setSelectedOptions(prev =>
         prev.includes(optionId)
           ? prev.filter(id => id !== optionId)
@@ -250,11 +272,11 @@ export const PromptImproverModal: React.FC<PromptImproverModalProps> = ({
 
   // Build answer from selections and custom input
   const buildAnswer = (): string => {
-    const currentStep = wizard.step as 1 | 2 | 3;
-    const stepConfig = STEP_OPTIONS[currentStep];
+    const stepData = getCurrentStepData();
+    if (!stepData) return inputValue.trim();
 
     const selectedLabels = selectedOptions
-      .map(id => stepConfig.options.find(opt => opt.id === id)?.label)
+      .map(id => stepData.options.find(opt => opt.id === id)?.label)
       .filter(Boolean);
 
     const parts: string[] = [];
@@ -300,7 +322,7 @@ export const PromptImproverModal: React.FC<PromptImproverModalProps> = ({
 
   // Start conversation when modal opens
   useEffect(() => {
-    if (isOpen && originalPrompt.trim() && wizard.questions.length === 0) {
+    if (isOpen && originalPrompt.trim() && !wizard.stepData[0]) {
       generateQuestion();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -308,7 +330,7 @@ export const PromptImproverModal: React.FC<PromptImproverModalProps> = ({
 
   // Generate question when step changes (for steps 2 and 3)
   useEffect(() => {
-    if (isOpen && typeof wizard.step === 'number' && wizard.step > 1 && wizard.questions.length < wizard.step) {
+    if (isOpen && typeof wizard.step === 'number' && wizard.step > 1 && !wizard.stepData[wizard.step - 1]) {
       generateQuestion();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -320,7 +342,7 @@ export const PromptImproverModal: React.FC<PromptImproverModalProps> = ({
       contextManager.deleteContext(sessionIdRef.current);
       setWizard({
         step: 1,
-        questions: [],
+        stepData: [null, null, null],
         answers: [],
         finalPrompt: null,
       });
@@ -369,7 +391,7 @@ export const PromptImproverModal: React.FC<PromptImproverModalProps> = ({
     sessionIdRef.current = `${CONTEXT_IDS.PROMPT_IMPROVER}-${Date.now()}`;
     setWizard({
       step: 1,
-      questions: [],
+      stepData: [null, null, null],
       answers: [],
       finalPrompt: null,
     });
@@ -382,7 +404,7 @@ export const PromptImproverModal: React.FC<PromptImproverModalProps> = ({
   if (!isOpen) return null;
 
   const currentStepNum = typeof wizard.step === 'number' ? wizard.step : (wizard.step === 'generating' ? 3 : 4);
-  const currentQuestion = wizard.questions[currentStepNum - 1];
+  const currentStepData = typeof wizard.step === 'number' ? wizard.stepData[wizard.step - 1] : null;
 
   const modalContent = (
     <div
@@ -487,10 +509,10 @@ export const PromptImproverModal: React.FC<PromptImproverModalProps> = ({
           {wizard.step !== 'final' && wizard.step !== 'generating' && (
             <div className="space-y-4">
               {/* Previous Q&As */}
-              {wizard.questions.slice(0, currentStepNum - 1).map((q, idx) => (
+              {wizard.stepData.slice(0, currentStepNum - 1).map((data, idx) => data && (
                 <div key={idx} className="space-y-2 opacity-60">
                   <div className="p-3 bg-slate-800 rounded-lg border border-white/5">
-                    <p className="text-sm text-slate-300">{q}</p>
+                    <p className="text-sm text-slate-300">{data.question}</p>
                   </div>
                   <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/20 ml-4">
                     <p className="text-sm text-blue-200">{wizard.answers[idx]}</p>
@@ -499,12 +521,12 @@ export const PromptImproverModal: React.FC<PromptImproverModalProps> = ({
               ))}
 
               {/* Current Question */}
-              {isLoading && !currentQuestion ? (
+              {isLoading && !currentStepData ? (
                 <div className="flex items-center gap-3 p-4">
                   <Sparkles className="w-5 h-5 animate-pulse text-purple-400" />
                   <span className="text-slate-400">Analyzing your prompt...</span>
                 </div>
-              ) : currentQuestion ? (
+              ) : currentStepData ? (
                 <div className="space-y-4">
                   {/* AI Question */}
                   <div className="p-4 bg-slate-800 rounded-xl border border-purple-500/20">
@@ -513,62 +535,60 @@ export const PromptImproverModal: React.FC<PromptImproverModalProps> = ({
                         <Sparkles className="w-4 h-4 text-purple-400" />
                       </div>
                       <div className="flex-1">
-                        <p className="text-sm text-slate-200 leading-relaxed">{currentQuestion}</p>
+                        <p className="text-sm text-slate-200 leading-relaxed">{currentStepData.question}</p>
                       </div>
                     </div>
                   </div>
 
-                  {/* Options Grid */}
-                  {typeof wizard.step === 'number' && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-slate-500">
-                          {STEP_OPTIONS[wizard.step as 1 | 2 | 3].multiSelect
-                            ? 'Select one or more options'
-                            : 'Select an option'}
-                        </span>
-                        {selectedOptions.length > 0 && (
-                          <button
-                            onClick={() => setSelectedOptions([])}
-                            className="text-xs text-slate-500 hover:text-slate-400"
-                          >
-                            Clear
-                          </button>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        {STEP_OPTIONS[wizard.step as 1 | 2 | 3].options.map((option) => (
-                          <button
-                            key={option.id}
-                            onClick={() => handleOptionToggle(option.id)}
-                            className={`p-3 rounded-lg border text-left transition-all ${
-                              selectedOptions.includes(option.id)
-                                ? 'bg-purple-500/20 border-purple-500/50 text-purple-200'
-                                : 'bg-slate-800/50 border-white/10 hover:bg-slate-800 hover:border-white/20 text-slate-300'
-                            }`}
-                          >
-                            <div className="flex items-start gap-2">
-                              <div className={`w-4 h-4 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 ${
-                                selectedOptions.includes(option.id)
-                                  ? 'bg-purple-500 border-purple-500'
-                                  : 'border-slate-500'
-                              }`}>
-                                {selectedOptions.includes(option.id) && (
-                                  <Check className="w-2.5 h-2.5 text-white" />
-                                )}
-                              </div>
-                              <div>
-                                <div className="text-sm font-medium">{option.label}</div>
-                                {option.description && (
-                                  <div className="text-xs text-slate-500 mt-0.5">{option.description}</div>
-                                )}
-                              </div>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
+                  {/* Options Grid - AI generated options */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-500">
+                        {currentStepData.multiSelect
+                          ? 'Select one or more options'
+                          : 'Select an option'}
+                      </span>
+                      {selectedOptions.length > 0 && (
+                        <button
+                          onClick={() => setSelectedOptions([])}
+                          className="text-xs text-slate-500 hover:text-slate-400"
+                        >
+                          Clear
+                        </button>
+                      )}
                     </div>
-                  )}
+                    <div className="grid grid-cols-2 gap-2">
+                      {currentStepData.options.map((option) => (
+                        <button
+                          key={option.id}
+                          onClick={() => handleOptionToggle(option.id)}
+                          className={`p-3 rounded-lg border text-left transition-all ${
+                            selectedOptions.includes(option.id)
+                              ? 'bg-purple-500/20 border-purple-500/50 text-purple-200'
+                              : 'bg-slate-800/50 border-white/10 hover:bg-slate-800 hover:border-white/20 text-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <div className={`w-4 h-4 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 ${
+                              selectedOptions.includes(option.id)
+                                ? 'bg-purple-500 border-purple-500'
+                                : 'border-slate-500'
+                            }`}>
+                              {selectedOptions.includes(option.id) && (
+                                <Check className="w-2.5 h-2.5 text-white" />
+                              )}
+                            </div>
+                            <div>
+                              <div className="text-sm font-medium">{option.label}</div>
+                              {option.description && (
+                                <div className="text-xs text-slate-500 mt-0.5">{option.description}</div>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -629,7 +649,7 @@ export const PromptImproverModal: React.FC<PromptImproverModalProps> = ({
 
         {/* Footer */}
         <div className="p-4 border-t border-white/10 bg-slate-900/50">
-          {wizard.step !== 'final' && wizard.step !== 'generating' && currentQuestion && (
+          {wizard.step !== 'final' && wizard.step !== 'generating' && currentStepData && (
             <>
               {/* Custom Input Area */}
               <div className="space-y-2">

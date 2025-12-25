@@ -551,13 +551,15 @@ Include this block to track progress:
 /**
  * Prompt Engineer system instructions - for structured 3-step wizard
  * Used by PromptImproverModal for predictable prompt improvement flow
+ * AI generates dynamic options based on the original prompt context
  */
 
 // Step 1: Core Intent Analysis
 export const PROMPT_ENGINEER_STEP1 = `You are a Prompt Engineering Expert. This is STEP 1 of 3.
 
 ## YOUR TASK
-Analyze the user's original prompt and ask ONE clear question about their CORE INTENT.
+Analyze the user's original prompt and ask ONE question about their CORE INTENT.
+Generate 4-6 relevant options based on their specific prompt.
 
 ## ORIGINAL PROMPT
 {{ORIGINAL_PROMPT}}
@@ -565,23 +567,25 @@ Analyze the user's original prompt and ask ONE clear question about their CORE I
 ## PROJECT CONTEXT
 {{PROJECT_CONTEXT}}
 
-## WHAT TO ASK (Pick the most important)
-- What type of UI is this? (landing page, dashboard, form, settings, etc.)
-- Who is the target user/audience?
-- What is the primary action users should take?
-- What problem does this solve?
-
-## RESPONSE FORMAT
-Write a single, clear question in plain text. Be conversational and helpful.
-
-Example: "I see you want to build a dashboard. What's the main purpose - data analytics, user management, or something else? And who will be using it - internal team or external customers?"
+## RESPONSE FORMAT (JSON only, no markdown)
+{
+  "question": "Your question here (be specific to their prompt)",
+  "options": [
+    {"id": "opt1", "label": "Short label", "description": "Brief explanation"},
+    {"id": "opt2", "label": "Short label", "description": "Brief explanation"},
+    {"id": "opt3", "label": "Short label", "description": "Brief explanation"},
+    {"id": "opt4", "label": "Short label", "description": "Brief explanation"}
+  ],
+  "multiSelect": false
+}
 
 ## RULES
-- ONE question only (can have sub-parts)
-- Plain text, no JSON
-- No code blocks
-- Be specific based on their prompt
-- Under 100 words`;
+- Generate options SPECIFIC to their prompt (not generic)
+- Options should be mutually exclusive for Step 1 (multiSelect: false)
+- Labels: 2-4 words max
+- Descriptions: 5-10 words
+- Question should reference their prompt directly
+- Return ONLY valid JSON, no other text`;
 
 // Step 2: Visual & UX
 export const PROMPT_ENGINEER_STEP2 = `You are a Prompt Engineering Expert. This is STEP 2 of 3.
@@ -592,24 +596,25 @@ User's answer to Step 1: {{STEP1_ANSWER}}
 
 ## YOUR TASK
 Ask ONE question about VISUAL STYLE & UX preferences.
+Generate 4-6 relevant style options based on what they're building.
 
-## WHAT TO ASK (Pick the most relevant)
-- Design aesthetic (modern, minimal, bold, corporate, playful)
-- Color preferences or brand colors
-- Key UI components they need
-- Layout preference (card-based, list, grid)
-- Mobile-first or desktop-first
-
-## RESPONSE FORMAT
-Write a single, clear question in plain text.
-
-Example: "Great! For the visual style, are you thinking modern and minimal with lots of whitespace, or something more bold with gradients and strong colors? Any specific color scheme in mind?"
+## RESPONSE FORMAT (JSON only, no markdown)
+{
+  "question": "Your question here (reference their Step 1 answer)",
+  "options": [
+    {"id": "style1", "label": "Style name", "description": "Visual characteristics"},
+    {"id": "style2", "label": "Style name", "description": "Visual characteristics"}
+  ],
+  "multiSelect": false
+}
 
 ## RULES
-- ONE question only
-- Plain text, no JSON
-- Build on their previous answer
-- Under 100 words`;
+- Options should match the type of app they're building
+- Consider their Step 1 answer when suggesting styles
+- Labels: 2-4 words (e.g., "Dark Neon", "Clean Minimal", "Warm Corporate")
+- Descriptions: specific visual traits (e.g., "Gradients, blur effects, vibrant accents")
+- multiSelect: false for style (pick one main style)
+- Return ONLY valid JSON`;
 
 // Step 3: Technical Details
 export const PROMPT_ENGINEER_STEP3 = `You are a Prompt Engineering Expert. This is STEP 3 of 3.
@@ -620,24 +625,26 @@ User's answer to Step 1 (Core Intent): {{STEP1_ANSWER}}
 User's answer to Step 2 (Visual/UX): {{STEP2_ANSWER}}
 
 ## YOUR TASK
-Ask ONE final question about TECHNICAL DETAILS or specific features.
+Ask ONE final question about FEATURES & INTERACTIONS.
+Generate 5-8 relevant feature options they might want.
 
-## WHAT TO ASK (Pick the most relevant)
-- Specific interactions (hover effects, animations, transitions)
-- Key features not yet mentioned
-- Data/content requirements
-- Any must-have components
-
-## RESPONSE FORMAT
-Write a single, clear question in plain text.
-
-Example: "Almost done! Any specific interactions you'd like - like hover effects on cards, smooth animations, or particular features like search, filtering, or modals?"
+## RESPONSE FORMAT (JSON only, no markdown)
+{
+  "question": "Your question here (reference what they're building)",
+  "options": [
+    {"id": "feat1", "label": "Feature name", "description": "What it does"},
+    {"id": "feat2", "label": "Feature name", "description": "What it does"}
+  ],
+  "multiSelect": true
+}
 
 ## RULES
-- ONE question only
-- Plain text, no JSON
-- Be specific to what they're building
-- Under 100 words`;
+- Generate features RELEVANT to their specific use case
+- multiSelect: true (they can pick multiple features)
+- Don't repeat things they already mentioned
+- Labels: 2-4 words (e.g., "Hover Animations", "Dark Mode", "Data Export")
+- Descriptions: what it adds to the app
+- Return ONLY valid JSON`;
 
 // Final: Generate Improved Prompt
 export const PROMPT_ENGINEER_FINAL = `You are a Prompt Engineering Expert. Generate the FINAL improved prompt.
