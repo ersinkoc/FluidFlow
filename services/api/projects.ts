@@ -76,4 +76,12 @@ export const projectApi = {
     apiCall<{ message: string }>(`/projects/${id}/context`, {
       method: 'DELETE',
     }),
+
+  /**
+   * Delete node_modules for a project to free up disk space
+   */
+  cleanNodeModules: (id: string) =>
+    apiCall<{ message: string; id: string; freedBytes: number; freedMB: number }>(`/projects/${id}/node_modules`, {
+      method: 'DELETE',
+    }),
 };

@@ -16,6 +16,14 @@ export interface ProjectMeta {
   description?: string;
   gitInitialized?: boolean;
   githubRepo?: string;
+  /** First time the project was started/opened */
+  firstStartAt?: number;
+  /** Last commit timestamp */
+  lastCommitAt?: number;
+  /** Whether node_modules folder exists */
+  hasNodeModules?: boolean;
+  /** Size of node_modules in bytes */
+  nodeModulesSize?: number;
 }
 
 export interface Project extends ProjectMeta {

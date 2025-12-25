@@ -32,6 +32,10 @@ interface ProjectMeta {
   description?: string;
   gitInitialized?: boolean;
   githubRepo?: string;
+  firstStartAt?: number;
+  lastCommitAt?: number;
+  hasNodeModules?: boolean;
+  nodeModulesSize?: number;
 }
 
 interface _ProjectFile {
@@ -48,6 +52,42 @@ const getProjectPath = (id: string) => path.join(PROJECTS_DIR, id);
 const getMetaPath = (id: string) => path.join(getProjectPath(id), 'project.json');
 const getFilesDir = (id: string) => path.join(getProjectPath(id), 'files');
 const getContextPath = (id: string) => path.join(getProjectPath(id), 'context.json');
+const getNodeModulesPath = (id: string) => path.join(getFilesDir(id), 'node_modules');
+
+// Helper to get directory size recursively
+async function getDirectorySize(dirPath: string): Promise<number> {
+  let totalSize = 0;
+  try {
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const entryPath = path.join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        totalSize += await getDirectorySize(entryPath);
+      } else if (entry.isFile()) {
+        const stats = await fs.stat(entryPath);
+        totalSize += stats.size;
+      }
+    }
+  } catch {
+    // Ignore errors (permission issues, etc.)
+  }
+  return totalSize;
+}
+
+// Helper to get node_modules info for a project
+async function getNodeModulesInfo(projectId: string): Promise<{ exists: boolean; size: number }> {
+  const nodeModulesPath = getNodeModulesPath(projectId);
+  try {
+    const stats = await fs.stat(nodeModulesPath);
+    if (stats.isDirectory()) {
+      const size = await getDirectorySize(nodeModulesPath);
+      return { exists: true, size };
+    }
+  } catch {
+    // node_modules doesn't exist
+  }
+  return { exists: false, size: 0 };
+}
 
 // Per-project locks to prevent concurrent file updates
 // HIGH-002 FIX: Queue-based approach to eliminate TOCTOU race condition
@@ -165,6 +205,10 @@ router.get('/', async (req, res) => {
         // BUG-FIX: Use safe JSON parsing to prevent crashes
         const meta = await safeReadJson<ProjectMeta | null>(metaPath, null);
         if (meta && meta.id) {
+          // Get node_modules info for each project
+          const nodeModulesInfo = await getNodeModulesInfo(entry.name);
+          meta.hasNodeModules = nodeModulesInfo.exists;
+          meta.nodeModulesSize = nodeModulesInfo.size;
           projects.push(meta);
         }
       }
@@ -199,7 +243,62 @@ router.get('/:id', async (req, res) => {
     if (!meta) {
       return res.status(500).json({ error: 'Project metadata corrupted' });
     }
+
     const filesDir = getFilesDir(id);
+
+    // Track first start if not set
+    let metaUpdated = false;
+    if (!meta.firstStartAt) {
+      meta.firstStartAt = Date.now();
+      metaUpdated = true;
+    }
+
+    // Get node_modules info
+    const nodeModulesInfo = await getNodeModulesInfo(id);
+    meta.hasNodeModules = nodeModulesInfo.exists;
+    meta.nodeModulesSize = nodeModulesInfo.size;
+
+    // Auto-create .gitignore if it doesn't exist
+    const gitignorePath = path.join(filesDir, '.gitignore');
+    if (existsSync(filesDir) && !existsSync(gitignorePath)) {
+      const defaultGitignore = `# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+.next/
+.nuxt/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+`;
+      try {
+        await fs.writeFile(gitignorePath, defaultGitignore);
+        console.log(`[Projects] Auto-created .gitignore for project ${id}`);
+      } catch (err) {
+        console.warn(`[Projects] Failed to create .gitignore for project ${id}:`, err);
+      }
+    }
+
+    // Save meta if updated
+    if (metaUpdated) {
+      await fs.writeFile(getMetaPath(id), JSON.stringify(meta, null, 2));
+    }
     const files: Record<string, string> = {};
 
     // Read all files recursively (excluding .git and other system folders)
@@ -576,6 +675,48 @@ router.delete('/:id', async (req, res) => {
     res.json({ message: 'Project deleted', id });
   } catch (_error) {
     res.status(500).json({ error: 'Failed to delete project' });
+  }
+});
+
+// Delete node_modules for a project (cleanup endpoint)
+router.delete('/:id/node_modules', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Validate project ID to prevent path traversal attacks
+    if (!isValidProjectId(id)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
+    const projectPath = getProjectPath(id);
+
+    if (!existsSync(projectPath)) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const nodeModulesPath = getNodeModulesPath(id);
+
+    if (!existsSync(nodeModulesPath)) {
+      return res.status(404).json({ error: 'node_modules not found', hasNodeModules: false });
+    }
+
+    // Get size before deletion for response
+    const sizeBefore = await getDirectorySize(nodeModulesPath);
+
+    // Delete node_modules directory
+    await fs.rm(nodeModulesPath, { recursive: true, force: true });
+
+    console.log(`[Projects] Deleted node_modules for project ${id} (${Math.round(sizeBefore / 1024 / 1024)}MB freed)`);
+
+    res.json({
+      message: 'node_modules deleted',
+      id,
+      freedBytes: sizeBefore,
+      freedMB: Math.round(sizeBefore / 1024 / 1024 * 100) / 100
+    });
+  } catch (_error) {
+    console.error('Delete node_modules error:', _error);
+    res.status(500).json({ error: 'Failed to delete node_modules' });
   }
 });
 

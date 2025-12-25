@@ -5,7 +5,7 @@
  * like missing package.json, vite.config.ts, etc.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   X,
   AlertTriangle,
@@ -49,6 +49,13 @@ export const ProjectHealthModal: React.FC<ProjectHealthModalProps> = ({
   const [fixedIssues, setFixedIssues] = useState<Set<string>>(new Set());
   const [selectedIssues, setSelectedIssues] = useState<Set<string>>(new Set());
   const [expandedIssues, setExpandedIssues] = useState<Set<string>>(new Set());
+
+  // Reset state when project changes (files or projectName)
+  useEffect(() => {
+    setFixedIssues(new Set());
+    setSelectedIssues(new Set());
+    setExpandedIssues(new Set());
+  }, [files, projectName]);
 
   // Run health check
   const healthCheck = useMemo<HealthCheckResult>(() => {

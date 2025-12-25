@@ -5,11 +5,11 @@
  * Provides project listing, creation, import from GitHub, push to GitHub, and project switching.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   FolderOpen, Plus, Trash2, Copy, Clock, GitBranch, RefreshCw,
   Search, MoreVertical, Check, AlertCircle, FolderPlus, Loader2, Github,
-  FolderGit, Upload, Pencil, X
+  FolderGit, Upload, Pencil, X, Package, Sparkles
 } from 'lucide-react';
 import type { ProjectMeta } from '@/services/projectApi';
 import { projectApi } from '@/services/projectApi';
@@ -29,6 +29,14 @@ function formatDate(timestamp: number): string {
   if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
 
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function formatSize(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 export const ProjectsPanel: React.FC = () => {
@@ -58,6 +66,9 @@ export const ProjectsPanel: React.FC = () => {
   const [hasExistingRemote, setHasExistingRemote] = useState(false);
   const [existingRemoteUrl, setExistingRemoteUrl] = useState('');
 
+  // Bulk node_modules cleanup state
+  const [isCleaningAll, setIsCleaningAll] = useState(false);
+
   // Load projects
   const loadProjects = useCallback(async () => {
     setIsLoading(true);
@@ -85,6 +96,22 @@ export const ProjectsPanel: React.FC = () => {
       project.description?.toLowerCase().includes(query)
     );
   });
+
+  // Calculate node_modules summary
+  const nodeModulesSummary = useMemo(() => {
+    const projectsWithNodeModules = projects.filter(
+      p => p.hasNodeModules && p.nodeModulesSize && p.nodeModulesSize > 0
+    );
+    const totalSize = projectsWithNodeModules.reduce(
+      (sum, p) => sum + (p.nodeModulesSize || 0),
+      0
+    );
+    return {
+      count: projectsWithNodeModules.length,
+      totalSize,
+      projects: projectsWithNodeModules,
+    };
+  }, [projects]);
 
   // Handle create project
   const handleCreate = async () => {
@@ -157,6 +184,60 @@ export const ProjectsPanel: React.FC = () => {
       setError(err instanceof Error ? err.message : 'Failed to duplicate project');
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  // Handle clean node_modules
+  const handleCleanNodeModules = async (id: string) => {
+    setActionLoading(id);
+    setMenuOpenId(null);
+    try {
+      const result = await projectApi.cleanNodeModules(id);
+      // Update local state to reflect node_modules removal
+      setProjects(prev => prev.map(p =>
+        p.id === id
+          ? { ...p, hasNodeModules: false, nodeModulesSize: 0 }
+          : p
+      ));
+      // Show success message via error state (temporary)
+      setError(`Cleaned ${result.freedMB} MB from node_modules`);
+      setTimeout(() => setError(null), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to clean node_modules');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Handle clean ALL node_modules
+  const handleCleanAllNodeModules = async () => {
+    if (nodeModulesSummary.count === 0) return;
+
+    setIsCleaningAll(true);
+    let totalFreed = 0;
+    let cleaned = 0;
+
+    try {
+      for (const project of nodeModulesSummary.projects) {
+        try {
+          const result = await projectApi.cleanNodeModules(project.id);
+          totalFreed += result.freedMB;
+          cleaned++;
+          // Update local state for each cleaned project
+          setProjects(prev => prev.map(p =>
+            p.id === project.id
+              ? { ...p, hasNodeModules: false, nodeModulesSize: 0 }
+              : p
+          ));
+        } catch {
+          // Continue with next project even if one fails
+        }
+      }
+
+      setError(`Cleaned ${cleaned} project(s), freed ${totalFreed.toFixed(1)} MB`);
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setIsCleaningAll(false);
     }
   };
 
@@ -328,13 +409,47 @@ export const ProjectsPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* Error */}
+      {/* node_modules Summary Banner */}
+      {nodeModulesSummary.count > 0 && (
+        <div className="flex-none px-4 py-2 bg-amber-500/10 border-b border-amber-500/20">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Package className="w-4 h-4 text-amber-400" />
+              <span className="text-xs text-amber-300">
+                <span className="font-medium">{nodeModulesSummary.count}</span> project{nodeModulesSummary.count > 1 ? 's' : ''} with node_modules
+              </span>
+              <span className="text-xs text-amber-500">
+                ({formatSize(nodeModulesSummary.totalSize)} total)
+              </span>
+            </div>
+            <button
+              onClick={handleCleanAllNodeModules}
+              disabled={isCleaningAll}
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 disabled:bg-amber-500/10 text-amber-400 rounded-lg text-xs font-medium transition-colors"
+            >
+              {isCleaningAll ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Cleaning...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Clean All
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Error / Success Message */}
       {error && (
-        <div className="flex-none px-4 py-2 bg-red-500/10 border-b border-red-500/20">
-          <div className="flex items-center gap-2 text-red-400 text-xs">
-            <AlertCircle className="w-4 h-4" />
+        <div className={`flex-none px-4 py-2 border-b ${error.includes('Cleaned') ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-red-500/10 border-red-500/20'}`}>
+          <div className={`flex items-center gap-2 text-xs ${error.includes('Cleaned') ? 'text-emerald-400' : 'text-red-400'}`}>
+            {error.includes('Cleaned') ? <Check className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
             {error}
-            <button onClick={() => setError(null)} className="ml-auto hover:text-red-300">
+            <button onClick={() => setError(null)} className={`ml-auto ${error.includes('Cleaned') ? 'hover:text-emerald-300' : 'hover:text-red-300'}`}>
               Dismiss
             </button>
           </div>
@@ -394,7 +509,7 @@ export const ProjectsPanel: React.FC = () => {
         </div>
       )}
 
-      {/* Projects List */}
+      {/* Projects Grid */}
       <div className="flex-1 overflow-y-auto custom-scrollbar">
         {isLoading ? (
           <div className="flex items-center justify-center py-16">
@@ -411,37 +526,96 @@ export const ProjectsPanel: React.FC = () => {
             </p>
           </div>
         ) : (
-          <div className="p-3 space-y-2">
+          <div className="p-3 grid grid-cols-2 lg:grid-cols-3 gap-3">
             {filteredProjects.map((project) => (
               <div
                 key={project.id}
-                className={`group relative flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
+                className={`group relative flex flex-col p-3 rounded-xl border transition-all cursor-pointer ${
                   currentProject?.id === project.id
-                    ? 'bg-blue-500/10 border-blue-500/30'
+                    ? 'bg-blue-500/10 border-blue-500/30 ring-1 ring-blue-500/20'
                     : 'bg-slate-800/30 border-white/5 hover:bg-slate-800/60 hover:border-white/10'
                 }`}
                 onClick={() => handleOpen(project.id)}
               >
-                {/* Icon */}
-                <div className={`p-2 rounded-lg ${
-                  currentProject?.id === project.id
-                    ? 'bg-blue-500/20'
-                    : 'bg-slate-700/50 group-hover:bg-slate-700'
-                }`}>
-                  {project.gitInitialized ? (
-                    <FolderGit className={`w-4 h-4 ${
-                      currentProject?.id === project.id ? 'text-blue-400' : 'text-emerald-400'
-                    }`} />
-                  ) : (
-                    <FolderOpen className={`w-4 h-4 ${
-                      currentProject?.id === project.id ? 'text-blue-400' : 'text-slate-400'
-                    }`} />
+                {/* Header: Icon + Menu */}
+                <div className="flex items-start justify-between mb-2">
+                  <div className={`p-2 rounded-lg ${
+                    currentProject?.id === project.id
+                      ? 'bg-blue-500/20'
+                      : 'bg-slate-700/50 group-hover:bg-slate-700'
+                  }`}>
+                    {project.gitInitialized ? (
+                      <FolderGit className={`w-5 h-5 ${
+                        currentProject?.id === project.id ? 'text-blue-400' : 'text-emerald-400'
+                      }`} />
+                    ) : (
+                      <FolderOpen className={`w-5 h-5 ${
+                        currentProject?.id === project.id ? 'text-blue-400' : 'text-slate-400'
+                      }`} />
+                    )}
+                  </div>
+
+                  {/* Loading or Menu */}
+                  {actionLoading === project.id && editingProjectId !== project.id ? (
+                    <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+                  ) : editingProjectId !== project.id && (
+                    <div className="relative">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMenuOpenId(menuOpenId === project.id ? null : project.id);
+                        }}
+                        className="p-1 opacity-0 group-hover:opacity-100 hover:bg-white/10 rounded text-slate-400 hover:text-white transition-all"
+                      >
+                        <MoreVertical className="w-4 h-4" />
+                      </button>
+
+                      {menuOpenId === project.id && (
+                        <div
+                          className="absolute right-0 top-full mt-1 w-44 bg-slate-800 border border-white/10 rounded-lg shadow-xl overflow-hidden z-20"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            onClick={() => handleStartEdit(project)}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-300 hover:bg-white/10 transition-colors"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleOpenPush(project.id, project.name)}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-blue-400 hover:bg-blue-500/10 transition-colors"
+                          >
+                            <Upload className="w-3.5 h-3.5" />
+                            Push to GitHub
+                          </button>
+                          <button
+                            onClick={() => handleDuplicate(project.id)}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-300 hover:bg-white/10 transition-colors"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                            Duplicate
+                          </button>
+                          <button
+                            onClick={() => {
+                              setDeleteConfirmId(project.id);
+                              setMenuOpenId(null);
+                            }}
+                            disabled={currentProject?.id === project.id}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
 
-                {/* Info or Edit Form */}
+                {/* Edit Form */}
                 {editingProjectId === project.id ? (
-                  <div className="flex-1 min-w-0 space-y-2" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex-1 space-y-2" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="text"
                       value={editName}
@@ -458,7 +632,7 @@ export const ProjectsPanel: React.FC = () => {
                       type="text"
                       value={editDescription}
                       onChange={(e) => setEditDescription(e.target.value)}
-                      placeholder="Description (optional)"
+                      placeholder="Description"
                       className="w-full px-2 py-1.5 bg-slate-800 border border-white/20 rounded-lg text-sm text-white placeholder-slate-500 outline-none focus:border-blue-500/50"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') handleSaveEdit();
@@ -488,23 +662,28 @@ export const ProjectsPanel: React.FC = () => {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-medium text-white truncate">
-                        {project.name}
-                      </h3>
-                      {currentProject?.id === project.id && (
-                        <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] rounded">
-                          Current
-                        </span>
+                  <>
+                    {/* Project Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-sm font-medium text-white truncate">
+                          {project.name}
+                        </h3>
+                        {currentProject?.id === project.id && (
+                          <span className="shrink-0 px-1.5 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] rounded">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      {project.description && (
+                        <p className="text-xs text-slate-500 truncate">
+                          {project.description}
+                        </p>
                       )}
                     </div>
-                    {project.description && (
-                      <p className="text-xs text-slate-500 truncate mt-0.5">
-                        {project.description}
-                      </p>
-                    )}
-                    <div className="flex items-center gap-3 mt-1">
+
+                    {/* Badges */}
+                    <div className="flex flex-wrap items-center gap-2 mt-2 pt-2 border-t border-white/5">
                       <span className="flex items-center gap-1 text-[10px] text-slate-500">
                         <Clock className="w-3 h-3" />
                         {formatDate(project.updatedAt)}
@@ -516,67 +695,26 @@ export const ProjectsPanel: React.FC = () => {
                         </span>
                       )}
                     </div>
-                  </div>
-                )}
 
-                {/* Loading - only show when not editing */}
-                {actionLoading === project.id && editingProjectId !== project.id && (
-                  <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
-                )}
-
-                {/* Actions Menu - hide when editing */}
-                {editingProjectId !== project.id && (
-                  <div className="relative">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setMenuOpenId(menuOpenId === project.id ? null : project.id);
-                      }}
-                      className="p-1.5 opacity-0 group-hover:opacity-100 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-all"
-                    >
-                      <MoreVertical className="w-4 h-4" />
-                    </button>
-
-                  {menuOpenId === project.id && (
-                    <div
-                      className="absolute right-0 top-full mt-1 w-40 bg-slate-800 border border-white/10 rounded-lg shadow-xl overflow-hidden z-10"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <button
-                        onClick={() => handleStartEdit(project)}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-300 hover:bg-white/10 transition-colors"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleOpenPush(project.id, project.name)}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-blue-400 hover:bg-blue-500/10 transition-colors"
-                      >
-                        <Upload className="w-3.5 h-3.5" />
-                        Push to GitHub
-                      </button>
-                      <button
-                        onClick={() => handleDuplicate(project.id)}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-300 hover:bg-white/10 transition-colors"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                        Duplicate
-                      </button>
-                      <button
-                        onClick={() => {
-                          setDeleteConfirmId(project.id);
-                          setMenuOpenId(null);
-                        }}
-                        disabled={currentProject?.id === project.id}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        Delete
-                      </button>
-                    </div>
-                  )}
-                  </div>
+                    {/* node_modules info with clean button */}
+                    {project.hasNodeModules && project.nodeModulesSize && project.nodeModulesSize > 0 && (
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/5">
+                        <span className="flex items-center gap-1.5 text-[10px] text-amber-500">
+                          <Package className="w-3.5 h-3.5" />
+                          node_modules: {formatSize(project.nodeModulesSize)}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCleanNodeModules(project.id);
+                          }}
+                          className="px-2 py-0.5 text-[10px] font-medium text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 rounded transition-colors"
+                        >
+                          Clean
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             ))}
