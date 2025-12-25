@@ -2,7 +2,7 @@
  * ActivityBar - VS Code style vertical icon sidebar
  * Contains all navigation tabs matching PreviewPanel tabs
  */
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 import {
   MessageSquare,
   Eye,
@@ -19,7 +19,9 @@ import {
   FileText,
   Bug,
   Wrench,
-  Lock
+  Lock,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { useUI } from '../../contexts/UIContext';
 import { useStatusBar } from '../../contexts/StatusBarContext';
@@ -92,6 +94,7 @@ export const ActivityBar = memo(function ActivityBar({
   const { isRunnerActive } = useStatusBar();
   const activeTab = ui.activeTab;
   const leftPanelVisible = ui.leftPanelVisible;
+  const [isHovered, setIsHovered] = useState(false);
 
   const handleClick = (item: ActivityBarItem) => {
     if (item.action === 'chat') {
@@ -152,7 +155,35 @@ export const ActivityBar = memo(function ActivityBar({
   );
 
   return (
-    <aside className="w-11 bg-slate-950 border-r border-white/10 flex flex-col items-center py-2 shrink-0">
+    <aside
+      className="relative w-11 bg-slate-950 border-r border-white/10 flex flex-col items-center py-2 shrink-0"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* Edge chevron toggle for left panel */}
+      <div
+        className={`absolute right-0 top-1/2 -translate-y-1/2 z-10 transition-all duration-200 ${
+          isHovered ? 'opacity-100 translate-x-1/2' : 'opacity-0 translate-x-0 pointer-events-none'
+        }`}
+      >
+        <ActivityBarTooltip
+          label={leftPanelVisible ? 'Hide Panel' : 'Show Panel'}
+          description={leftPanelVisible ? 'Collapse the chat panel' : 'Expand the chat panel'}
+          shortcut="Ctrl+B"
+        >
+          <button
+            onClick={onChatClick}
+            className="w-5 h-10 bg-slate-800 hover:bg-slate-700 border border-white/10 rounded-r-md flex items-center justify-center text-slate-400 hover:text-white transition-colors shadow-lg"
+          >
+            {leftPanelVisible ? (
+              <ChevronLeft className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronRight className="w-3.5 h-3.5" />
+            )}
+          </button>
+        </ActivityBarTooltip>
+      </div>
+
       {/* Chat - Toggle left panel */}
       <ActivityBarTooltip
         label="Chat"

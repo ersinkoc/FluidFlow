@@ -64,6 +64,7 @@ try {
  */
 export function setGlobalPromptInterceptor(interceptor: PromptInterceptor | null): void {
   globalInterceptor = interceptor;
+  console.log('[PromptConfirmation] Interceptor set:', !!interceptor, 'enabled:', isConfirmationEnabled);
 }
 
 /**
@@ -86,9 +87,19 @@ export function setPromptConfirmationEnabled(enabled: boolean): void {
  * If confirmation is disabled or no interceptor, returns true immediately
  */
 export async function requestPromptConfirmation(details: PromptDetails): Promise<boolean> {
+  console.log('[PromptConfirmation] Request received:', {
+    enabled: isConfirmationEnabled,
+    hasInterceptor: !!globalInterceptor,
+    category: details.category,
+    model: details.model,
+  });
+
   if (!isConfirmationEnabled || !globalInterceptor) {
+    console.log('[PromptConfirmation] Skipping - enabled:', isConfirmationEnabled, 'interceptor:', !!globalInterceptor);
     return true; // No confirmation needed
   }
+
+  console.log('[PromptConfirmation] Showing modal...');
   return globalInterceptor(details);
 }
 
