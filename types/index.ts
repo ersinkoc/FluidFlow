@@ -325,3 +325,69 @@ export interface SearchReplaceModeResponse {
   changes: Record<string, SearchReplaceFileChange>;
   deletedFiles?: string[];
 }
+
+// AI Usage Analytics Types
+export interface UsageRecord {
+  id: string;
+  timestamp: number;
+  provider: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  isEstimated: boolean;
+  inputCost: number;
+  outputCost: number;
+  totalCost: number;
+  currency: string;
+  category: 'generation' | 'accessibility' | 'quick-edit' | 'auto-fix' | 'git-commit' | 'auto-commit' | 'prompt-improver' | 'other';
+  duration: number; // ms
+  projectId?: string;
+  success: boolean;
+  errorMessage?: string;
+}
+
+export interface UsageStats {
+  totalRequests: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalTokens: number;
+  totalCost: number;
+  successRate: number;
+  avgDuration: number;
+  byProvider: Record<string, ProviderStats>;
+  byModel: Record<string, ModelStats>;
+  byCategory: Record<string, CategoryStats>;
+  byDay: Record<string, DayStats>;
+}
+
+export interface ProviderStats {
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalCost: number;
+  avgDuration: number;
+}
+
+export interface ModelStats {
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalCost: number;
+  avgDuration: number;
+  provider: string;
+}
+
+export interface CategoryStats {
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalCost: number;
+}
+
+export interface DayStats {
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalCost: number;
+}

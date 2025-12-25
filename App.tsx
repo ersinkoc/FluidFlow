@@ -60,7 +60,7 @@ export default function App() {
 
   // Centralized modal state management
   const modals = useModalManager();
-  const [megaSettingsInitialCategory] = useState<'ai-providers' | 'context-manager' | 'tech-stack' | 'projects' | 'editor' | 'appearance' | 'debug' | 'shortcuts' | 'advanced'>('ai-providers');
+  const [megaSettingsInitialCategory, setMegaSettingsInitialCategory] = useState<'ai-providers' | 'ai-usage' | 'context-manager' | 'tech-stack' | 'projects' | 'editor' | 'appearance' | 'debug' | 'shortcuts' | 'advanced'>('ai-providers');
 
   // Resizable panel divider (drag to resize, double-click to reset)
   const { panelWidth, isDragging, dividerProps } = usePanelResize();
@@ -233,6 +233,10 @@ export default function App() {
           onOpenHistoryPanel={() => modals.toggle('history')}
           onOpenCredits={() => modals.open('credits')}
           onOpenHealthCheck={() => modals.open('projectHealth')}
+          onOpenAIUsage={() => {
+            setMegaSettingsInitialCategory('ai-usage');
+            modals.open('megaSettings');
+          }}
           showActivityBar={true}
           showTitleBar={true}
           showStatusBar={true}

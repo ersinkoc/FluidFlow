@@ -3,9 +3,11 @@ import { createPortal } from 'react-dom';
 import {
   FolderOpen, ChevronUp, ChevronDown, Cloud, CloudOff, Plus,
   Clock, GitBranch, Check, Loader2, RefreshCw, X, Search, Trash2, Copy,
-  AlertCircle, FolderPlus, MoreVertical, Save, FolderInput, AlertTriangle
+  AlertCircle, FolderPlus, MoreVertical, Save, FolderInput, AlertTriangle, LayoutTemplate
 } from 'lucide-react';
 import type { ProjectMeta } from '@/services/projectApi';
+import type { FileSystem } from '@/types';
+import { ProjectTemplateSelector } from './ProjectTemplateSelector';
 
 interface GitStatus {
   initialized: boolean;
@@ -20,7 +22,7 @@ interface ProjectPanelProps {
   isSyncing: boolean;
   lastSyncedAt: number | null;
   isLoadingProjects: boolean;
-  onCreateProject: (name?: string, description?: string) => Promise<ProjectMeta | null>;
+  onCreateProject: (name?: string, description?: string, initialFiles?: FileSystem) => Promise<ProjectMeta | null>;
   onOpenProject: (id: string) => Promise<boolean>;
   onDeleteProject: (id: string) => Promise<boolean>;
   onDuplicateProject: (id: string) => Promise<ProjectMeta | null>;
@@ -91,6 +93,7 @@ export const ProjectPanel: React.FC<ProjectPanelProps> = ({
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [showTemplateSelector, setShowTemplateSelector] = useState(false);
 
   // Unsaved work modal state
   const [unsavedWorkModal, setUnsavedWorkModal] = useState<{
@@ -385,9 +388,19 @@ export const ProjectPanel: React.FC<ProjectPanelProps> = ({
               />
             </div>
             <button
+              onClick={() => setShowTemplateSelector(true)}
+              disabled={!isServerOnline}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg text-xs font-medium transition-colors"
+              title="Create from template"
+            >
+              <LayoutTemplate className="w-3.5 h-3.5" />
+              Template
+            </button>
+            <button
               onClick={() => setIsCreating(true)}
               disabled={!isServerOnline}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg text-xs font-medium transition-colors"
+              title="Create blank project"
             >
               <Plus className="w-3.5 h-3.5" />
               New
@@ -739,6 +752,18 @@ export const ProjectPanel: React.FC<ProjectPanelProps> = ({
         </div>,
         document.body
       )}
+
+      {/* Project Template Selector */}
+      <ProjectTemplateSelector
+        isOpen={showTemplateSelector}
+        onClose={() => setShowTemplateSelector(false)}
+        onSelectTemplate={async (name, description, files) => {
+          await onCreateProject(name, description, files);
+          setShowTemplateSelector(false);
+          setIsOpen(false);
+        }}
+        isLoading={actionLoading === 'template'}
+      />
     </div>
   );
 };

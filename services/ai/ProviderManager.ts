@@ -21,6 +21,7 @@ import {
 import { settingsApi } from '../projectApi';
 import { debugLog } from '../../hooks/useDebugStore';
 import { requestPromptConfirmation, type PromptDetails } from '../../contexts/PromptConfirmationContext';
+import { addUsageRecord } from '../analyticsStorage';
 
 /**
  * ProviderManager class for managing AI provider state.
@@ -364,6 +365,19 @@ export class ProviderManager {
           : undefined,
       });
 
+      // Track usage analytics
+      addUsageRecord({
+        timestamp: Date.now(),
+        provider: config?.type || 'unknown',
+        model,
+        inputTokens: response.usage?.inputTokens || 0,
+        outputTokens: response.usage?.outputTokens || 0,
+        isEstimated: response.usage?.isEstimated ?? true,
+        category: category as 'generation' | 'accessibility' | 'quick-edit' | 'auto-fix' | 'git-commit' | 'auto-commit' | 'prompt-improver' | 'other',
+        duration: Date.now() - startTime,
+        success: true,
+      }).catch((err) => console.warn('[Analytics] Failed to record usage:', err));
+
       return response;
     } catch (error) {
       // Log error
@@ -373,6 +387,21 @@ export class ProviderManager {
         provider: config?.name,
         duration: Date.now() - startTime,
       });
+
+      // Track failed usage analytics
+      addUsageRecord({
+        timestamp: Date.now(),
+        provider: config?.type || 'unknown',
+        model,
+        inputTokens: 0,
+        outputTokens: 0,
+        isEstimated: true,
+        category: category as 'generation' | 'accessibility' | 'quick-edit' | 'auto-fix' | 'git-commit' | 'auto-commit' | 'prompt-improver' | 'other',
+        duration: Date.now() - startTime,
+        success: false,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      }).catch((err) => console.warn('[Analytics] Failed to record usage:', err));
+
       throw error;
     }
   }
@@ -498,6 +527,19 @@ export class ProviderManager {
         true
       ); // Immediate update
 
+      // Track usage analytics
+      addUsageRecord({
+        timestamp: Date.now(),
+        provider: config?.type || 'unknown',
+        model,
+        inputTokens: response.usage?.inputTokens || 0,
+        outputTokens: response.usage?.outputTokens || 0,
+        isEstimated: response.usage?.isEstimated ?? true,
+        category: category as 'generation' | 'accessibility' | 'quick-edit' | 'auto-fix' | 'git-commit' | 'auto-commit' | 'prompt-improver' | 'other',
+        duration: Date.now() - startTime,
+        success: true,
+      }).catch((err) => console.warn('[Analytics] Failed to record usage:', err));
+
       return response;
     } catch (error) {
       // Log error
@@ -513,6 +555,21 @@ export class ProviderManager {
           isComplete: false,
         },
       });
+
+      // Track failed usage analytics
+      addUsageRecord({
+        timestamp: Date.now(),
+        provider: config?.type || 'unknown',
+        model,
+        inputTokens: 0,
+        outputTokens: 0,
+        isEstimated: true,
+        category: category as 'generation' | 'accessibility' | 'quick-edit' | 'auto-fix' | 'git-commit' | 'auto-commit' | 'prompt-improver' | 'other',
+        duration: Date.now() - startTime,
+        success: false,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      }).catch((err) => console.warn('[Analytics] Failed to record usage:', err));
+
       throw error;
     }
   }

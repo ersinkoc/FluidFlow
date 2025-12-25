@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, Wand2, Paperclip, Image, Palette, X, Maximize2, Sparkles, Brain, Clock } from 'lucide-react';
+import { Send, Loader2, Wand2, Paperclip, Image, Palette, X, Maximize2, Sparkles, Brain, Clock, FileText } from 'lucide-react';
 import { ChatAttachment, FileSystem } from '../../types';
 import { PromptLibrary, PromptDropdown } from './PromptLibrary';
+import { PromptTemplateSelector } from './PromptTemplateSelector';
 import { UploadCards } from './UploadCards';
 import { ExpandedPromptModal } from './ExpandedPromptModal';
 import { PromptImproverModal } from './PromptImproverModal';
@@ -17,6 +18,7 @@ interface ChatInputProps {
   files?: FileSystem;
   onOpenPromptEngineer?: () => void;
   onOpenHistory?: () => void;
+  onOpenTemplateSettings?: () => void;
   externalPrompt?: string; // For auto-filling from continuation
   historyPrompt?: string; // For auto-filling from prompt history
 }
@@ -29,6 +31,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   files = {},
   onOpenPromptEngineer,
   onOpenHistory,
+  onOpenTemplateSettings,
   externalPrompt,
   historyPrompt
 }) => {
@@ -39,6 +42,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [showExpandedModal, setShowExpandedModal] = useState(false);
   const [showImproverModal, setShowImproverModal] = useState(false);
+  const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [defaultLevel, setDefaultLevel] = usePromptLevel();
   const { error: showError } = useToast();
@@ -269,6 +273,28 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               onClose={() => setShowPromptDropdown(false)}
               onSelectPrompt={(p) => setPrompt(prev => prev ? `${prev}\n${p}` : p)}
               onOpenLibrary={() => setShowPromptLibrary(true)}
+            />
+          </div>
+
+          {/* Saved Templates button */}
+          <div className="relative">
+            <button
+              onClick={() => setShowTemplateSelector(!showTemplateSelector)}
+              className={`p-1.5 rounded-md transition-colors ${
+                showTemplateSelector
+                  ? 'bg-blue-500/20 text-blue-400'
+                  : 'hover:bg-white/5 text-slate-400 hover:text-white'
+              }`}
+              title="Saved Templates"
+            >
+              <FileText className="w-4 h-4" />
+            </button>
+
+            <PromptTemplateSelector
+              isOpen={showTemplateSelector}
+              onClose={() => setShowTemplateSelector(false)}
+              onSelectPrompt={(p) => setPrompt(prev => prev ? `${prev}\n${p}` : p)}
+              onOpenSettings={onOpenTemplateSettings}
             />
           </div>
 

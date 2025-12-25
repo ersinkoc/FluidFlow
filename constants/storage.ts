@@ -10,6 +10,11 @@ export const WIP_DB_VERSION = 2; // Bumped for chat store
 export const WIP_STORE_NAME = 'wip';
 export const CHAT_STORE_NAME = 'chat';
 
+// Analytics IndexedDB
+export const ANALYTICS_DB_NAME = 'fluidflow-analytics';
+export const ANALYTICS_DB_VERSION = 1;
+export const ANALYTICS_STORE_NAME = 'usage-records';
+
 // LocalStorage keys
 export const STORAGE_KEYS = {
   AI_PROVIDERS: 'ai-providers',

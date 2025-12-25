@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Cpu, MessageSquare, Package, FolderOpen, Code,
-  Palette, Bug, Settings2, Github, Info
+  Palette, Bug, Settings2, Github, Info, FileText, BarChart3
 } from 'lucide-react';
 import { SettingsCategory, SettingsCategoryConfig } from './types';
 
@@ -16,6 +16,12 @@ const SETTINGS_CATEGORIES: SettingsCategoryConfig[] = [
     label: 'AI Providers',
     icon: Cpu,
     description: 'Configure AI models and API keys'
+  },
+  {
+    id: 'ai-usage',
+    label: 'AI Usage',
+    icon: BarChart3,
+    description: 'Token usage and cost analytics'
   },
   {
     id: 'context-manager',
@@ -34,6 +40,12 @@ const SETTINGS_CATEGORIES: SettingsCategoryConfig[] = [
     label: 'Projects',
     icon: FolderOpen,
     description: 'Default project settings'
+  },
+  {
+    id: 'prompt-templates',
+    label: 'Prompts',
+    icon: FileText,
+    description: 'Save and reuse prompts'
   },
   {
     id: 'editor',

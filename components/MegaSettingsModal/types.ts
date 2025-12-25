@@ -4,9 +4,11 @@ import { LucideIcon } from 'lucide-react';
 // Settings Categories
 export type SettingsCategory =
   | 'ai-providers'
+  | 'ai-usage'
   | 'context-manager'
   | 'tech-stack'
   | 'projects'
+  | 'prompt-templates'
   | 'editor'
   | 'appearance'
   | 'github'

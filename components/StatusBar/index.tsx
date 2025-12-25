@@ -34,8 +34,8 @@ import {
   GitCommitHorizontal,
   Sparkles,
   ArrowUpCircle,
-  ShieldCheck,
   ShieldAlert,
+  BarChart3,
 } from 'lucide-react';
 import { useAppContext } from '../../contexts/AppContext';
 import { useUI } from '../../contexts/UIContext';
@@ -50,6 +50,7 @@ interface StatusBarProps {
   onOpenHistoryPanel?: () => void;
   onOpenCredits?: () => void;
   onOpenHealthCheck?: () => void;
+  onOpenAIUsage?: () => void;
   isAutoCommitting?: boolean;
 }
 
@@ -59,6 +60,7 @@ export const StatusBar = memo(function StatusBar({
   onOpenHistoryPanel,
   onOpenCredits,
   onOpenHealthCheck,
+  onOpenAIUsage,
   isAutoCommitting = false,
 }: StatusBarProps) {
   // Get state from contexts
@@ -438,6 +440,16 @@ export const StatusBar = memo(function StatusBar({
             {isGenerating ? 'Generating...' : getModelDisplayName(selectedModel)}
           </span>
         </div>
+
+        {/* AI Usage Stats */}
+        <button
+          onClick={onOpenAIUsage}
+          className="px-2 h-full flex items-center gap-1 hover:bg-white/5 rounded transition-colors text-slate-400 hover:text-blue-400"
+          title="AI Usage Analytics"
+        >
+          <BarChart3 className="w-3 h-3" />
+          <span className="text-[10px]">Stats</span>
+        </button>
 
         {/* Connection Status */}
         <div

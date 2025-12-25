@@ -4,9 +4,11 @@ import { X, Settings2, Download, Upload, RotateCcw } from 'lucide-react';
 import { ConfirmModal } from '../ContextIndicator/ConfirmModal';
 import { SettingsSidebar } from './SettingsSidebar';
 import { AIProvidersPanel } from './panels/AIProvidersPanel';
+import { AIUsagePanel } from './panels/AIUsagePanel';
 import { ContextManagerPanel } from './panels/ContextManagerPanel';
 import { TechStackPanel } from './panels/TechStackPanel';
 import { ProjectsPanel } from './panels/ProjectsPanel';
+import { PromptTemplatesPanel } from './panels/PromptTemplatesPanel';
 import { EditorPanel } from './panels/EditorPanel';
 import { AppearancePanel } from './panels/AppearancePanel';
 import { GitHubPanel } from './panels/GitHubPanel';
@@ -168,12 +170,16 @@ export const MegaSettingsModal: React.FC<MegaSettingsModalProps> = ({
     switch (activeCategory) {
       case 'ai-providers':
         return <AIProvidersPanel onProviderChange={onProviderChange} />;
+      case 'ai-usage':
+        return <AIUsagePanel />;
       case 'context-manager':
         return <ContextManagerPanel />;
       case 'tech-stack':
         return <TechStackPanel />;
       case 'projects':
         return <ProjectsPanel />;
+      case 'prompt-templates':
+        return <PromptTemplatesPanel />;
       case 'editor':
         return <EditorPanel />;
       case 'appearance':
