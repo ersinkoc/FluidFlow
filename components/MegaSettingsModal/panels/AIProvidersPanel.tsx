@@ -42,6 +42,11 @@ export const AIProvidersPanel: React.FC<AIProvidersPanelProps> = ({ onProviderCh
     const manager = getProviderManager();
     manager.updateProvider(id, updates);
     setProviders(manager.getConfigs());
+
+    // If updating the active provider's default model, notify parent
+    if (id === activeProviderId && updates.defaultModel && onProviderChange) {
+      onProviderChange(id, updates.defaultModel);
+    }
   };
 
   const deleteProvider = (id: string) => {

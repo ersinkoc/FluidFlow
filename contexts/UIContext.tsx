@@ -14,6 +14,7 @@
  */
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { TabType } from '../types';
+import { getProviderManager } from '../services/ai';
 
 // ============ Types ============
 
@@ -70,8 +71,23 @@ export function UIProvider({ children }: UIProviderProps) {
   // Generation state
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // Model selection
-  const [selectedModel, setSelectedModel] = useState('models/gemini-2.5-flash');
+  // Model selection - initialize from ProviderManager
+  const [selectedModel, setSelectedModel] = useState(() => {
+    const pm = getProviderManager();
+    const config = pm.getActiveConfig();
+    return config?.defaultModel || 'models/gemini-2.5-flash';
+  });
+
+  // Sync selectedModel with ProviderManager on mount (after async init)
+  useEffect(() => {
+    const pm = getProviderManager();
+    pm.waitForInit().then(() => {
+      const config = pm.getActiveConfig();
+      if (config?.defaultModel) {
+        setSelectedModel(config.defaultModel);
+      }
+    });
+  }, []);
 
   // Suggestions
   const [suggestions, setSuggestions] = useState<string[] | null>(null);
