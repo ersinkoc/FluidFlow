@@ -1,13 +1,32 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ProviderManager, loadProvidersFromLocalStorage, saveProvidersToLocalStorage, getActiveProviderIdFromLocalStorage, setActiveProviderIdInLocalStorage, getProviderManager } from '../../services/ai';
 import type { ProviderConfig } from '../../services/ai';
+import { settingsApi } from '../../services/projectApi';
+
+// Mock the settingsApi to prevent backend calls
+vi.mock('../../services/projectApi', () => ({
+  settingsApi: {
+    getAIProviders: vi.fn().mockResolvedValue({ providers: [], activeId: '' }),
+    saveAIProviders: vi.fn().mockResolvedValue(undefined),
+  },
+  projectApi: {
+    listProjects: vi.fn(),
+    getProject: vi.fn(),
+    createProject: vi.fn(),
+    updateProject: vi.fn(),
+    deleteProject: vi.fn(),
+  },
+}));
 
 describe('ProviderManager', () => {
   let manager: InstanceType<typeof ProviderManager>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     localStorage.clear();
+    vi.clearAllMocks();
     manager = new ProviderManager();
+    // Wait for initialization to complete
+    await manager.waitForInit();
   });
 
   afterEach(() => {
