@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, memo } from 'react';
 import { Terminal, ChevronUp, ChevronDown, Trash2, Wifi, Check, Sparkles, Loader2 } from 'lucide-react';
 import { LogEntry, NetworkRequest, TerminalTab } from '../../types';
 
@@ -14,7 +14,7 @@ interface ConsolePanelProps {
   onFixError: (logId: string, message: string) => void;
 }
 
-export const ConsolePanel: React.FC<ConsolePanelProps> = ({
+export const ConsolePanel = memo(function ConsolePanel({
   logs,
   networkLogs,
   isOpen,
@@ -24,7 +24,7 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
   onClearLogs,
   onClearNetwork,
   onFixError
-}) => {
+}: ConsolePanelProps) {
   const consoleEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll console - only scroll within the console panel, not the whole page
@@ -274,4 +274,4 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
       )}
     </div>
   );
-};
+});

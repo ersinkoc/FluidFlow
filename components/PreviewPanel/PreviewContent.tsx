@@ -6,7 +6,7 @@
  * Extracted from PreviewPanel/index.tsx to reduce complexity.
  */
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, memo } from 'react';
 import {
   RefreshCw,
   Loader2,
@@ -105,7 +105,7 @@ export interface PreviewContentProps {
   canRevertAndRetry?: boolean;
 }
 
-export const PreviewContent: React.FC<PreviewContentProps> = (props) => {
+export const PreviewContent = memo(function PreviewContent(props: PreviewContentProps) {
   const {
     appCode,
     iframeSrc,
@@ -675,4 +675,4 @@ export const PreviewContent: React.FC<PreviewContentProps> = (props) => {
       )}
     </div>
   );
-};
+});

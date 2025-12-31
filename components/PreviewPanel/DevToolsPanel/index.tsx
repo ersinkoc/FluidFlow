@@ -9,7 +9,7 @@
  * - Tab navigation with badges
  */
 
-import React from 'react';
+import React, { memo } from 'react';
 import { Terminal, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
 import { ConsoleTab } from './ConsoleTab';
 import { NetworkTab } from './NetworkTab';
@@ -22,7 +22,7 @@ const TABS: DevToolsTabConfig[] = [
   { id: 'elements', label: 'Elements', color: 'purple' },
 ];
 
-export const DevToolsPanel: React.FC<DevToolsPanelProps> = ({
+export const DevToolsPanel = memo(function DevToolsPanel({
   logs,
   networkLogs,
   isOpen,
@@ -41,7 +41,7 @@ export const DevToolsPanel: React.FC<DevToolsPanelProps> = ({
   onHoverNode,
   onRefreshTree,
   isTreeLoading = false,
-}) => {
+}: DevToolsPanelProps) {
   const getTabStyles = (tabId: DevToolsTab, isActive: boolean): React.CSSProperties => {
     if (!isActive) {
       return { color: 'var(--theme-text-dim)' };
@@ -167,7 +167,7 @@ export const DevToolsPanel: React.FC<DevToolsPanelProps> = ({
       )}
     </div>
   );
-};
+});
 
 // Re-export types
 export type { DevToolsTab, DevToolsTabConfig, DevToolsPanelProps } from './types';

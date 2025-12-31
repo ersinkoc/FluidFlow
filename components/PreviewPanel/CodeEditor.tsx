@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useRef, memo } from 'react';
 import Editor, { OnMount, BeforeMount } from '@monaco-editor/react';
 import type * as Monaco from 'monaco-editor';
 import { FileCode, Check, Circle, BookOpen } from 'lucide-react';
@@ -32,7 +32,7 @@ const getLanguage = (filename: string): string => {
   return languageMap[ext] || 'plaintext';
 };
 
-export const CodeEditor: React.FC<CodeEditorProps> = ({ files, setFiles, activeFile, originalFiles }) => {
+export const CodeEditor = memo(function CodeEditor({ files, setFiles, activeFile, originalFiles }: CodeEditorProps) {
   const content = files[activeFile] || '';
   const language = getLanguage(activeFile);
   const [isSaved, setIsSaved] = useState(true);
@@ -232,4 +232,4 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ files, setFiles, activeF
       />
     </div>
   );
-};
+});

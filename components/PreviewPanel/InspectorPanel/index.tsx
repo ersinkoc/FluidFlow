@@ -8,7 +8,7 @@
  * - Quick style presets with AI
  */
 
-import React from 'react';
+import React, { memo } from 'react';
 import { X, Palette, Box, Code2, Wand2, MousePointer2, Sparkles } from 'lucide-react';
 import { StylesTab } from './StylesTab';
 import { BoxModelTab } from './BoxModelTab';
@@ -38,7 +38,7 @@ const TabIcon: React.FC<{ icon: string; className?: string }> = ({ icon, classNa
   }
 };
 
-export const InspectorPanel: React.FC<InspectorPanelProps> = ({
+export const InspectorPanel = memo(function InspectorPanel({
   isOpen,
   activeTab,
   onTabChange,
@@ -60,7 +60,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   onApplyTempStyle,
   onClearTempStyles,
   isQuickStylesProcessing,
-}) => {
+}: InspectorPanelProps) {
   if (!isOpen) return null;
 
   const handleCopy = (text: string) => {
@@ -211,7 +211,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
       )}
     </div>
   );
-};
+});
 
 // Re-export types and components
 export type { InspectorTab, InspectorPanelProps } from './types';

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, memo } from 'react';
 import { Send, Loader2, Wand2, Paperclip, Image, Palette, X, Maximize2, Sparkles, Brain, Clock, FileText } from 'lucide-react';
 import { ChatAttachment, FileSystem } from '../../types';
 import { PromptLibrary, PromptDropdown } from './PromptLibrary';
@@ -21,7 +21,7 @@ interface ChatInputProps {
   historyPrompt?: string; // For auto-filling from prompt history
 }
 
-export const ChatInput: React.FC<ChatInputProps> = ({
+export const ChatInput = memo(function ChatInput({
   onSend,
   isGenerating,
   hasExistingApp,
@@ -32,7 +32,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   onOpenTemplateSettings,
   externalPrompt,
   historyPrompt
-}) => {
+}: ChatInputProps) {
   const [prompt, setPrompt] = useState('');
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [showPromptDropdown, setShowPromptDropdown] = useState(false);
@@ -458,4 +458,4 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       />
     </div>
   );
-};
+});
