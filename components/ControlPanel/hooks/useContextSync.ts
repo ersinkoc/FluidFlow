@@ -12,6 +12,22 @@ import { useEffect, useRef } from 'react';
 import { ChatMessage } from '@/types';
 import { getContextManager, CONTEXT_IDS } from '@/services/conversationContext';
 import { getProjectContext } from '@/services/projectContext';
+import { getProviderManager } from '@/services/ai';
+
+/**
+ * Get current model's context window size
+ */
+function getModelContextSize(): number {
+  try {
+    const manager = getProviderManager();
+    const config = manager.getActiveConfig();
+    if (!config) return 128000;
+    const model = config.models.find(m => m.id === config.defaultModel);
+    return model?.contextWindow || 128000;
+  } catch {
+    return 128000;
+  }
+}
 
 interface UseContextSyncOptions {
   projectId: string | undefined;
@@ -20,85 +36,80 @@ interface UseContextSyncOptions {
   skipRestoredMessages?: boolean;
 }
 
-export function useContextSync({ projectId, messages, skipRestoredMessages = false }: UseContextSyncOptions) {
+export function useContextSync({ projectId, messages }: UseContextSyncOptions) {
   const contextManager = getContextManager();
   const sessionIdRef = useRef<string>(`${CONTEXT_IDS.MAIN_CHAT}-${projectId || 'default'}`);
-  // Track which messages have been synced to prevent duplicates on batch updates
+  // Track which messages have been synced to prevent duplicates
   const syncedMessageIdsRef = useRef<Set<string>>(new Set());
-  // Track if we've done the initial context setup for this project
+  // Track initialization per project
   const hasInitializedRef = useRef<string | null>(null);
 
-  // Update session ID and handle context reset when project changes
+  // Initialize session and handle project context
   useEffect(() => {
     const newSessionId = `${CONTEXT_IDS.MAIN_CHAT}-${projectId || 'default'}`;
     sessionIdRef.current = newSessionId;
 
-    // Check if project has existing AI context (style guide + summary)
-    // If so, clear the conversation context and mark existing messages as synced
-    // This prevents re-counting tokens for historical messages
+    // On project change, check if we should skip syncing historical messages
     if (projectId && projectId !== hasInitializedRef.current) {
       const existingContext = getProjectContext(projectId);
-      if (existingContext) {
-        console.log(`[ContextSync] Project has existing AI context (generated at ${new Date(existingContext.generatedAt).toLocaleString()})`);
-        console.log(`[ContextSync] Clearing conversation context to avoid token bloat from restored messages`);
-        contextManager.clearContext(newSessionId);
 
-        // Mark all current messages as synced so they don't get re-added
-        // This is key: restored messages won't inflate token count
+      if (existingContext) {
+        // Project has AI context - mark all current messages as synced
+        // so they don't get re-added to token count
+        console.log(`[ContextSync] Project has AI context, skipping ${messages.length} historical messages`);
         messages.forEach(msg => syncedMessageIdsRef.current.add(msg.id));
-        console.log(`[ContextSync] Marked ${messages.length} restored messages as synced (won't count toward tokens)`);
+
+        // Clear any existing context tokens (fresh start)
+        const stats = contextManager.getStats(newSessionId);
+        if (stats && stats.tokens > 0) {
+          console.log(`[ContextSync] Clearing ${stats.tokens.toLocaleString()} stale tokens`);
+          contextManager.clearContext(newSessionId);
+        }
       } else {
-        // No existing context - clear synced IDs so messages get counted
+        // No AI context - allow normal message syncing
         syncedMessageIdsRef.current.clear();
       }
+
       hasInitializedRef.current = projectId;
-    } else if (!projectId) {
-      // Scratch project - clear synced IDs
+    } else if (!projectId && hasInitializedRef.current) {
+      // Switched to scratch - reset
       syncedMessageIdsRef.current.clear();
+      hasInitializedRef.current = null;
     }
 
-    console.log(`[ContextSync] Project changed, new session: ${newSessionId}`);
+    console.log(`[ContextSync] Session: ${newSessionId}`);
   }, [projectId, contextManager, messages]);
 
-  // Sync messages with context manager
-  // BUG FIX: Sync ALL new messages, not just the last one
-  // React 18 batches state updates, so multiple messages can be added before this runs
+  // Sync NEW messages only - messages already in syncedMessageIdsRef are skipped
   useEffect(() => {
     if (messages.length === 0) return;
 
-    // Find all messages that haven't been synced yet
+    // Find messages that haven't been synced yet
     const unsynced = messages.filter(msg => !syncedMessageIdsRef.current.has(msg.id));
     if (unsynced.length === 0) return;
 
-    console.log(`[ContextSync] Found ${unsynced.length} unsync'd message(s) to add`);
+    console.log(`[ContextSync] Syncing ${unsynced.length} new message(s)`);
 
     for (const msg of unsynced) {
-      // For user messages: use llmContent (full codebase) or prompt
-      // For assistant messages: use explanation/error + file content for accurate token counting
       let content: string;
       let actualTokens: number | undefined;
 
       if (msg.role === 'user') {
         content = msg.llmContent || msg.prompt || '';
-        // Use actual token count if available (e.g., from codebase sync)
         if (msg.tokenUsage?.totalTokens) {
           actualTokens = msg.tokenUsage.totalTokens;
         }
       } else {
-        // For assistant messages, include file content in token estimation
         const textContent = msg.explanation || msg.error || '';
         const filesContent = msg.files
           ? Object.entries(msg.files).map(([path, code]) => `// ${path}\n${code}`).join('\n\n')
           : '';
         content = textContent + (filesContent ? '\n\n' + filesContent : '');
 
-        // Use actual token count from API if available
         if (msg.tokenUsage?.totalTokens) {
           actualTokens = msg.tokenUsage.totalTokens;
         }
       }
-
-      console.log(`[ContextSync] Adding ${msg.role} message (id: ${msg.id.slice(0, 8)}...) to session "${sessionIdRef.current}", content length: ${content.length}, tokens: ${actualTokens || 'estimated'}`);
 
       contextManager.addMessage(
         sessionIdRef.current,
@@ -108,10 +119,8 @@ export function useContextSync({ projectId, messages, skipRestoredMessages = fal
         actualTokens
       );
 
-      // Mark as synced
       syncedMessageIdsRef.current.add(msg.id);
     }
-    // Note: contextManager is a singleton, messages array is iterated but we only trigger on length change
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length]);
 

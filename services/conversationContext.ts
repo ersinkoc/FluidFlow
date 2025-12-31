@@ -62,8 +62,26 @@ class ConversationContextManager {
       const saved = localStorage.getItem(this.config.storageKey);
       if (saved) {
         const parsed = JSON.parse(saved) as ConversationContext[];
-        parsed.forEach((ctx) => this.contexts.set(ctx.id, ctx));
-        console.log(`[ContextManager] Loaded ${parsed.length} contexts from storage`);
+        let cleared = 0;
+
+        parsed.forEach((ctx) => {
+          // AUTO-CLEAR: If context has excessive tokens (>500k), clear it on load
+          // This prevents token bloat from corrupted or stale contexts
+          if (ctx.estimatedTokens > 500000) {
+            console.log(`[ContextManager] ⚠️ Context "${ctx.id}" has ${ctx.estimatedTokens.toLocaleString()} tokens - clearing`);
+            ctx.messages = [];
+            ctx.estimatedTokens = 0;
+            cleared++;
+          }
+          this.contexts.set(ctx.id, ctx);
+        });
+
+        console.log(`[ContextManager] Loaded ${parsed.length} contexts from storage${cleared > 0 ? ` (cleared ${cleared} oversized)` : ''}`);
+
+        // Save back if we cleared any
+        if (cleared > 0) {
+          this.saveToStorage();
+        }
       }
     } catch (e) {
       console.error('[ContextManager] Failed to load from storage:', e);
