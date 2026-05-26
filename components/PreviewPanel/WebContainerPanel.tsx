@@ -349,7 +349,7 @@ export const WebContainerPanel: React.FC<WebContainerPanelProps> = ({
               src={state.serverUrl}
               className="w-full h-full border-0 bg-white"
               title="WebContainer Preview"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+              sandbox="allow-scripts allow-forms allow-popups allow-modals"
             />
           ) : (
             <div className="flex-1 flex items-center justify-center h-full" style={{ backgroundColor: 'var(--theme-surface-dark)' }}>

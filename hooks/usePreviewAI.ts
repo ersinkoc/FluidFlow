@@ -15,6 +15,9 @@ import { ACCESSIBILITY_AUDIT_SCHEMA } from '../services/ai/utils/schemas';
 import {
   ACCESSIBILITY_AUDIT_SYSTEM_INSTRUCTION,
   parseAccessibilityReport,
+  FIX_ACCESSIBILITY_SYSTEM_INSTRUCTION,
+  FIX_RESPONSIVENESS_SYSTEM_INSTRUCTION,
+  GENERATE_DB_SCHEMA_SYSTEM_INSTRUCTION,
 } from '../services/prompts/previewPrompts';
 
 export interface UsePreviewAIOptions {
@@ -139,8 +142,7 @@ ${accessibilityReport.issues.map((issue, i) => `${i + 1}. [${issue.type.toUpperC
 
 Original Code:
 ${appCode}`,
-          systemInstruction:
-            'You are a WCAG 2.1 AA accessibility expert. Apply the smallest correct fix for EACH listed issue: add aria-label to icon-only buttons, pair every form field with a <label htmlFor>, ensure focus-visible rings, semantic landmarks (<header>/<nav>/<main>/<footer>), and 4.5:1 body contrast. Preserve every data-ff-* attribute and the existing component shape. Return ONLY the complete fixed file content — no markdown fence, no explanation, no leading whitespace.',
+          systemInstruction: FIX_ACCESSIBILITY_SYSTEM_INSTRUCTION,
         },
         currentModel
       );
@@ -170,8 +172,7 @@ ${appCode}`,
       const response = await manager.generate(
         {
           prompt: `Optimize this React component for mobile devices.\n\nCode: ${appCode}\n\nOutput ONLY the full updated code.`,
-          systemInstruction:
-            'You are a senior React/TypeScript engineer. Make this component responsive using Tailwind mobile-first prefixes (sm: 640, md: 768, lg: 1024). Stack columns on mobile, collapse navigation to a hamburger or top-sheet, switch hover-only affordances to touch-friendly equivalents, and keep touch targets ≥ 44px. FORBIDDEN: negative absolute positioning like bottom-[-20%]. Preserve every data-ff-* attribute and the existing imports. Return ONLY valid React/TypeScript code — no markdown fence, no explanation.',
+          systemInstruction: FIX_RESPONSIVENESS_SYSTEM_INSTRUCTION,
         },
         currentModel
       );
@@ -198,8 +199,7 @@ ${appCode}`,
       const response = await manager.generate(
         {
           prompt: `Based on this React App, generate a SQL schema for SQLite.\nCode: ${appCode}\nOutput ONLY SQL.`,
-          systemInstruction:
-            'You are a database expert. Infer entities and relations from the React component (forms, lists, mock data) and emit a SQLite schema: CREATE TABLE statements with INTEGER PRIMARY KEY AUTOINCREMENT for ids, TEXT/INTEGER/REAL/BOOLEAN columns, NOT NULL where appropriate, FOREIGN KEY REFERENCES for relations, and CREATE INDEX on foreign keys and frequently queried columns. Use snake_case for table and column names. Return ONLY valid SQL — no markdown fence, no explanation, no comments unless they document a non-obvious choice.',
+          systemInstruction: GENERATE_DB_SCHEMA_SYSTEM_INSTRUCTION,
         },
         currentModel
       );

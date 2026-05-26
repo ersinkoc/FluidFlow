@@ -95,7 +95,7 @@ const DeviceFrame: React.FC<DeviceFrameProps> = ({ config, blobUrl, iframeKey, i
             src={blobUrl}
             title={`Preview - ${config.name}`}
             className={`w-full h-full bg-white transition-opacity duration-500 ${isGenerating ? 'opacity-40' : 'opacity-100'}`}
-            sandbox="allow-scripts allow-same-origin"
+            sandbox="allow-scripts"
             style={{ border: 'none' }}
           />
         </div>

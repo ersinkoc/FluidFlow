@@ -330,11 +330,9 @@ export const PreviewContent = memo(function PreviewContent(props: PreviewContent
     const iframe = iframeRef.current;
 
     return () => {
-      // Send cleanup message to iframe before revoking URL
-      // This allows sandbox to revoke its internal blob URLs.
-      // Iframe runs with `allow-same-origin`, so parent's origin is the
-      // correct postMessage target — never use '*' (would expose the
-      // message to any listener including injected third-party frames).
+      // Send cleanup message to iframe before revoking URL.
+      // Use parent's origin as postMessage target — never use '*'
+      // (would expose the message to any listener).
       if (iframe?.contentWindow) {
         try {
           iframe.contentWindow.postMessage({ type: 'CLEANUP_BLOB_URLS' }, window.location.origin);
@@ -750,7 +748,7 @@ export const PreviewContent = memo(function PreviewContent(props: PreviewContent
                   src={blobUrl}
                   title="Preview"
                   className={`bg-white transition-opacity duration-500 ${isGenerating ? 'opacity-40' : 'opacity-100'}`}
-                  sandbox="allow-scripts allow-same-origin"
+                  sandbox="allow-scripts"
                   onLoad={() => {
                     // Reset parent scroll when iframe loads - prevents jump
                     window.scrollTo(0, 0);

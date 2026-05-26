@@ -862,7 +862,8 @@ router.post('/:id/start', async (req, res) => {
   if (needsInstall) {
     pushLog(runningProject, `[${new Date().toISOString()}] Installing dependencies...`);
 
-    const installProcess = spawn('npm', ['install'], {
+    // VF-05 fix: Add --ignore-scripts to prevent RCE from malicious package.json lifecycle scripts
+    const installProcess = spawn('npm', ['install', '--ignore-scripts'], {
       cwd: filesDir,
       shell: process.platform === 'win32', // Only use shell on Windows for npm compatibility
       env: { ...process.env, FORCE_COLOR: '1' }
