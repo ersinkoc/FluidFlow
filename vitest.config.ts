@@ -19,7 +19,6 @@ export default defineConfig({
         branches: 30,
         statements: 39
       },
-      tempDirectory: '.coverage-tmp',
       exclude: [
         'node_modules/',
         'tests/',
