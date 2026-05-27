@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": false,
+    "strictNullChecks": false,
+    "strictPropertyInitialization": false,
+    "noUncheckedIndexedAccess": false
+  },
+  "include": ["tests/**/*", "vitest.config.ts"]
+}
